@@ -293,16 +293,16 @@ function ChatLayout() {
 
   return (
     <div
-      className="flex h-[calc(100vh-3.5rem)] md:h-screen overflow-hidden"
+      className="flex h-[calc(100dvh-3.5rem)] lg:h-screen overflow-hidden"
       dir="rtl"
     >
       {/* Chat list */}
       <aside
         className={cn(
           "bg-card flex-col border-l min-w-0",
-          "w-full md:w-[340px] lg:w-[360px] md:shrink-0",
+          "w-full lg:w-[340px] xl:w-[360px] lg:shrink-0",
           inConversation
-            ? "hidden md:flex"
+            ? "hidden lg:flex"
             : "flex",
         )}
       >
@@ -623,7 +623,7 @@ function ChatLayout() {
           "flex-1 flex-col bg-muted/20 min-w-0",
           inConversation
             ? "flex"
-            : "hidden md:flex",
+            : "hidden lg:flex",
         )}
       >
         <Outlet />
