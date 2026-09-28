@@ -51,13 +51,13 @@ function AdminLayout() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto" dir="rtl">
+    <div className="p-3 sm:p-6 max-w-7xl mx-auto" dir="rtl">
       <div className="flex items-center gap-2 mb-6">
         <Shield className="h-6 w-6 text-primary" />
         <h1 className="text-2xl font-bold">لوحة السوبر أدمن</h1>
       </div>
-      <div className="flex gap-6">
-        <nav className="w-56 shrink-0 space-y-1">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+        <nav className="flex lg:block w-full lg:w-56 shrink-0 gap-1 overflow-x-auto lg:overflow-visible lg:space-y-1 pb-2 lg:pb-0">
           {TABS.map((t) => {
             const active = (t as any).exact ? location.pathname === t.to : location.pathname.startsWith(t.to);
             return (
@@ -65,7 +65,7 @@ function AdminLayout() {
                 key={t.to}
                 to={t.to}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
+                  "flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
                   active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
                 )}
               >
