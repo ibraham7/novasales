@@ -344,7 +344,7 @@ function ChatView() {
 
   if (!data) {
     return (
-      <div className="fixed inset-0 z-40 md:static md:min-h-[calc(100vh)] flex items-center justify-center bg-background text-muted-foreground">
+      <div className="fixed inset-0 z-40 lg:static lg:min-h-[calc(100vh)] flex items-center justify-center bg-background text-muted-foreground">
         جارٍ التحميل...
       </div>
     );
@@ -414,7 +414,7 @@ function ChatView() {
       className={cn(
         "flex min-h-0 bg-background",
         "fixed inset-0 z-40",
-        "md:static md:z-auto md:h-screen",
+        "lg:static lg:z-auto lg:h-screen",
       )}
     >
       {/* Chat */}
@@ -425,7 +425,7 @@ function ChatView() {
             {/* Mobile back */}
             <Link
               to="/chat"
-              className="md:hidden h-9 w-9 rounded-full hover:bg-muted flex items-center justify-center shrink-0"
+              className="lg:hidden h-9 w-9 rounded-full hover:bg-muted flex items-center justify-center shrink-0"
               aria-label="العودة للمحادثات"
             >
               <ArrowRight className="h-5 w-5" />
