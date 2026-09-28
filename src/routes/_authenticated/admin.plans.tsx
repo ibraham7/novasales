@@ -138,18 +138,18 @@ function PlansPage() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
           <DialogHeader><DialogTitle>{form.id ? "تعديل خطة" : "خطة جديدة"}</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><Label>الاسم</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
               <div><Label>الكود</Label><Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="starter" /></div>
             </div>
             <div><Label>الوصف</Label><Textarea value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div><Label>شهري</Label><Input type="number" value={form.price_monthly} onChange={(e) => setForm({ ...form, price_monthly: Number(e.target.value) })} /></div>
               <div><Label>ربع سنوي</Label><Input type="number" value={form.price_quarterly} onChange={(e) => setForm({ ...form, price_quarterly: Number(e.target.value) })} /></div>
               <div><Label>سنوي</Label><Input type="number" value={form.price_yearly} onChange={(e) => setForm({ ...form, price_yearly: Number(e.target.value) })} /></div>
               <div><Label>أيام التجربة</Label><Input type="number" value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} /></div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div><Label>العملة</Label><Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} /></div>
               <div>
                 <Label>الحالة</Label>
@@ -170,7 +170,7 @@ function PlansPage() {
 
             <div>
               <h3 className="font-semibold mb-2">الميزات</h3>
-              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                 {(featsQ.data ?? []).map((f: any) => (
                   <label key={f.key} className="flex items-center gap-2 text-sm p-2 border rounded">
                     <Switch checked={getFeature(f.key)} onCheckedChange={(v) => toggleFeature(f.key, v)} />
@@ -185,7 +185,7 @@ function PlansPage() {
               <p className="text-xs text-muted-foreground mb-3">
                 أدخل الحد الأقصى المسموح لكل بند. اكتب <b>-1</b> للسماح بعدد غير محدود (بلا حدود).
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {LIMIT_KEYS.map((k) => {
                   const v = getLimit(k);
                   return (
