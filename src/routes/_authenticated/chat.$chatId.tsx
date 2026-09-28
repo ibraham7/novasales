@@ -51,7 +51,9 @@ import { toast } from "sonner";
 import {
   getChatWithMessages,
   sendMessageFn,
+  sendMediaMessageFn,
 } from "@/modules/messaging";
+import { MediaPreviewDialog, makeItems, type PreviewItem } from "@/components/chat/media-preview-dialog";
 
 import {
   getOpportunityByChat,
@@ -128,6 +130,61 @@ function ChatView() {
     useServerFn(
       sendMessageFn,
     );
+
+  const sendMedia = useServerFn(sendMediaMessageFn);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
+  const [previewCaption, setPreviewCaption] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<Record<string, number>>({});
+
+  function chooseFiles(files: FileList | null) {
+    if (!files) return;
+    const accepted = Array.from(files).filter((file) => {
+      if (file.size <= 20 * 1024 * 1024) return true;
+      toast.error(`${file.name}: الحد الأقصى 20MB`);
+      return false;
+    });
+    if (accepted.length) setPreviewItems((current) => [...current, ...makeItems(accepted)]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function sendAttachments() {
+    if (uploading) return;
+    setUploading(true);
+    let sent = 0;
+    try {
+      for (const item of previewItems) {
+        setProgress((current) => ({ ...current, [item.id]: 30 }));
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(reader.error);
+          reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+          reader.readAsDataURL(item.file);
+        });
+        await sendMedia({ data: {
+          chatId,
+          kind: item.kind,
+          fileName: item.file.name,
+          mimeType: item.file.type || "application/octet-stream",
+          base64,
+          caption: sent === 0 ? previewCaption.trim() || undefined : undefined,
+        } });
+        sent++;
+        setProgress((current) => ({ ...current, [item.id]: 100 }));
+      }
+      setPreviewItems([]);
+      setPreviewCaption("");
+      setProgress({});
+    } catch (error) {
+      if (sent) setPreviewItems((current) => current.slice(sent));
+      toast.error(error instanceof Error ? error.message : "فشل إرسال المرفق");
+    } finally {
+      setUploading(false);
+      qc.invalidateQueries({ queryKey: ["chat", chatId] });
+      qc.invalidateQueries({ queryKey: ["chats-enriched"] });
+    }
+  }
 
   const scrollRef =
     useRef<HTMLDivElement>(
@@ -341,6 +398,18 @@ function ChatView() {
       : null;
 
   return (
+    <>
+    {previewItems.length > 0 && <MediaPreviewDialog
+      items={previewItems}
+      setItems={setPreviewItems}
+      caption={previewCaption}
+      setCaption={setPreviewCaption}
+      onCancel={() => { if (!uploading) { setPreviewItems([]); setPreviewCaption(""); setProgress({}); } }}
+      onSend={sendAttachments}
+      sending={uploading}
+      progress={progress}
+      onAddMore={() => fileInputRef.current?.click()}
+    />}
     <div
       className={cn(
         "flex min-h-0 bg-background",
@@ -700,9 +769,23 @@ function ChatView() {
               <Smile className="h-4 w-4" />
             </ToolBtn>
 
-            <ToolBtn label="ملف">
+            <input
+              ref={fileInputRef}
+              id="chat-attachment-input"
+              type="file"
+              className="sr-only"
+              multiple
+              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip"
+              onChange={(event) => chooseFiles(event.target.files)}
+            />
+            <label
+              htmlFor="chat-attachment-input"
+              title="ملف"
+              aria-label="إرفاق ملف أو صورة"
+              className="inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground"
+            >
               <Paperclip className="h-4 w-4" />
-            </ToolBtn>
+            </label>
 
             <ProductPickerDialog
               chatId={chatId}
@@ -858,6 +941,7 @@ function ChatView() {
           </div>
         )}
     </div>
+    </>
   );
 }
 
