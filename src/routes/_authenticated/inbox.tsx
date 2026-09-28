@@ -57,8 +57,8 @@ function InboxPage() {
   const [tmplOpen, setTmplOpen] = useState(false);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto" dir="rtl">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto" dir="rtl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <InboxIcon className="h-6 w-6" /> صندوق المشرف
@@ -67,7 +67,7 @@ function InboxPage() {
             العملاء الواصلون على الأرقام العامة وينتظرون التوزيع على مندوب.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Select value={deptFilter} onValueChange={setDeptFilter}>
             <SelectTrigger className="w-48">
               <SelectValue />
@@ -81,7 +81,7 @@ function InboxPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => setTmplOpen(true)}>
+          <Button variant="outline" className="max-w-full" onClick={() => setTmplOpen(true)}>
             <Settings2 className="h-4 w-4 ml-1" /> قالب الترحيب
           </Button>
         </div>
@@ -95,11 +95,11 @@ function InboxPage() {
           </Card>
         ) : (
           (unQ.data ?? []).map((o: any) => (
-            <Card key={o.id} className="p-4 flex items-center gap-4">
+            <Card key={o.id} className="p-3 sm:p-4 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold">
                 {(o.contact_name ?? o.peer ?? "?").toString().charAt(0).toUpperCase()}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-[55%] sm:min-w-0">
                 <div className="flex items-center gap-2">
                   <div className="font-medium truncate">{o.contact_name ?? o.peer}</div>
                   {o.source && <Badge variant="secondary">{o.source}</Badge>}
