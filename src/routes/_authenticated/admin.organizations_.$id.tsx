@@ -85,7 +85,7 @@ function OrgDetailPage() {
             <div className="text-muted-foreground text-sm">لا يوجد اشتراك.</div>
           )}
 
-          <div className="grid grid-cols-3 gap-3 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
             <div>
               <Label>الخطة</Label>
               <Select value={selectedPlan} onValueChange={setSelectedPlan}>
