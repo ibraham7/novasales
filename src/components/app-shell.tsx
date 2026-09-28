@@ -398,7 +398,7 @@ export function AppShell({
 
   return (
     <div
-      className="min-h-screen bg-background"
+      className="min-h-screen min-w-0 overflow-x-clip bg-background"
       dir="rtl"
     >
       {accessReady ? (
@@ -406,12 +406,12 @@ export function AppShell({
       ) : null}
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex fixed inset-y-0 right-0 z-30 w-64 bg-sidebar text-sidebar-foreground border-l border-sidebar-border flex-col">
+      <aside className="hidden lg:flex fixed inset-y-0 right-0 z-30 w-64 bg-sidebar text-sidebar-foreground border-l border-sidebar-border flex-col">
         <SidebarContent />
       </aside>
 
       {/* Mobile header */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-30 h-14 bg-background/95 backdrop-blur border-b flex items-center justify-between px-3">
+      <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 bg-background/95 backdrop-blur border-b flex items-center justify-between px-3">
         <Button
           type="button"
           variant="ghost"
@@ -439,7 +439,7 @@ export function AppShell({
 
       {/* Mobile drawer */}
       {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50">
+        <div className="lg:hidden fixed inset-0 z-50">
           <button
             type="button"
             aria-label="إغلاق القائمة"
@@ -462,8 +462,8 @@ export function AppShell({
       <main
         className={cn(
           "min-w-0",
-          "md:mr-64",
-          "pt-14 md:pt-0",
+          "lg:mr-64",
+          "pt-14 lg:pt-0",
           "min-h-screen",
         )}
       >
