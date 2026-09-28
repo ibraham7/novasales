@@ -135,15 +135,15 @@ function Dashboard() {
   ];
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-3 sm:p-6 lg:p-8 space-y-6 min-w-0">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">لوحة التحكم</h1>
           <p className="text-muted-foreground mt-1">مؤشرات الأداء وتحليل المبيعات.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full sm:w-auto flex-wrap items-center gap-2">
           <Select value={range} onValueChange={setRange}>
-            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full min-w-32 flex-1 sm:w-40 sm:flex-none"><SelectValue /></SelectTrigger>
             <SelectContent>
               {RANGE_PRESETS.map((p) => (
                 <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>
@@ -151,14 +151,14 @@ function Dashboard() {
             </SelectContent>
           </Select>
           <Select value={departmentId ?? "all"} onValueChange={(v) => setDepartmentId(v === "all" ? undefined : v)}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="القسم" /></SelectTrigger>
+            <SelectTrigger className="w-full min-w-32 flex-1 sm:w-44 sm:flex-none"><SelectValue placeholder="القسم" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">كل الأقسام</SelectItem>
               {(deps ?? []).map((d: any) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}
             </SelectContent>
           </Select>
           <Select value={pipelineId ?? "all"} onValueChange={(v) => setPipelineId(v === "all" ? undefined : v)}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="القناة" /></SelectTrigger>
+            <SelectTrigger className="w-full min-w-32 flex-1 sm:w-44 sm:flex-none"><SelectValue placeholder="القناة" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">كل القنوات</SelectItem>
               {(pips ?? []).map((p: any) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}
