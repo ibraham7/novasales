@@ -41,10 +41,10 @@ function SettingsLayout() {
     return !policy || (policy.superAdminOnly ? isSuper : isSuper || hasAnyPermission(perms, policy.anyOf));
   });
   return (
-    <div className="p-6 max-w-6xl mx-auto" dir="rtl">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto" dir="rtl">
       <h1 className="text-2xl font-bold mb-6">الإعدادات</h1>
-      <div className="flex gap-6">
-        <nav className="w-56 shrink-0 space-y-1">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+        <nav className="flex lg:block w-full lg:w-56 shrink-0 gap-1 overflow-x-auto lg:overflow-visible lg:space-y-1 pb-2 lg:pb-0">
           {tabs.map((t) => {
             const active = location.pathname === t.to;
             return (
@@ -52,7 +52,7 @@ function SettingsLayout() {
                 key={t.to}
                 to={t.to}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
+                  "flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
                   active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
                 )}
               >
