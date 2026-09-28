@@ -32,14 +32,14 @@ function DetailPage() {
   );
 
   return (
-    <div className="p-8 space-y-6" dir="rtl">
-      <div className="flex items-center gap-3">
+    <div className="p-3 sm:p-6 lg:p-8 space-y-6 min-w-0" dir="rtl">
+      <div className="flex flex-wrap items-center gap-3">
         <Link to="/campaigns"><Button size="sm" variant="ghost"><ArrowRight className="h-4 w-4" /></Button></Link>
         <h1 className="text-2xl font-bold">{c?.name ?? "..."}</h1>
         {c && <Badge>{c.status}</Badge>}
       </div>
 
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { l: "الإجمالي", v: s.total ?? 0 },
           { l: "في الطابور", v: s.queued ?? 0 },
@@ -56,13 +56,13 @@ function DetailPage() {
       </div>
 
       <Card className="p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <h2 className="font-semibold">المستلمون</h2>
-          <Input placeholder="بحث..." value={filter} onChange={(e) => setFilter(e.target.value)} className="w-64" />
+          <Input placeholder="بحث..." value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full sm:w-64" />
         </div>
         <div className="space-y-1 max-h-[500px] overflow-auto">
           {recipients.map((r: any) => (
-            <div key={r.id} className="flex items-center gap-3 py-2 border-b last:border-0">
+            <div key={r.id} className="flex flex-wrap items-center gap-2 sm:gap-3 py-2 border-b last:border-0 break-all">
               <Badge className={STATUS_COLOR[r.status]}>{r.status}</Badge>
               <span className="font-mono text-sm">{r.phone}</span>
               <span className="text-sm text-muted-foreground">{r.variables?.name ?? ""}</span>
