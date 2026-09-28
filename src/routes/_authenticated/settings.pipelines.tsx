@@ -100,7 +100,7 @@ function SettingsPipelinesPage() {
   return (
     <div>
       <h2 className="text-xl font-bold mb-4">قنوات المبيعات</h2>
-      <div className="grid grid-cols-[240px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-4">
         <Card className="p-3 space-y-1 h-fit">
           {(q.data ?? []).map((p: any) => (
             <button
@@ -139,7 +139,7 @@ function SettingsPipelinesPage() {
           </Dialog>
         </Card>
 
-        <Card className="p-4">
+        <Card className="p-3 sm:p-4 min-w-0">
           {!current ? (
             <div className="text-center text-muted-foreground py-8">اختر قمعاً</div>
           ) : (
