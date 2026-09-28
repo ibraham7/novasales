@@ -25,14 +25,14 @@ function RunsPage() {
   const d = useQuery({ queryKey: ["run", selected], queryFn: () => detail({ data: { runId: selected! } }), enabled: !!selected });
 
   return (
-    <div className="p-8 space-y-6" dir="rtl">
+    <div className="p-3 sm:p-6 lg:p-8 space-y-6 min-w-0" dir="rtl">
       <div className="flex items-center gap-3">
         <Link to="/automation/$id" params={{ id }}><Button size="sm" variant="ghost"><ArrowRight className="h-4 w-4" /></Button></Link>
         <h1 className="text-2xl font-bold">سجل التشغيل</h1>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-1 space-y-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className="min-w-0 lg:col-span-1 space-y-2">
           {(q.data?.runs ?? []).map((r: any) => {
             const Icon = STATUS_ICON[r.status] ?? Clock;
             return (
@@ -49,7 +49,7 @@ function RunsPage() {
           })}
           {q.data?.runs.length === 0 && <Card className="p-6 text-center text-muted-foreground">لا توجد تشغيلات بعد.</Card>}
         </div>
-        <div className="col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           {selected ? (
             <Card className="p-4">
               <h3 className="font-semibold mb-3">تفاصيل الخطوات</h3>
