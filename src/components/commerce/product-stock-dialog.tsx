@@ -1,3 +1,4 @@
+import { variantStock } from "@/modules/commerce/stock-summary";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -98,6 +99,7 @@ export function ProductStockDialog({
         "product-attributes",
         "chat-order-products",
         "sales-products-order",
+        "chat-products",
       ])
         qc.invalidateQueries({ queryKey: [key] });
       if (action === "attribute")
@@ -116,7 +118,7 @@ export function ProductStockDialog({
     onError: (e) => toast.error(e.message),
   });
   const today = new Date().toISOString().slice(0, 10);
-  const variants = product?.sales_product_variants ?? [];
+  const variants = variantStock(product ?? {});
   const batches = [...(product?.sales_stock_batches ?? [])].sort((a, b) =>
     (a.expires_on ?? "9999").localeCompare(b.expires_on ?? "9999"),
   );
@@ -137,7 +139,8 @@ export function ProductStockDialog({
           </p>
         )}
         <p className="text-sm text-muted-foreground">
-          كل دفعة لها كمية وصلاحية مستقلة. تظهر الدفعات الأقرب انتهاءً أولًا.
+          يمكن إنشاء خصائص مثل اللون والمقاس من «تعريف الخصائص»، ثم إضافة متغير لكل تركيبة وإدخال
+          كميته باستلام دفعة. كل دفعة لها كمية وصلاحية مستقلة.
         </p>
         <section className="space-y-3">
           <h3 className="font-semibold">الدفعات والكميات المتبقية</h3>
@@ -194,10 +197,13 @@ export function ProductStockDialog({
           ))}
         </section>
         <section className="space-y-2">
-          <h3 className="font-semibold">متغيرات المنتج</h3>
+          <h3 className="font-semibold">المتبقي لكل متغير (اللون / المقاس أو خصائصك الأخرى)</h3>
           {variants.map((v: any) => (
             <div key={v.id} className="border rounded-lg p-3">
-              <strong>{v.label}</strong>
+              <div className="flex justify-between gap-2">
+                <strong>{v.label}</strong>
+                <strong>{v.quantity} متاح</strong>
+              </div>
               <div className="flex flex-wrap gap-2 mt-1">
                 {Object.entries(v.attributes).map(([id, value]) => (
                   <span key={id} className="text-sm bg-muted px-2 py-1 rounded">

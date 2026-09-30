@@ -1,3 +1,7 @@
+import { ProductMediaEditor, ProductGallery } from "@/components/commerce/product-media";
+import { ProductStockSummary } from "@/components/commerce/product-stock-summary";
+import { listProductAttributes } from "@/modules/commerce/stock.functions";
+import { CURRENCY_CODES, currencyName, inventoryValues } from "@/modules/commerce/currencies";
 import { ProductStockDialog } from "@/components/commerce/product-stock-dialog";
 import { createFileRoute } from "@tanstack/react-router";
 import { ProductAnalytics } from "@/components/commerce/product-analytics";
@@ -5,26 +9,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useServerFn } from "@tanstack/react-start";
 
-import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
-import {
-  Boxes,
-  DollarSign,
-  ImageIcon,
-  Package,
-  Pencil,
-  Plus,
-  Search,
-  SlidersHorizontal,
-  Upload,
-  X,
-} from "lucide-react";
+import { Boxes, DollarSign, Package, Pencil, Plus, Search, SlidersHorizontal } from "lucide-react";
 
 import { toast } from "sonner";
 
-import { createProductImageUpload, listProducts, upsertProduct } from "@/modules/commerce";
-
-import { supabase } from "@/integrations/supabase/client";
+import { listProducts, upsertProduct } from "@/modules/commerce";
 
 import { Button } from "@/components/ui/button";
 
@@ -46,8 +37,6 @@ import {
 } from "@/components/ui/dialog";
 
 import { Textarea } from "@/components/ui/textarea";
-
-import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/products")({
   head: () => ({
@@ -73,6 +62,8 @@ type ProductRow = {
   price: number;
   currency: string;
   images: string[] | null;
+  videos: string[] | null;
+  sales_product_variants?: any[];
   is_active: boolean;
 
   sales_stock_batches?: { quantity: number; expires_on: string | null }[];
@@ -93,7 +84,8 @@ type ProductForm = {
   description: string;
   price: string;
   currency: string;
-  imageUrl: string;
+  images: string[];
+  videos: string[];
   isActive: boolean;
 };
 
@@ -103,13 +95,10 @@ const EMPTY_FORM: ProductForm = {
   description: "",
   price: "",
   currency: "USD",
-  imageUrl: "",
+  images: [],
+  videos: [],
   isActive: true,
 };
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 function getStock(product: ProductRow) {
   if (product.sales_stock_batches) {
@@ -142,13 +131,15 @@ function formatPrice(value: number, currency: string) {
 function ProductsPage() {
   const qc = useQueryClient();
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const fetchProducts = useServerFn(listProducts);
 
   const saveProduct = useServerFn(upsertProduct);
 
-  const createUpload = useServerFn(createProductImageUpload);
+  const fetchAttributes = useServerFn(listProductAttributes);
+  const { data: attributes = [] } = useQuery({
+    queryKey: ["product-attributes"],
+    queryFn: () => fetchAttributes(),
+  });
 
   const [search, setSearch] = useState("");
 
@@ -159,8 +150,6 @@ function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
 
   const [imageUploading, setImageUploading] = useState(false);
-
-  const [dragActive, setDragActive] = useState(false);
 
   const [stockDialog, setStockDialog] = useState<ProductRow | null>(null);
 
@@ -206,14 +195,7 @@ function ProductsPage() {
     [products],
   );
 
-  const inventoryValue = useMemo(
-    () =>
-      (products as ProductRow[]).reduce(
-        (sum, product) => sum + getStock(product) * Number(product.price),
-        0,
-      ),
-    [products],
-  );
+  const inventoryValue = useMemo(() => inventoryValues(products as ProductRow[]), [products]);
 
   const productMutation = useMutation({
     mutationFn: () => {
@@ -226,8 +208,6 @@ function ProductsPage() {
       if (!Number.isFinite(price) || price < 0) {
         throw new Error("السعر غير صالح");
       }
-
-      const images = form.imageUrl.trim() ? [form.imageUrl.trim()] : [];
 
       return saveProduct({
         data: {
@@ -243,7 +223,8 @@ function ProductsPage() {
 
           currency: form.currency.trim().toUpperCase() || "USD",
 
-          images,
+          images: form.images,
+          videos: form.videos,
 
           isActive: form.isActive,
         },
@@ -257,91 +238,20 @@ function ProductsPage() {
 
       setForm(EMPTY_FORM);
 
-      qc.invalidateQueries({
-        queryKey: ["sales-products"],
-      });
+      for (const key of [
+        "sales-products",
+        "chat-order-products",
+        "sales-products-order",
+        "chat-products",
+        "product-analytics",
+      ])
+        qc.invalidateQueries({ queryKey: [key] });
     },
 
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "تعذر حفظ المنتج");
     },
   });
-
-  async function uploadImage(file: File) {
-    if (!ACCEPTED_TYPES.has(file.type)) {
-      toast.error("الصورة يجب أن تكون JPG أو PNG أو WebP أو GIF");
-
-      return;
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error("حجم الصورة يجب ألا يتجاوز 5MB");
-
-      return;
-    }
-
-    setImageUploading(true);
-
-    try {
-      const signed = await createUpload({
-        data: {
-          fileName: file.name,
-
-          contentType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-        },
-      });
-
-      const { error } = await supabase.storage
-        .from(signed.bucket)
-        .uploadToSignedUrl(signed.path, signed.token, file, {
-          contentType: file.type,
-
-          cacheControl: "3600",
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from(signed.bucket)
-        .getPublicUrl(signed.path);
-
-      setForm((old) => ({
-        ...old,
-
-        imageUrl: publicUrlData.publicUrl,
-      }));
-
-      toast.success("تم رفع الصورة");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "تعذر رفع الصورة");
-    } finally {
-      setImageUploading(false);
-    }
-  }
-
-  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    if (file) {
-      void uploadImage(file);
-    }
-
-    event.target.value = "";
-  }
-
-  function onDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-
-    setDragActive(false);
-
-    const file = event.dataTransfer.files?.[0];
-
-    if (file) {
-      void uploadImage(file);
-    }
-  }
 
   function openCreateProduct() {
     setForm(EMPTY_FORM);
@@ -363,7 +273,8 @@ function ProductsPage() {
 
       currency: product.currency ?? "USD",
 
-      imageUrl: product.images?.[0] ?? "",
+      images: [...(product.images ?? [])],
+      videos: [...(product.videos ?? [])],
 
       isActive: product.is_active,
     });
@@ -385,6 +296,7 @@ function ProductsPage() {
         <Dialog
           open={productDialogOpen}
           onOpenChange={(open) => {
+            if (imageUploading || productMutation.isPending) return;
             setProductDialogOpen(open);
 
             if (!open) {
@@ -465,123 +377,27 @@ function ProductsPage() {
               <div className="space-y-2">
                 <Label>العملة</Label>
 
-                <Input
+                <select
+                  aria-label="العملة"
+                  className="w-full border rounded-md bg-background px-3 py-2 text-sm"
                   value={form.currency}
-                  onChange={(event) =>
-                    setForm((old) => ({
-                      ...old,
-
-                      currency: event.target.value.toUpperCase(),
-                    }))
-                  }
-                  maxLength={8}
-                  placeholder="USD"
-                  dir="ltr"
-                />
+                  onChange={(e) => setForm((old) => ({ ...old, currency: e.target.value }))}
+                >
+                  {!CURRENCY_CODES.includes(form.currency) && (
+                    <option value={form.currency}>{form.currency} — اختر عملة صحيحة</option>
+                  )}
+                  {CURRENCY_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {currencyName(code)}
+                    </option>
+                  ))}
+                </select>
               </div>
-
-              {/* Product image */}
-              <div className="space-y-2">
-                <Label>صورة المنتج</Label>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  onChange={onFileChange}
-                />
-
-                {form.imageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border bg-muted">
-                    <img
-                      src={form.imageUrl}
-                      alt="معاينة المنتج"
-                      className="w-full h-52 object-cover"
-                    />
-
-                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/70 to-transparent flex justify-between items-end">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={imageUploading}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <Upload className="h-4 w-4 ml-1.5" />
-                        تغيير الصورة
-                      </Button>
-
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="destructive"
-                        className="h-8 w-8"
-                        onClick={() =>
-                          setForm((old) => ({
-                            ...old,
-                            imageUrl: "",
-                          }))
-                        }
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onDragEnter={(event) => {
-                      event.preventDefault();
-
-                      setDragActive(true);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-
-                      setDragActive(true);
-                    }}
-                    onDragLeave={() => setDragActive(false)}
-                    onDrop={onDrop}
-                    onClick={() => !imageUploading && fileInputRef.current?.click()}
-                    className={cn(
-                      "border-2 border-dashed rounded-xl p-7 cursor-pointer transition-colors text-center",
-                      dragActive
-                        ? "border-primary bg-primary/5"
-                        : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/40",
-                      imageUploading && "opacity-60 cursor-wait",
-                    )}
-                  >
-                    <div className="h-12 w-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                      <Upload className="h-5 w-5 text-muted-foreground" />
-                    </div>
-
-                    <p className="font-medium text-sm mt-3">
-                      {imageUploading ? "جارِ رفع الصورة..." : "اضغط لاختيار صورة أو اسحبها هنا"}
-                    </p>
-
-                    <p className="text-xs text-muted-foreground mt-1">
-                      JPG, PNG, WebP أو GIF — حتى 5MB
-                    </p>
-                  </div>
-                )}
-
-                <div className="pt-1">
-                  <p className="text-xs text-muted-foreground mb-2">أو استخدم رابط صورة مباشر</p>
-
-                  <Input
-                    value={form.imageUrl}
-                    onChange={(event) =>
-                      setForm((old) => ({
-                        ...old,
-
-                        imageUrl: event.target.value,
-                      }))
-                    }
-                    placeholder="https://..."
-                    dir="ltr"
-                  />
-                </div>
-              </div>
+              <ProductMediaEditor
+                media={{ images: form.images, videos: form.videos }}
+                onChange={(media) => setForm((old) => ({ ...old, ...media }))}
+                onBusyChange={setImageUploading}
+              />
 
               <div className="space-y-2">
                 <Label>وصف المنتج</Label>
@@ -660,7 +476,13 @@ function ProductsPage() {
         <StatCard
           icon={<DollarSign className="h-5 w-5" />}
           label="قيمة المخزون"
-          value={inventoryValue.toLocaleString("ar")}
+          value={
+            <div className="space-y-1 text-sm">
+              {Object.entries(inventoryValue).map(([currency, value]) => (
+                <p key={currency}>{formatPrice(value, currency)}</p>
+              ))}
+            </div>
+          }
         />
       </div>
       <ProductAnalytics />
@@ -714,19 +536,14 @@ function ProductsPage() {
             {filteredProducts.map((product) => {
               const stock = getStock(product);
 
-              const image = product.images?.[0];
-
               return (
                 <Card key={product.id} className="overflow-hidden">
-                  <div className="aspect-[16/10] sm:aspect-[16/9] bg-muted relative overflow-hidden">
-                    {image ? (
-                      <img src={image} alt={product.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ImageIcon className="h-12 w-12 text-muted-foreground/40" />
-                      </div>
-                    )}
-
+                  <div className="relative">
+                    <ProductGallery
+                      images={product.images ?? []}
+                      videos={product.videos ?? []}
+                      name={product.name}
+                    />
                     <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex flex-wrap gap-1.5">
                       <Badge variant={product.is_active ? "default" : "secondary"}>
                         {product.is_active ? "نشط" : "غير نشط"}
@@ -758,6 +575,11 @@ function ProductsPage() {
                         {formatPrice(Number(product.price), product.currency)}
                       </p>
                     </div>
+
+                    <ProductStockSummary
+                      product={product}
+                      attributes={attributes as { id: string; name: string }[]}
+                    />
 
                     {product.description && (
                       <p className="text-sm text-muted-foreground mt-3 line-clamp-2 min-h-10">

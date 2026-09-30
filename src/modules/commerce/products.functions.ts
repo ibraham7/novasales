@@ -1,16 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-const ProductInput = z.object({
-  id: z.string().uuid().optional(),
-  name: z.string().trim().min(1).max(160),
-  sku: z.string().trim().max(80).nullable().optional(),
-  description: z.string().trim().max(5000).nullable().optional(),
-  price: z.number().nonnegative(),
-  currency: z.string().trim().min(3).max(8).default("USD"),
-  images: z.array(z.string().url()).max(12).default([]),
-  isActive: z.boolean().default(true),
-});
+import { ProductInput } from "./product-input";
 
 export const listProducts = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) =>
@@ -52,6 +43,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
       price: data.price,
       currency: data.currency.toUpperCase(),
       images: data.images,
+      videos: data.videos,
       is_active: data.isActive,
       updated_at: new Date().toISOString(),
     };
@@ -78,14 +70,12 @@ export const upsertProduct = createServerFn({ method: "POST" })
       .from("sales_inventory")
       .insert({ product_id: row.id, organization_id: organizationId, quantity: 0 });
     if (stockError) throw new Error(stockError.message);
-    const { error: variantError } = await db
-      .from("sales_product_variants")
-      .insert({
-        organization_id: organizationId,
-        product_id: row.id,
-        label: "أساسي — خصائص غير محددة",
-        is_default: true,
-      });
+    const { error: variantError } = await db.from("sales_product_variants").insert({
+      organization_id: organizationId,
+      product_id: row.id,
+      label: "أساسي — خصائص غير محددة",
+      is_default: true,
+    });
     if (variantError) throw new Error(variantError.message);
     return row;
   });

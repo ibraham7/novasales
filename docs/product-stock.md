@@ -17,3 +17,14 @@ Confirmation locks the order and all affected product balances in a consistent o
 - Execute `supabase/tests/product_stock_batches.sql` and `supabase/tests/product_stock_rls.sql` on a migrated database. Both roll back their fixtures. RLS test requires a non-admin test user.
 
 The schema migrations were applied to the connected Supabase project. Application code still requires deployment of the new build. No new environment variables or packages are required.
+
+## صور المنتج والفيديو والعملات
+
+- يمكن حفظ 12 صورة و4 فيديوهات لكل منتج، ورفع عدة ملفات دفعة واحدة.
+- الصور: JPG / PNG / WebP / GIF، حتى 5MB لكل صورة. الفيديو: MP4 / WebM، حتى 25MB لكل فيديو.
+- يمكن إضافة روابط ملفات مباشرة. الصورة الأولى غلاف ويمكن تغييرها دون حذف الصور الأخرى.
+- معرض الكتالوج يعرض الصور كاملة دون قص، مع تنقل ومعاينة مكبرة وتشغيل الفيديو.
+- قائمة العملات تعرض اسم العملة ورمزها، مثل الليرة التركية TRY والسورية SYP والدولار USD. لا يُكتب رمز ₺ أو $ في حقل العملة.
+- قيمة المخزون والإيرادات والخصومات تعرض منفصلة حسب العملة، دون تحويل تلقائي.
+- بطاقة المنتج والكتالوج داخل المحادثة يعرضان الكميات المتاحة حسب الخصائص ولكل متغير، مع استبعاد المنتهي.
+- إضافة اللون والمقاس: افتح الخصائص والدفعات، عرّف الخاصيتين، أنشئ متغيرًا لكل تركيبة، ثم أدخل كمية كل متغير في استلام دفعة.
