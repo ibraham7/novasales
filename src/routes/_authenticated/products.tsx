@@ -1,3 +1,7 @@
+import { ProductAttributeFields } from "@/components/commerce/product-attribute-fields";
+import { ProductFilters } from "@/components/commerce/product-filters";
+import { EMPTY_PRODUCT_FILTERS, filterProducts } from "@/modules/commerce/product-filters";
+import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
 import { ProductMediaEditor, ProductGallery } from "@/components/commerce/product-media";
 import { ProductStockSummary } from "@/components/commerce/product-stock-summary";
 import { listProductAttributes } from "@/modules/commerce/stock.functions";
@@ -63,6 +67,7 @@ type ProductRow = {
   currency: string;
   images: string[] | null;
   videos: string[] | null;
+  attributes: Record<string, AttributeValue>;
   sales_product_variants?: any[];
   is_active: boolean;
 
@@ -86,6 +91,7 @@ type ProductForm = {
   currency: string;
   images: string[];
   videos: string[];
+  attributes: Record<string, AttributeValue>;
   isActive: boolean;
 };
 
@@ -97,6 +103,7 @@ const EMPTY_FORM: ProductForm = {
   currency: "USD",
   images: [],
   videos: [],
+  attributes: {},
   isActive: true,
 };
 
@@ -142,6 +149,7 @@ function ProductsPage() {
   });
 
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState(EMPTY_PRODUCT_FILTERS);
 
   const [showInactive, setShowInactive] = useState(false);
 
@@ -168,20 +176,16 @@ function ProductsPage() {
       }),
   });
 
-  const filteredProducts = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    if (!q) {
-      return products as ProductRow[];
-    }
-
-    return (products as ProductRow[]).filter(
-      (product) =>
-        product.name.toLowerCase().includes(q) ||
-        product.sku?.toLowerCase().includes(q) ||
-        product.description?.toLowerCase().includes(q),
-    );
-  }, [products, search]);
+  const filteredProducts = useMemo(
+    () =>
+      filterProducts(
+        products as ProductRow[],
+        attributes as AttributeDefinition[],
+        filters,
+        search,
+      ) as ProductRow[],
+    [products, attributes, filters, search],
+  );
 
   const totalProducts = products.length;
 
@@ -220,6 +224,7 @@ function ProductsPage() {
           description: form.description.trim() || null,
 
           price,
+          attributes: form.attributes,
 
           currency: form.currency.trim().toUpperCase() || "USD",
 
@@ -275,6 +280,7 @@ function ProductsPage() {
 
       images: [...(product.images ?? [])],
       videos: [...(product.videos ?? [])],
+      attributes: { ...(product.attributes ?? {}) },
 
       isActive: product.is_active,
     });
@@ -393,6 +399,21 @@ function ProductsPage() {
                   ))}
                 </select>
               </div>
+              <div className="space-y-2">
+                <Label>حقول المنتج والأسعار المخصصة</Label>
+                <ProductAttributeFields
+                  definitions={(attributes as AttributeDefinition[]).filter(
+                    (a) => a.scope === "product",
+                  )}
+                  values={form.attributes}
+                  onChange={(values) => setForm((old) => ({ ...old, attributes: values }))}
+                  currency={form.currency}
+                />
+                <p className="text-xs text-muted-foreground">
+                  عرّف الحقول التي تحتاجها من «الخصائص والدفعات»؛ يمكنك تسميتها سعر التصنيع أو
+                  التكلفة أو أي اسم آخر.
+                </p>
+              </div>
               <ProductMediaEditor
                 media={{ images: form.images, videos: form.videos }}
                 onChange={(media) => setForm((old) => ({ ...old, ...media }))}
@@ -509,6 +530,17 @@ function ProductsPage() {
               {showInactive ? "إخفاء غير النشطة" : "عرض جميع المنتجات"}
             </Button>
           </div>
+          <div className="mt-3">
+            <ProductFilters
+              definitions={attributes as AttributeDefinition[]}
+              products={products as any[]}
+              value={filters}
+              onChange={setFilters}
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              النتائج: {filteredProducts.length} منتج
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -578,7 +610,7 @@ function ProductsPage() {
 
                     <ProductStockSummary
                       product={product}
-                      attributes={attributes as { id: string; name: string }[]}
+                      attributes={attributes as AttributeDefinition[]}
                     />
 
                     {product.description && (

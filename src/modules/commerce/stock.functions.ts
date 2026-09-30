@@ -1,3 +1,4 @@
+import { validateAttributes } from "./product-attributes";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
@@ -37,7 +38,9 @@ export const saveProductAttribute = createServerFn({ method: "POST" })
       .object({
         id: z.string().uuid().optional(),
         name: z.string().trim().min(1).max(80),
-        kind: z.enum(["text", "select", "multiselect", "number", "date"]),
+        kind: z.enum(["text", "select", "multiselect", "number", "date", "money"]),
+        scope: z.enum(["product", "variant"]).default("variant"),
+        isPriceFloor: z.boolean().default(false),
         options: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
       })
       .parse(d),
@@ -45,6 +48,10 @@ export const saveProductAttribute = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { db, organizationId } = await context("products.manage");
     const options = [...new Set(data.options)];
+    if (data.kind === "money" && data.scope !== "product")
+      throw new Error("حقول الأسعار تخص المنتج");
+    if (data.isPriceFloor && (data.kind !== "money" || data.scope !== "product"))
+      throw new Error("الحد الأدنى يتطلب حقل سعر للمنتج");
     if (["select", "multiselect"].includes(data.kind) && !options.length)
       throw new Error("أضف خيارًا واحدًا على الأقل");
     if (data.id) {
@@ -56,12 +63,22 @@ export const saveProductAttribute = createServerFn({ method: "POST" })
         .single();
       if (error) throw new Error(error.message);
       // Existing values must remain valid. Names can be edited and options extended.
-      if (old.kind !== data.kind || (old.options as string[]).some((v) => !options.includes(v)))
+      if (
+        old.kind !== data.kind ||
+        old.scope !== data.scope ||
+        (old.options as string[]).some((v) => !options.includes(v))
+      )
         throw new Error(
           "يمكن تعديل الاسم وإضافة خيارات؛ لتغيير النوع أو حذف خيارات أنشئ خاصية جديدة",
         );
     }
-    const row = { name: data.name, kind: data.kind, options };
+    const row = {
+      name: data.name,
+      kind: data.kind,
+      options,
+      scope: data.scope,
+      is_price_floor: data.isPriceFloor,
+    };
     const q = data.id
       ? db
           .from("sales_product_attributes")
@@ -99,22 +116,7 @@ export const createProductVariant = createServerFn({ method: "POST" })
       .eq("organization_id", organizationId);
     if (de) throw new Error(de.message);
     if (!Object.keys(data.attributes).length) throw new Error("حدد خاصية واحدة على الأقل للمتغير");
-    for (const [id, value] of Object.entries(data.attributes)) {
-      const def = definitions.find((a: any) => a.id === id);
-      if (!def) throw new Error("خاصية غير موجودة في المؤسسة");
-      let valid = false;
-      if (def.kind === "number") valid = typeof value === "number";
-      if (def.kind === "text") valid = typeof value === "string" && !!value.trim();
-      if (def.kind === "date") valid = DateValue.safeParse(value).success;
-      if (def.kind === "select") valid = typeof value === "string" && def.options.includes(value);
-      if (def.kind === "multiselect")
-        valid =
-          Array.isArray(value) &&
-          value.length > 0 &&
-          new Set(value).size === value.length &&
-          value.every((v) => def.options.includes(v));
-      if (!valid) throw new Error(`قيمة غير صالحة للخاصية: ${def.name}`);
-    }
+    validateAttributes(data.attributes, definitions, "variant");
     const attributes = Object.fromEntries(
       Object.entries(data.attributes).map(([id, v]) => [id, Array.isArray(v) ? [...v].sort() : v]),
     );

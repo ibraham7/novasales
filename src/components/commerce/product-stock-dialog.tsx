@@ -1,3 +1,5 @@
+import { ProductAttributeFields } from "./product-attribute-fields";
+import type { AttributeDefinition } from "@/modules/commerce/product-attributes";
 import { variantStock } from "@/modules/commerce/stock-summary";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -17,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type Attribute = { id: string; name: string; kind: string; options: string[] };
+type Attribute = AttributeDefinition;
 const selectClass = "w-full border rounded-md bg-background px-3 py-2 text-sm";
 
 export function ProductStockDialog({
@@ -48,8 +50,10 @@ export function ProductStockDialog({
   const [attribute, setAttribute] = useState({
     id: undefined as string | undefined,
     name: "",
-    kind: "text" as "text" | "select" | "multiselect" | "number" | "date",
+    kind: "text" as "text" | "select" | "multiselect" | "number" | "date" | "money",
     options: "",
+    scope: "variant" as "variant" | "product",
+    isPriceFloor: false,
   });
   const [values, setValues] = useState<Record<string, any>>({});
   const [label, setLabel] = useState("");
@@ -103,7 +107,14 @@ export function ProductStockDialog({
       ])
         qc.invalidateQueries({ queryKey: [key] });
       if (action === "attribute")
-        setAttribute({ id: undefined, name: "", kind: "text", options: "" });
+        setAttribute({
+          id: undefined,
+          name: "",
+          kind: "text",
+          options: "",
+          scope: "variant",
+          isPriceFloor: false,
+        });
       if (action === "variant") {
         setValues({});
         setLabel("");
@@ -224,72 +235,12 @@ export function ProductStockDialog({
               onChange={(e) => setLabel(e.target.value)}
               placeholder="مثال: أسود / M أو ذاكرة 16GB"
             />
-            {(attributes as Attribute[]).map((a) => (
-              <div key={a.id} className="space-y-1">
-                <label className="flex gap-2 items-center">
-                  <input
-                    type="checkbox"
-                    checked={a.id in values}
-                    onChange={(e) =>
-                      setValues((old) => {
-                        const next = { ...old };
-                        if (e.target.checked)
-                          next[a.id] = a.kind === "multiselect" ? [] : a.kind === "number" ? 0 : "";
-                        else delete next[a.id];
-                        return next;
-                      })
-                    }
-                  />
-                  {a.name}
-                </label>
-                {a.id in values &&
-                  (a.kind === "select" ? (
-                    <select
-                      aria-label={a.name}
-                      className={selectClass}
-                      value={values[a.id]}
-                      onChange={(e) => setValues({ ...values, [a.id]: e.target.value })}
-                    >
-                      <option value="">اختر قيمة</option>
-                      {a.options.map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                  ) : a.kind === "multiselect" ? (
-                    <div className="flex flex-wrap gap-3">
-                      {a.options.map((o) => (
-                        <label key={o} className="flex gap-1">
-                          <input
-                            type="checkbox"
-                            checked={values[a.id].includes(o)}
-                            onChange={(e) =>
-                              setValues({
-                                ...values,
-                                [a.id]: e.target.checked
-                                  ? [...values[a.id], o]
-                                  : values[a.id].filter((v: string) => v !== o),
-                              })
-                            }
-                          />
-                          {o}
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <Input
-                      aria-label={a.name}
-                      type={a.kind === "date" ? "date" : a.kind === "number" ? "number" : "text"}
-                      value={values[a.id]}
-                      onChange={(e) =>
-                        setValues({
-                          ...values,
-                          [a.id]: a.kind === "number" ? Number(e.target.value) : e.target.value,
-                        })
-                      }
-                    />
-                  ))}
-              </div>
-            ))}
+            <ProductAttributeFields
+              definitions={(attributes as Attribute[]).filter((a) => a.scope === "variant")}
+              values={values}
+              onChange={setValues}
+              currency={product?.currency}
+            />
             <Button
               disabled={mutation.isPending || !label || !Object.keys(values).length}
               onClick={() => mutation.mutate("variant")}
@@ -315,8 +266,17 @@ export function ProductStockDialog({
                             name: a.name,
                             kind: a.kind as typeof attribute.kind,
                             options: a.options.join("\n"),
+                            scope: a.scope,
+                            isPriceFloor: a.is_price_floor,
                           }
-                        : { id: undefined, name: "", kind: "text", options: "" },
+                        : {
+                            id: undefined,
+                            name: "",
+                            kind: "text",
+                            options: "",
+                            scope: "variant",
+                            isPriceFloor: false,
+                          },
                     );
                   }}
                 >
@@ -339,7 +299,12 @@ export function ProductStockDialog({
                   disabled={!!attribute.id}
                   value={attribute.kind}
                   onChange={(e) =>
-                    setAttribute({ ...attribute, kind: e.target.value as typeof attribute.kind })
+                    setAttribute({
+                      ...attribute,
+                      kind: e.target.value as typeof attribute.kind,
+                      scope: e.target.value === "money" ? "product" : attribute.scope,
+                      isPriceFloor: false,
+                    })
                   }
                 >
                   <option value="text">نص حر</option>
@@ -347,7 +312,36 @@ export function ProductStockDialog({
                   <option value="multiselect">اختيارات متعددة</option>
                   <option value="number">رقم</option>
                   <option value="date">تاريخ</option>
+                  <option value="money">سعر / مبلغ بعملة المنتج</option>
                 </select>
+                <select
+                  aria-label="مكان الخاصية"
+                  className={selectClass}
+                  disabled={!!attribute.id || attribute.kind === "money"}
+                  value={attribute.scope}
+                  onChange={(e) =>
+                    setAttribute({ ...attribute, scope: e.target.value as "product" | "variant" })
+                  }
+                >
+                  <option value="variant">خاصية تميز متغيرات المخزون (لون، مقاس…)</option>
+                  <option value="product">حقل عام للمنتج (تكلفة، مواصفات…)</option>
+                </select>
+                {attribute.kind === "money" && (
+                  <label className="flex gap-2 items-center text-sm">
+                    <input
+                      type="checkbox"
+                      checked={attribute.isPriceFloor}
+                      onChange={(e) =>
+                        setAttribute({ ...attribute, isPriceFloor: e.target.checked })
+                      }
+                    />
+                    استخدام هذا السعر حدًا أدنى للبيع
+                  </label>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  حقول المنتج تُملأ من تعديل المنتج. يُطبّق الحد الأدنى عند تعبئة قيمته للمنتج. حقول
+                  السعر تستخدم عملته؛ إذا فُعّل أكثر من حد أدنى يُطبّق الأعلى.
+                </p>
                 {["select", "multiselect"].includes(attribute.kind) && (
                   <textarea
                     aria-label="الخيارات"

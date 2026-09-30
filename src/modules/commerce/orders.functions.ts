@@ -1,3 +1,4 @@
+import { minimumPrice, validateSalePrice } from "./product-attributes";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
@@ -5,7 +6,7 @@ const OrderItem = z.object({
   productId: z.string().uuid(),
   batchId: z.string().uuid(),
   quantity: z.number().finite().positive().multipleOf(0.001),
-  soldUnitPrice: z.number().nonnegative().optional(),
+  soldUnitPrice: z.number().finite().nonnegative().optional(),
 });
 
 const CreateOrderInput = z.object({
@@ -141,6 +142,7 @@ export const createSalesOrder = createServerFn({
         price,
         currency,
         is_active,
+        attributes,
         sales_inventory(quantity)
       `,
       )
@@ -181,6 +183,11 @@ export const createSalesOrder = createServerFn({
      * Build order lines and validate inventory
      * --------------------------------------------------- */
 
+    const { data: definitions, error: definitionError } = await db
+      .from("sales_product_attributes")
+      .select("*")
+      .eq("organization_id", organizationId);
+    if (definitionError) throw new Error(definitionError.message);
     const lines = data.items.map((item) => {
       const product: any = productsById.get(item.productId);
 
@@ -204,6 +211,8 @@ export const createSalesOrder = createServerFn({
       const listPrice = Number(product.price);
 
       const soldPrice = item.soldUnitPrice ?? listPrice;
+      const minimumUnitPrice = minimumPrice(product.attributes, definitions ?? []);
+      validateSalePrice(soldPrice, listPrice, minimumUnitPrice);
 
       return {
         ...item,
@@ -211,6 +220,7 @@ export const createSalesOrder = createServerFn({
         batch,
         listPrice,
         soldPrice,
+        minimumUnitPrice,
         lineTotal: soldPrice * item.quantity,
       };
     });
@@ -293,6 +303,7 @@ export const createSalesOrder = createServerFn({
         list_unit_price: line.listPrice,
 
         sold_unit_price: line.soldPrice,
+        minimum_unit_price: line.minimumUnitPrice,
 
         line_total: line.lineTotal,
       })),

@@ -10,6 +10,16 @@ export const ProductInput = z.object({
   sku: z.string().trim().max(80).nullable().optional(),
   description: z.string().trim().max(5000).nullable().optional(),
   price: z.number().finite().nonnegative(),
+  attributes: z
+    .record(
+      z.string().uuid(),
+      z.union([
+        z.string().trim().max(500),
+        z.number().finite(),
+        z.array(z.string().trim().max(100)).max(100),
+      ]),
+    )
+    .optional(),
   currency: z
     .string()
     .trim()

@@ -1,3 +1,6 @@
+import type { AttributeDefinition } from "@/modules/commerce/product-attributes";
+import { ProductFilters } from "./product-filters";
+import { EMPTY_PRODUCT_FILTERS, filterProducts } from "@/modules/commerce/product-filters";
 import { ProductGallery } from "./product-media";
 import { ProductStockSummary } from "./product-stock-summary";
 import { variantStock } from "@/modules/commerce/stock-summary";
@@ -41,6 +44,7 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
   const [open, setOpen] = useState(false);
 
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState(EMPTY_PRODUCT_FILTERS);
 
   const [sendingProductId, setSendingProductId] = useState<string | null>(null);
 
@@ -57,19 +61,10 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
     enabled: open,
   });
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    if (!q) {
-      return products as any[];
-    }
-
-    return (products as any[]).filter((product) =>
-      [product.name, product.sku, product.description]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q)),
-    );
-  }, [products, search]);
+  const filtered = useMemo(
+    () => filterProducts(products as any[], attributes as AttributeDefinition[], filters, search),
+    [products, attributes, filters, search],
+  );
 
   const sendMutation = useMutation({
     mutationFn: async (productId: string) => {
@@ -126,7 +121,7 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
         </button>
       </DialogTrigger>
 
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" dir="rtl">
+      <DialogContent className="max-w-3xl max-h-[85dvh] overflow-y-auto flex flex-col" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShoppingBag className="h-5 w-5" />
@@ -145,7 +140,13 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto mt-4 pr-1">
+        <ProductFilters
+          products={products as any[]}
+          definitions={attributes as AttributeDefinition[]}
+          value={filters}
+          onChange={setFilters}
+        />
+        <div className="shrink-0 mt-4 pr-1">
           {isLoading ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               جارِ تحميل المنتجات...
@@ -191,7 +192,7 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
 
                       <ProductStockSummary
                         product={product}
-                        attributes={attributes as { id: string; name: string }[]}
+                        attributes={attributes as AttributeDefinition[]}
                       />
                       {product.description && (
                         <p className="text-sm text-muted-foreground line-clamp-2">

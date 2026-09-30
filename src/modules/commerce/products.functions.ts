@@ -1,3 +1,4 @@
+import { minimumPrice, validateAttributes } from "./product-attributes";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
@@ -25,7 +26,15 @@ export const listProducts = createServerFn({ method: "GET" })
       query = query.or(`name.ilike.%${data.search.trim()}%,sku.ilike.%${data.search.trim()}%`);
     const { data: rows, error } = await query;
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    const { data: defs, error: defsError } = await db
+      .from("sales_product_attributes")
+      .select("*")
+      .eq("organization_id", organizationId);
+    if (defsError) throw new Error(defsError.message);
+    return (rows ?? []).map((p: any) => ({
+      ...p,
+      minimum_price: minimumPrice(p.attributes, defs ?? []),
+    }));
   });
 
 export const upsertProduct = createServerFn({ method: "POST" })
@@ -35,7 +44,28 @@ export const upsertProduct = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { organizationId, userId } = await requirePermission("products.manage");
     const db = supabaseAdmin as any;
+    const { data: defs, error: defsError } = await db
+      .from("sales_product_attributes")
+      .select("*")
+      .eq("organization_id", organizationId);
+    if (defsError) throw new Error(defsError.message);
+    let values = data.attributes;
+    if (values === undefined && data.id) {
+      const { data: existing, error } = await db
+        .from("sales_products")
+        .select("attributes")
+        .eq("id", data.id)
+        .eq("organization_id", organizationId)
+        .single();
+      if (error) throw new Error(error.message);
+      values = existing.attributes;
+    }
+    values ??= {};
+    validateAttributes(values, defs ?? [], "product");
+    if (data.price < minimumPrice(values, defs ?? []))
+      throw new Error("سعر المبيع أقل من الحد الأدنى المحدد للتكلفة");
     const payload = {
+      attributes: values,
       organization_id: organizationId,
       name: data.name,
       sku: data.sku || null,

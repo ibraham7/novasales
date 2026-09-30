@@ -65,6 +65,7 @@ type Product = {
   sku: string | null;
   price: number;
   currency: string;
+  minimum_price?: number;
   images?: string[];
   sales_inventory?: { quantity: number } | { quantity: number }[];
 };
@@ -575,10 +576,14 @@ function SalesPage() {
 
                     <div>
                       <Label className="text-xs">سعر البيع</Label>
+                      <p className="text-xs text-muted-foreground">
+                        الحد الأدنى: {money(Number(product.minimum_price ?? 0), product.currency)}
+                      </p>
 
                       <Input
                         type="number"
-                        min={0}
+                        min={Number(product.minimum_price ?? 0)}
+                        max={Number(product.price)}
                         step="0.01"
                         value={line.soldUnitPrice}
                         onChange={(e) => {

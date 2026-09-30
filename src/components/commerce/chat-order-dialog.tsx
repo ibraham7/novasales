@@ -486,11 +486,19 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
 
                           <div>
                             <Label className="text-xs">سعر البيع</Label>
+                            <p className="text-xs text-muted-foreground">
+                              الحد الأدنى:{" "}
+                              {formatMoney(
+                                Number(line.product.minimum_price ?? 0),
+                                line.product.currency,
+                              )}
+                            </p>
 
                             <Input
                               className="mt-1"
                               type="number"
-                              min={0}
+                              min={Number(line.product.minimum_price ?? 0)}
+                              max={Number(line.product.price)}
                               step="0.01"
                               value={line.soldUnitPrice}
                               onChange={(e) => {
