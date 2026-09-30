@@ -1,0 +1,3 @@
+create index sales_batches_variant_scope_idx on public.sales_stock_batches(organization_id,product_id,variant_id);
+create index sales_items_batch_scope_idx on public.sales_order_items(organization_id,product_id,batch_id);
+create index sales_movements_batch_scope_idx on public.sales_inventory_movements(organization_id,product_id,batch_id);
