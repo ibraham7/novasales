@@ -1,3 +1,4 @@
+import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
 import { ProductAttributeFields } from "@/components/commerce/product-attribute-fields";
 import { ProductFilters } from "@/components/commerce/product-filters";
 import { EMPTY_PRODUCT_FILTERS, filterProducts } from "@/modules/commerce/product-filters";
@@ -155,6 +156,7 @@ function ProductsPage() {
 
   const [productDialogOpen, setProductDialogOpen] = useState(false);
 
+  const platform = usePlatformSettings();
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
 
   const [imageUploading, setImageUploading] = useState(false);
@@ -259,7 +261,7 @@ function ProductsPage() {
   });
 
   function openCreateProduct() {
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, currency: platform.default_currency });
 
     setProductDialogOpen(true);
   }

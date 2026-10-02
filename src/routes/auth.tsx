@@ -1,3 +1,4 @@
+import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,6 +37,7 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
+  const platform = usePlatformSettings();
   const navigate = useNavigate();
   const search = useSearch({ from: "/auth" });
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -98,13 +100,14 @@ function AuthPage() {
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 text-primary">
             <MessageCircle className="h-8 w-8" />
-            <h1 className="text-2xl font-bold">NovaSales</h1>
+            <h1 className="text-2xl font-bold break-words">{platform.platform_name}</h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            {mode === "signup" ? "إنشاء حساب جديد" : "منصة إدارة عمليات المبيعات"}
+            {mode === "signup" ? "إنشاء حساب جديد" : platform.login_description}
           </p>
         </div>
 
+        {platform.support_email && <a className="block text-center text-sm text-primary mb-3" href={`mailto:${platform.support_email}`}>تواصل مع الدعم</a>}
         <form noValidate onSubmit={onSubmit} className="space-y-4">
           {mode === "signup" && (
             <div className="space-y-2">

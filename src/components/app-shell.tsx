@@ -1,3 +1,4 @@
+import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
 import { RealtimeNotifications } from "@/components/realtime-notifications";
 
 import {
@@ -211,6 +212,7 @@ export function AppShell({
   const location = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const platform = usePlatformSettings();
 
   const [
     mobileMenuOpen,
@@ -309,7 +311,7 @@ export function AppShell({
           <MessageCircle className="h-7 w-7" />
 
           <span className="text-xl font-bold">
-            NovaSales
+            {platform.platform_name}
           </span>
         </Link>
 
@@ -431,7 +433,7 @@ export function AppShell({
         >
           <MessageCircle className="h-5 w-5 text-primary" />
 
-          NovaSales
+          {platform.platform_name}
         </Link>
 
         <div className="w-9" />
