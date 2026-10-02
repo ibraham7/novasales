@@ -6,7 +6,6 @@ export {
   funnelStages,
 } from "./contacts.functions";
 
-
 export {
   OPP_STAGES,
   STAGE_LABEL_AR,
@@ -39,6 +38,8 @@ export {
 // Leads
 export {
   listLeads,
+  listLeadPage,
+  getLeadOptions,
   getLead,
   createLead,
   updateLead,
@@ -68,12 +69,7 @@ export {
 } from "./tags.functions";
 
 // Files
-export {
-  listFiles,
-  createUploadUrl,
-  registerFile,
-  deleteFile,
-} from "./files.functions";
+export { listFiles, createUploadUrl, registerFile, deleteFile } from "./files.functions";
 
 // Custom Fields
 export {
@@ -84,7 +80,4 @@ export {
   reorderFieldDefs,
 } from "./custom-fields.functions";
 
-export {
-  updateEntityCustomFields,
-  getEntityCustomFields,
-} from "./custom-fields-values.functions";
+export { updateEntityCustomFields, getEntityCustomFields } from "./custom-fields-values.functions";

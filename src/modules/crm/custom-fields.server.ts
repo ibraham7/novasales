@@ -1,14 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export type FieldType =
-  | "text"
-  | "number"
-  | "date"
-  | "select"
-  | "multiselect"
-  | "boolean"
-  | "phone"
-  | "email";
+  "text" | "number" | "date" | "select" | "multiselect" | "boolean" | "phone" | "email";
 
 export type Visibility = "everyone" | "agent" | "supervisor" | "admin" | "owner";
 
@@ -54,7 +47,7 @@ const VIS_LEVEL: Record<Visibility, number> = {
 };
 
 export function canSeeField(def: FieldDef, role: string | null | undefined): boolean {
-  const level = role ? ROLE_LEVEL[role] ?? 0 : 0;
+  const level = role ? (ROLE_LEVEL[role] ?? 0) : 0;
   return level >= VIS_LEVEL[def.visibility];
 }
 
@@ -93,6 +86,14 @@ export async function validateAndApplyCustomFields(
   const values = { ...existing, ...(incoming ?? {}) };
 
   for (const def of defs) {
+    // Hidden definitions cannot be supplied or made mandatory for the current editor.
+    if (opts.role && !canSeeField(def, opts.role)) {
+      if (existing[def.key] !== undefined) values[def.key] = existing[def.key];
+      else if (def.default_value !== null && def.default_value !== undefined)
+        values[def.key] = def.default_value;
+      else delete values[def.key];
+      continue;
+    }
     // Apply defaults if missing
     if (isEmpty(values[def.key]) && def.default_value !== null && def.default_value !== undefined) {
       values[def.key] = def.default_value;

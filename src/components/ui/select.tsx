@@ -15,7 +15,8 @@ const SelectValue = SelectPrimitive.Value;
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & { required?: boolean }
->(({ className, children, required, ...props }, ref) => (
+>(({ className, children, required, ...props }, ref) => {
+  const control = (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -27,12 +28,20 @@ const SelectTrigger = React.forwardRef<
     aria-required={required || undefined}
   >
     {children}
-    {required && <span className="text-xs text-muted-foreground">إلزامي *</span>}
     <SelectPrimitive.Icon asChild>
       <ChevronDown className="h-4 w-4 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
-));
+  );
+  return required ? (
+    <div className="min-w-0 w-full">
+      <span className="mb-1 block text-xs text-muted-foreground">
+        إلزامي <span className="text-destructive" aria-hidden="true">*</span>
+      </span>
+      {control}
+    </div>
+  ) : control;
+});
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
 const SelectScrollUpButton = React.forwardRef<
