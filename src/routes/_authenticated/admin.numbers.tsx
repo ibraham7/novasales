@@ -15,6 +15,7 @@ import { listProvidersFn, moveSessionProviderFn } from "@/modules/channels/whats
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { arabicError } from "@/lib/validation";
 import { toast } from "@/lib/toast";
 import { Activity, ShieldAlert, ShieldCheck, Clock, Pause, Play, Ban, GitCompare, Smartphone, MonitorSmartphone, Server, Plug, ArrowLeftRight, Bug } from "lucide-react";
 
@@ -70,7 +71,9 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
 function ComparisonSection() {
   const fn = useServerFn(getRiskComparison);
   const q = useQuery({ queryKey: ["admin-risk-comparison"], queryFn: () => fn() });
-  if (q.isLoading || !q.data) return null;
+  if (q.isLoading) return <div role="status" className="text-sm text-muted-foreground">جارِ تحميل الإحصاءات...</div>;
+  if (q.isError) return <div role="alert" className="text-sm text-destructive">{arabicError(q.error)} <Button variant="outline" onClick={() => q.refetch()}>إعادة المحاولة</Button></div>;
+  if (!q.data) return null;
   const rows: Array<{ label: string; key: string; unit?: string }> = [
     { label: "تأخير أول رسالة صادرة", key: "first_outbound_delay_minutes", unit: "دقيقة" },
     { label: "نسبة الردود", key: "reply_rate", unit: "%" },
@@ -109,7 +112,7 @@ function ComparisonSection() {
               <tr className="text-muted-foreground">
                 <th className="text-right py-1">المؤشر</th>
                 <th className="py-1">سليمة</th>
-                <th className="py-1">مقيّدة (الآن)</th>
+                <th className="py-1">سبق تقييدها — حاليًا</th>
                 <th className="py-1">وقت التقييد</th>
               </tr>
             </thead>
@@ -137,7 +140,9 @@ function ComparisonSection() {
 function ProviderStatsSection() {
   const fn = useServerFn(getProviderStats);
   const q = useQuery({ queryKey: ["admin-provider-stats"], queryFn: () => fn(), refetchInterval: 60000 });
-  if (q.isLoading || !q.data) return null;
+  if (q.isLoading) return <div role="status" className="text-sm text-muted-foreground">جارِ تحميل الإحصاءات...</div>;
+  if (q.isError) return <div role="alert" className="text-sm text-destructive">{arabicError(q.error)} <Button variant="outline" onClick={() => q.refetch()}>إعادة المحاولة</Button></div>;
+  if (!q.data) return null;
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -224,7 +229,7 @@ function NumberDebugPanel({ accountId, onMoved }: { accountId: string; onMoved: 
   });
 
   if (q.isLoading) return <div className="text-xs text-muted-foreground">جاري فحص المحرّك...</div>;
-  if (q.error) return <div className="text-xs text-destructive">{(q.error as Error).message}</div>;
+  if (q.error) return <div className="text-xs text-destructive">{arabicError(q.error)}</div>;
   const d: any = q.data;
   const others = ((providersQ.data ?? []) as any[]).filter((p) => p.id !== d.provider && p.enabled);
   return (
@@ -302,6 +307,8 @@ function AdminNumbers() {
   });
 
   const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["admin-provider-stats"] });
+    qc.invalidateQueries({ queryKey: ["admin-number-debug"] });
     qc.invalidateQueries({ queryKey: ["admin-numbers"] });
     qc.invalidateQueries({ queryKey: ["admin-risk-comparison"] });
   };
@@ -334,7 +341,7 @@ function AdminNumbers() {
   });
 
   if (q.isLoading) return <div className="text-sm text-muted-foreground">جاري التحميل...</div>;
-  if (q.error) return <div className="text-sm text-destructive">{(q.error as Error).message}</div>;
+  if (q.error) return <div className="text-sm text-destructive">{arabicError(q.error)}</div>;
 
   return (
     <div className="space-y-4">
@@ -445,7 +452,7 @@ function AdminNumbers() {
                     tone={n.restriction_count > 0 ? "bad" : "good"}
                   />
                   <Stat label="آخر تقييد" value={fmt(n.last_restricted_at)} />
-                  <Stat label="حملات المؤسسة" value={n.campaigns_count} />
+                  <Stat label="حملات المؤسسة" value={n.campaigns_count ?? "غير متاح"} />
                 </div>
                 {n.rule_reasons?.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-1">
@@ -486,37 +493,37 @@ function AdminNumbers() {
               <div className="flex flex-wrap gap-2 pt-1">
                 {n.health_state === "observation" ? (
                   <>
-                    <Button validate size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "end_observation" })}>
+                    <Button disabled={control.isPending || restrict.isPending || recover.isPending} validate size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "end_observation" })}>
                       إنهاء المراقبة
                     </Button>
-                    <Button validate size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "extend_observation", hours: 24 })}>
+                    <Button disabled={control.isPending || restrict.isPending || recover.isPending} validate size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "extend_observation", hours: 24 })}>
                       تمديد 24 ساعة
                     </Button>
                   </>
                 ) : (
-                  <Button validate size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "start_observation", hours: 48 })}>
+                  <Button disabled={control.isPending || restrict.isPending || recover.isPending} validate size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "start_observation", hours: 48 })}>
                     بدء مراقبة 48 ساعة
                   </Button>
                 )}
                 {n.send_paused ? (
-                  <Button size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "resume_sending" })}>
+                  <Button disabled={control.isPending} size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "resume_sending" })}>
                     <Play className="h-3.5 w-3.5 ml-1" /> استئناف الإرسال
                   </Button>
                 ) : (
-                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => control.mutate({ accountId: n.id, action: "pause_sending" })}>
+                  <Button disabled={control.isPending} size="sm" variant="ghost" className="text-destructive" onClick={() => control.mutate({ accountId: n.id, action: "pause_sending" })}>
                     <Pause className="h-3.5 w-3.5 ml-1" /> إيقاف الإرسال
                   </Button>
                 )}
                 {n.is_restricted_now ? (
-                  <Button validate size="sm" variant="outline" onClick={() => recover.mutate(n.id)}>
+                  <Button disabled={control.isPending || restrict.isPending || recover.isPending} validate size="sm" variant="outline" onClick={() => recover.mutate(n.id)}>
                     تم رفع التقييد
                   </Button>
                 ) : (
-                  <Button validate size="sm" variant="ghost" className="text-destructive" onClick={() => restrict.mutate(n.id)}>
+                  <Button disabled={control.isPending || restrict.isPending || recover.isPending} validate size="sm" variant="ghost" className="text-destructive" onClick={() => restrict.mutate(n.id)}>
                     <Ban className="h-3.5 w-3.5 ml-1" /> تسجيل تقييد الآن
                   </Button>
                 )}
-                <Button validate size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "reset_score" })}>
+                <Button disabled={control.isPending || restrict.isPending || recover.isPending} validate size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "reset_score" })}>
                   تصفير الدرجة
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setOpenDecisions(openDecisions === n.id ? null : n.id)}>
@@ -539,6 +546,7 @@ function AdminNumbers() {
 
               {openDecisions === n.id && (
                 <div className="rounded-md border p-2 text-xs space-y-1 max-h-64 overflow-auto">
+                  {decisionsQ.isError && <div role="alert" className="text-destructive">{arabicError(decisionsQ.error)}</div>}
                   {decisionsQ.isLoading && <div className="text-muted-foreground">جاري التحميل...</div>}
                   {(decisionsQ.data ?? []).map((d: any) => (
                     <div key={d.id} className="flex flex-wrap items-center gap-2">
@@ -550,7 +558,7 @@ function AdminNumbers() {
                       {d.failed_rules?.length > 0 && <span className="text-destructive">{d.failed_rules.join(", ")}</span>}
                     </div>
                   ))}
-                  {(decisionsQ.data ?? []).length === 0 && !decisionsQ.isLoading && (
+                  {(decisionsQ.data ?? []).length === 0 && !decisionsQ.isLoading && !decisionsQ.isError && (
                     <div className="text-muted-foreground">لا توجد قرارات مسجّلة.</div>
                   )}
                 </div>

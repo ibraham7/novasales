@@ -5,7 +5,8 @@ async function ctx() {
   const { getWorkspace } = await import("@/platform/workspace/workspace.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const ws = await getWorkspace();
-  return { db: supabaseAdmin as any, ...ws };
+  const { checkedDb } = await import("./query.server");
+  return { db: checkedDb(supabaseAdmin), ...ws };
 }
 
 async function requireSuperAdmin() {
@@ -40,10 +41,11 @@ export const getNumbersActivity = createServerFn({ method: "GET" }).handler(asyn
   const { db } = await requireSuperAdmin();
   const { collectNumberMetrics, loadRiskRules, applyRiskRules } = await import("./risk.server");
 
-  const [{ data: accounts }, { data: plugins }, { data: orgs }, rules] = await Promise.all([
-    db.from("msg_channel_accounts").select("*").order("created_at", { ascending: false }),
-    db.from("plugin_whatsapp_evolution_instances").select("channel_account_id, phone_number, instance_name, raw_state"),
-    db.from("organizations").select("id, name"),
+  const { readAllRows } = await import("./query.server");
+  const [accounts, plugins, orgs, rules] = await Promise.all([
+    readAllRows(() => db.from("msg_channel_accounts").select("*").order("created_at", { ascending: false }).order("id")),
+    readAllRows(() => db.from("plugin_whatsapp_evolution_instances").select("id, channel_account_id, phone_number, instance_name, raw_state").order("id")),
+    readAllRows(() => db.from("organizations").select("id, name").order("id")),
     loadRiskRules(),
   ]);
   const pluginBy = new Map<string, any>((plugins ?? []).map((p: any) => [p.channel_account_id, p]));
@@ -86,7 +88,7 @@ export const getNumbersActivity = createServerFn({ method: "GET" }).handler(asyn
         health_events_total: healthCount ?? 0,
         recent_events: lastEvents ?? [],
         restrictions: restrictions ?? [],
-        is_restricted_now: (restrictions ?? []).some((r: any) => !r.ended_at),
+        is_restricted_now: await db.from("wa_number_restrictions").select("id", { count: "exact", head: true }).eq("channel_account_id", a.id).is("ended_at", null).then((r: any) => (r.count ?? 0) > 0),
         rule_points: evaluation.points,
         rule_reasons: evaluation.reasons,
         ...metrics,
@@ -101,14 +103,15 @@ export const getNumbersActivity = createServerFn({ method: "GET" }).handler(asyn
 export const getRiskComparison = createServerFn({ method: "GET" }).handler(async () => {
   const { db } = await requireSuperAdmin();
   const { collectNumberMetrics } = await import("./risk.server");
-  const { data: accounts } = await db.from("msg_channel_accounts").select("*");
+  const { readAllRows } = await import("./query.server");
+  const accounts = await readAllRows(() => db.from("msg_channel_accounts").select("*").order("id"));
 
   const restrictedIds = new Set<string>(
-    ((await db.from("wa_number_restrictions").select("channel_account_id")).data ?? []).map(
+    (await readAllRows(() => db.from("wa_number_restrictions").select("id, channel_account_id").order("id"))).map(
       (r: any) => r.channel_account_id,
     ),
   );
-  const snapshots = ((await db.from("wa_number_restrictions").select("snapshot")).data ?? [])
+  const snapshots = (await readAllRows(() => db.from("wa_number_restrictions").select("id, snapshot").order("id")))
     .map((r: any) => r.snapshot)
     .filter(Boolean);
 
@@ -120,7 +123,7 @@ export const getRiskComparison = createServerFn({ method: "GET" }).handler(async
   }
 
   const avg = (rows: any[], key: string) => {
-    const vals = rows.map((r) => Number(r?.[key] ?? 0)).filter((v) => Number.isFinite(v));
+    const vals = rows.filter((r) => r?.[key] !== null && r?.[key] !== undefined).map((r) => Number(r[key])).filter((v) => Number.isFinite(v));
     if (!vals.length) return 0;
     return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
   };
@@ -174,7 +177,8 @@ export const updateRiskRule = createServerFn({ method: "POST" })
     if (data.threshold !== undefined) patch.threshold = data.threshold;
     if (data.weight !== undefined) patch.weight = data.weight;
     if (data.is_enabled !== undefined) patch.is_enabled = data.is_enabled;
-    await db.from("wa_risk_rules").update(patch).eq("key", data.key);
+    const { data: updated } = await db.from("wa_risk_rules").update(patch).eq("key", data.key).select("key").maybeSingle();
+    if (!updated) throw new Error("قاعدة الخطورة غير موجودة");
     return { ok: true };
   });
 
@@ -210,7 +214,8 @@ export const endRestriction = createServerFn({ method: "POST" })
     await requireSuperAdmin();
     const { closeRestriction } = await import("./risk.server");
     const closed = await closeRestriction(data.accountId);
-    return { ok: closed };
+    if (!closed) throw new Error("لا يوجد تقييد نشط لهذا الرقم");
+    return { ok: true };
   });
 
 
@@ -237,56 +242,7 @@ export const setNumberRiskControls = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { db } = await requireSuperAdmin();
-    const { recomputeRisk } = await import("./risk.server");
-    const { data: acc } = await db
-      .from("msg_channel_accounts")
-      .select("id, organization_id, observation_started_at, observation_hours")
-      .eq("id", data.accountId)
-      .maybeSingle();
-    if (!acc) throw new Error("الرقم غير موجود");
-
-    const patch: Record<string, unknown> = {};
-    switch (data.action) {
-      case "start_observation":
-        patch.observation_started_at = new Date().toISOString();
-        patch.observation_hours = data.hours ?? 48;
-        patch.observation_source = "manual";
-        patch.health_state = "observation";
-        break;
-      case "extend_observation":
-        patch.observation_hours = (acc.observation_hours ?? 48) + (data.hours ?? 24);
-        patch.observation_source = "manual";
-        break;
-      case "end_observation":
-        patch.observation_started_at = null;
-        patch.health_state = "stable";
-        break;
-      case "pause_sending":
-        patch.send_paused_at = new Date().toISOString();
-        patch.health_state = "high_risk";
-        break;
-      case "resume_sending":
-        patch.send_paused_at = null;
-        break;
-      case "reset_score":
-        patch.risk_score = 0;
-        patch.send_paused_at = null;
-        break;
-    }
-    await db.from("msg_channel_accounts").update(patch).eq("id", data.accountId);
-    if (data.action === "reset_score") {
-      await db
-        .from("wa_number_health_events")
-        .delete()
-        .eq("channel_account_id", data.accountId);
-    }
-    await recomputeRisk(acc.organization_id, data.accountId);
-    await db.from("platform_audit_log").insert({
-      action: `wa_number.${data.action}`,
-      target_type: "channel_account",
-      target_id: data.accountId,
-      metadata: { hours: data.hours ?? null },
-    });
+    const { db, userId } = await requireSuperAdmin();
+    await db.rpc("wa_apply_control", { _account: data.accountId, _action: data.action, _hours: data.hours ?? null, _actor: userId });
     return { ok: true };
   });

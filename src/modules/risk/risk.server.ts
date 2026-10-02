@@ -13,7 +13,8 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const db = supabaseAdmin as any;
+import { checkedDb, readAllRows } from "./query.server";
+const db = checkedDb(supabaseAdmin);
 
 export type SendSource = "manual" | "welcome" | "campaign" | "automation" | "forward";
 export type HealthState = "stable" | "observation" | "watch" | "high_risk";
@@ -123,7 +124,7 @@ export async function riskGuard(input: {
     .eq("id", input.accountId)
     .maybeSingle();
 
-  if (!account) return { allowed: true, health_state: "stable", passed: ["account_missing"], failed };
+  if (!account) throw new Error("الرقم غير موجود؛ تعذر التحقق من سلامة الإرسال");
 
   const state = resolveHealthState(account);
   const caps = CAPS[state];
@@ -205,41 +206,7 @@ export async function recordOutbound(input: {
   origin?: "phone" | "system";
 }) {
   if (!input.accountId) return;
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const buckets: Array<{ bucket: "hour" | "day"; key: string }> = [
-    { bucket: "hour", key: hourKey(now) },
-    { bucket: "day", key: dayKey(now) },
-  ];
-  await Promise.all([
-    ...buckets.map(async ({ bucket, key }) => {
-      const current = await getQuota(input.accountId!, bucket, key);
-      await db.from("wa_send_quotas").upsert(
-        {
-          organization_id: input.orgId,
-          channel_account_id: input.accountId,
-          bucket,
-          bucket_key: key,
-          messages: current.messages + 1,
-          new_conversations: current.new_conversations + (input.isNewConversation ? 1 : 0),
-        },
-        { onConflict: "channel_account_id,bucket,bucket_key" },
-      );
-    }),
-    db
-      .from("msg_channel_accounts")
-      .update({ last_outbound_at: nowIso })
-      .eq("id", input.accountId),
-    db
-      .from("msg_channel_accounts")
-      .update({
-        first_outbound_at: nowIso,
-        first_outbound_source: input.origin ?? "system",
-        first_outbound_kind: input.isNewConversation ? "new_conversation" : "reply",
-      })
-      .eq("id", input.accountId)
-      .is("first_outbound_at", null),
-  ]);
+  await db.rpc("wa_count_outbound", { _org: input.orgId, _account: input.accountId, _new: !!input.isNewConversation, _origin: input.origin ?? "system" });
 }
 
 
@@ -270,11 +237,7 @@ export async function recordHealthEvent(input: {
 
 export async function recomputeRisk(orgId: string, accountId: string) {
   const since = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
-  const { data: events } = await db
-    .from("wa_number_health_events")
-    .select("event_type")
-    .eq("channel_account_id", accountId)
-    .gte("created_at", since);
+  const events = await readAllRows(() => db.from("wa_number_health_events").select("id, event_type").eq("channel_account_id", accountId).gte("created_at", since).order("id"));
   const score = (events ?? []).reduce(
     (sum: number, e: any) => sum + (EVENT_WEIGHTS[e.event_type] ?? 0),
     0,
@@ -343,7 +306,7 @@ export type NumberMetrics = {
   was_under_observation: boolean;
   risk_score: number;
   health_state: HealthState;
-  campaigns_count: number;
+  campaigns_count: number | null;
 };
 
 const URL_RE = /https?:\/\//i;
@@ -361,22 +324,18 @@ export async function collectNumberMetrics(accountId: string, account?: any): Pr
   const d7 = new Date(now - 7 * 24 * 3600_000).toISOString();
   const linkedAt = acc.linked_at ?? acc.created_at ?? null;
 
-  const { data: sessions } = await db
-    .from("msg_sessions")
-    .select("id, created_at")
-    .eq("channel_account_id", accountId);
+  const sessions = await readAllRows(() => db.from("msg_sessions").select("id, created_at").eq("channel_account_id", accountId).order("id"));
   const sessionIds = (sessions ?? []).map((s: any) => s.id);
 
   let msgs: any[] = [];
-  if (sessionIds.length) {
-    const { data } = await db
-      .from("msg_messages")
-      .select("session_id, direction, created_at, sent_by_user_id, is_internal, message_type, content")
-      .in("session_id", sessionIds)
-      .order("created_at", { ascending: true })
-      .limit(20000);
-    msgs = (data ?? []).filter((m: any) => !m.is_internal);
+  for (let i = 0; i < sessionIds.length; i += 100) {
+    const ids = sessionIds.slice(i, i + 100);
+    const page = await readAllRows(() => db.from("msg_messages")
+      .select("id, session_id, direction, created_at, sent_by_user_id, is_internal, message_type, content")
+      .in("session_id", ids).order("created_at").order("id"));
+    msgs.push(...page.filter((m: any) => !m.is_internal));
   }
+  msgs.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
 
   let outbound = 0,
     inbound = 0,
@@ -442,7 +401,7 @@ export async function collectNumberMetrics(accountId: string, account?: any): Pr
         .order("detected_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      db
+      (supabaseAdmin as any)
         .from("cmp_campaigns")
         .select("id", { count: "exact", head: true })
         .eq("organization_id", acc.organization_id ?? "00000000-0000-0000-0000-000000000000"),
@@ -482,7 +441,7 @@ export async function collectNumberMetrics(accountId: string, account?: any): Pr
     was_under_observation: observationRemainingMs(acc) > 0,
     risk_score: acc.risk_score ?? 0,
     health_state: resolveHealthState(acc),
-    campaigns_count: campaignsCount ?? 0,
+    campaigns_count: campaignsCount ?? null,
   };
 }
 
@@ -556,72 +515,18 @@ export async function openRestriction(input: {
   notes?: string | null;
   createdBy?: string | null;
 }) {
-  const { data: existing } = await db
-    .from("wa_number_restrictions")
-    .select("id")
-    .eq("channel_account_id", input.accountId)
-    .is("ended_at", null)
-    .maybeSingle();
-  if (existing) return existing.id as string;
-
   const metrics = await collectNumberMetrics(input.accountId);
   const rules = await loadRiskRules();
   const evaluation = applyRiskRules(metrics, rules);
-
-  const { data: row } = await db
-    .from("wa_number_restrictions")
-    .insert({
-      organization_id: input.orgId,
-      channel_account_id: input.accountId,
-      detection_source: input.source,
-      reason: input.reason ?? null,
-      notes: input.notes ?? null,
-      created_by: input.createdBy ?? null,
-      snapshot: { ...metrics, rule_points: evaluation.points, rule_reasons: evaluation.reasons },
-    })
-    .select("id")
-    .maybeSingle();
-
-  const { data: acc } = await db
-    .from("msg_channel_accounts")
-    .select("restriction_count")
-    .eq("id", input.accountId)
-    .maybeSingle();
-  await db
-    .from("msg_channel_accounts")
-    .update({
-      restriction_count: (acc?.restriction_count ?? 0) + 1,
-      last_restricted_at: new Date().toISOString(),
-      send_paused_at: new Date().toISOString(),
-    })
-    .eq("id", input.accountId);
-
-  await recordHealthEvent({
-    orgId: input.orgId,
-    accountId: input.accountId,
-    eventType: "restricted",
-    detail: { source: input.source, reason: input.reason ?? null },
+  const { data: id } = await db.rpc("wa_open_restriction", {
+    _org: input.orgId, _account: input.accountId, _source: input.source,
+    _reason: input.reason ?? null, _notes: input.notes ?? null, _actor: input.createdBy ?? null,
+    _snapshot: { ...metrics, rule_points: evaluation.points, rule_reasons: evaluation.reasons },
   });
-
-  return row?.id as string | undefined;
+  return id as string;
 }
 
-/** Close the open restriction for a number (recovery) and compute its duration. */
 export async function closeRestriction(accountId: string) {
-  const { data: open } = await db
-    .from("wa_number_restrictions")
-    .select("id, detected_at")
-    .eq("channel_account_id", accountId)
-    .is("ended_at", null)
-    .maybeSingle();
-  if (!open) return false;
-  const endedAt = new Date();
-  await db
-    .from("wa_number_restrictions")
-    .update({
-      ended_at: endedAt.toISOString(),
-      duration_minutes: Math.max(0, Math.round((endedAt.getTime() - new Date(open.detected_at).getTime()) / 60_000)),
-    })
-    .eq("id", open.id);
-  return true;
+  const { data: closed } = await db.rpc("wa_close_restriction", { _account: accountId });
+  return closed === true;
 }

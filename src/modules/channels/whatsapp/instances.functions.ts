@@ -327,7 +327,12 @@ export const moveSessionProviderFn = createServerFn({ method: "POST" })
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const { resolveAccountProvider, getProvider } = await import("./registry.server");
     const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const ws = await getWorkspace();
+    const { resolveMoveOrganization } = await import("./move-access.server");
+    const organizationId = await resolveMoveOrganization(db, ws, data.id, async () => {
+      const { requirePermission } = await import("@/platform/rbac/rbac.server");
+      return requirePermission("org.manage");
+    });
     const acc = await loadAcc(organizationId, data.id);
     if (!acc) throw new Error("جلسة غير موجودة");
 

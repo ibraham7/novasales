@@ -1,0 +1,35 @@
+begin;
+do $$
+declare o uuid; other_o uuid; c uuid; a uuid; rid uuid; rid2 uuid; failed boolean;
+begin
+ insert into organizations(name,slug) values('Health test','health-test-'||gen_random_uuid()) returning id into o;
+ insert into organizations(name,slug) values('Other health test','other-health-'||gen_random_uuid()) returning id into other_o;
+ insert into msg_channels(organization_id,name,channel_type,provider) values(o,'test','whatsapp','evolution') returning id into c;
+ insert into msg_channel_accounts(organization_id,channel_id,display_name) values(o,c,'Test number') returning id into a;
+ rid:=wa_open_restriction(o,a,'manual','manual',null,null,'{}');
+ rid2:=wa_open_restriction(o,a,'manual','manual',null,null,'{}');
+ if rid<>rid2 or (select count(*) from wa_number_restrictions where channel_account_id=a)<>1 or (select restriction_count from msg_channel_accounts where id=a)<>1 then raise exception 'duplicate restriction'; end if;
+ if not wa_close_restriction(a) or wa_close_restriction(a) then raise exception 'close restriction'; end if;
+ if exists(select 1 from wa_number_restrictions where id=rid and (ended_at is null or duration_minutes is null)) then raise exception 'missing end'; end if;
+ perform wa_apply_control(a,'reset_score',null,null);
+ if (select count(*) from wa_number_health_events where channel_account_id=a)<>1 then raise exception 'history erased'; end if;
+ perform wa_apply_control(a,'start_observation',48,null);
+ perform wa_apply_control(a,'extend_observation',24,null);
+ if (select observation_hours from msg_channel_accounts where id=a)<>72 then raise exception 'observation extend'; end if;
+ perform wa_apply_control(a,'end_observation',null,null);
+ failed:=false;
+ begin perform wa_apply_control(a,'extend_observation',24,null); exception when others then failed:=true; end;
+ if not failed then raise exception 'inactive observation extended'; end if;
+ perform wa_apply_control(a,'pause_sending',null,null);
+ if (select send_paused_at from msg_channel_accounts where id=a) is null then raise exception 'pause'; end if;
+ perform wa_apply_control(a,'resume_sending',null,null);
+ if (select send_paused_at from msg_channel_accounts where id=a) is not null then raise exception 'resume'; end if;
+ perform wa_count_outbound(o,a,true,'system'); perform wa_count_outbound(o,a,false,'system');
+ if exists(select 1 from wa_send_quotas where channel_account_id=a and (messages<>2 or new_conversations<>1)) or (select count(*) from wa_send_quotas where channel_account_id=a)<>2 then raise exception 'quota lost'; end if;
+ failed:=false;
+ begin perform wa_open_restriction(other_o,a,'manual','manual',null,null,'{}'); exception when others then failed:=true; end;
+ if not failed then raise exception 'cross tenant'; end if;
+ if has_function_privilege('anon','public.wa_apply_control(uuid,text,integer,uuid)','execute') or has_table_privilege('authenticated','public.wa_number_restrictions','INSERT') then raise exception 'public access'; end if;
+end $$;
+select 'restrictions, controls, quotas, history, tenant isolation and access: PASS' as result;
+rollback;

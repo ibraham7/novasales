@@ -5,7 +5,8 @@ async function requireSuperAdmin() {
   const { getWorkspace } = await import("@/platform/workspace/workspace.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const ws = await getWorkspace();
-  const db = supabaseAdmin as any;
+  const { checkedDb } = await import("@/modules/risk/query.server");
+  const db = checkedDb(supabaseAdmin);
   const { data } = await db.rpc("has_role", { _user_id: ws.userId, _role: "admin" });
   if (data !== true) throw new Error("هذه البيانات متاحة للسوبر أدمن فقط");
   return { db, ...ws };
@@ -19,27 +20,27 @@ export const getProviderStats = createServerFn({ method: "GET" }).handler(async 
   const { db } = await requireSuperAdmin();
   const { listAvailableProviders } = await import("./registry.server");
 
-  const [{ data: channels }, { data: accounts }] = await Promise.all([
-    db.from("msg_channels").select("id, provider, channel_type"),
-    db.from("msg_channel_accounts").select("id, channel_id, status, provider_error_count, last_provider_error, last_webhook_at"),
+  const { readAllRows } = await import("@/modules/risk/query.server");
+  const [channels, accounts] = await Promise.all([
+    readAllRows(() => db.from("msg_channels").select("id, provider, channel_type").eq("channel_type", "whatsapp").order("id")),
+    readAllRows(() => db.from("msg_channel_accounts").select("id, channel_id, status, provider_error_count, last_provider_error, last_webhook_at").order("id")),
   ]);
+  const whatsappAccounts = accounts.filter((a: any) => channels.some((c: any) => c.id === a.channel_id));
 
   const providerOfChannel = new Map<string, string>(
     ((channels ?? []) as any[]).map((c) => [c.id, (c.provider as string) ?? "evolution"]),
   );
   const accountProvider = new Map<string, string>(
-    ((accounts ?? []) as any[]).map((a) => [a.id, providerOfChannel.get(a.channel_id) ?? "evolution"]),
+    ((whatsappAccounts ?? []) as any[]).map((a) => [a.id, providerOfChannel.get(a.channel_id) ?? "evolution"]),
   );
 
   // الرسائل حسب الجلسة → حساب القناة → المحرّك.
-  const { data: sessions } = await db.from("msg_sessions").select("id, channel_account_id");
+  const sessions = await readAllRows(() => db.from("msg_sessions").select("id, channel_account_id").order("id"));
   const sessionAccount = new Map<string, string>(
     ((sessions ?? []) as any[]).map((s) => [s.id, s.channel_account_id]),
   );
-  const { data: messages } = await db.from("msg_messages").select("session_id");
-  const { data: restrictions } = await db
-    .from("wa_number_restrictions")
-    .select("channel_account_id, resolved_at");
+  const messages = await readAllRows(() => db.from("msg_messages").select("id, session_id").eq("is_internal", false).order("id"));
+  const restrictions = await readAllRows(() => db.from("wa_number_restrictions").select("id, channel_account_id, ended_at").order("id"));
 
   const base = () => ({
     sessions: 0,
@@ -58,7 +59,7 @@ export const getProviderStats = createServerFn({ method: "GET" }).handler(async 
   };
   for (const p of listAvailableProviders()) bucket(p.id);
 
-  for (const a of (accounts ?? []) as any[]) {
+  for (const a of (whatsappAccounts ?? []) as any[]) {
     const b = bucket(accountProvider.get(a.id) ?? "evolution");
     b.sessions += 1;
     if (a.status === "connected") b.connected += 1;
@@ -70,7 +71,7 @@ export const getProviderStats = createServerFn({ method: "GET" }).handler(async 
   }
   for (const m of (messages ?? []) as any[]) {
     const accId = sessionAccount.get(m.session_id);
-    if (!accId) continue;
+    if (!accId || !accountProvider.has(accId)) continue;
     bucket(accountProvider.get(accId) ?? "evolution").messages += 1;
   }
   for (const r of (restrictions ?? []) as any[]) {
@@ -78,7 +79,7 @@ export const getProviderStats = createServerFn({ method: "GET" }).handler(async 
     if (!p) continue;
     const b = bucket(p);
     b.restrictions += 1;
-    if (!r.resolved_at) b.open_restrictions += 1;
+    if (!r.ended_at) b.open_restrictions += 1;
   }
 
   return listAvailableProviders().map((p) => ({
