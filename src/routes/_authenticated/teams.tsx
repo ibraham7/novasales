@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Building2, Plus, Trash2, UserPlus, Users, Phone, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -188,7 +188,7 @@ function TeamsPage() {
                               {i.phone_number ? `+${i.phone_number}` : "رقم غير متزامن"}
                             </div>
                           </div>
-                          <Button
+                          <Button validate
                             size="sm"
                             variant="ghost"
                             className="h-7 text-[11px]"
@@ -233,7 +233,7 @@ function TeamsPage() {
           <div className="space-y-3">
             <div>
               <Label>الاسم</Label>
-              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="مثال: قسم المالية أو دبي" />
+              <Input required aria-label="اسم القسم" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="مثال: قسم المالية أو دبي" />
             </div>
             <div>
               <Label>الاختصار (اختياري)</Label>
@@ -245,11 +245,11 @@ function TeamsPage() {
             </div>
             <div>
               <Label>المنطقة الزمنية</Label>
-              <Input value={newTz} onChange={(e) => setNewTz(e.target.value)} placeholder="Asia/Riyadh" />
+              <Input required aria-label="المنطقة الزمنية" value={newTz} onChange={(e) => setNewTz(e.target.value)} placeholder="Asia/Riyadh" />
             </div>
           </div>
           <DialogFooter>
-            <Button
+            <Button validate
               onClick={() =>
                 createMut.mutate({
                   name: newName.trim(),
@@ -258,7 +258,7 @@ function TeamsPage() {
                   timezone: newTz.trim(),
                 })
               }
-              disabled={!newName.trim() || !newTz.trim() || createMut.isPending}
+              disabled={createMut.isPending}
             >
               إنشاء
             </Button>
@@ -342,7 +342,7 @@ function MembersPanel({ departmentId, embedded = false }: { departmentId: string
               )}
               <div className="flex-1" />
               <WelcomeTemplateButton member={m} departmentId={departmentId} />
-              <Button size="icon" variant="ghost" onClick={() => rmMut.mutate(m.id)}>
+              <Button validate size="icon" variant="ghost" onClick={() => rmMut.mutate(m.id)}>
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
               </Button>
             </div>
@@ -360,7 +360,7 @@ function MembersPanel({ departmentId, embedded = false }: { departmentId: string
             <div>
               <Label>المستخدم</Label>
               <Select value={userId} onValueChange={setUserId}>
-                <SelectTrigger>
+                <SelectTrigger required aria-label="المستخدم">
                   <SelectValue placeholder="اختر مستخدماً موجوداً" />
                 </SelectTrigger>
                 <SelectContent>
@@ -401,7 +401,7 @@ function MembersPanel({ departmentId, embedded = false }: { departmentId: string
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => addMut.mutate()} disabled={!userId || addMut.isPending}>
+            <Button validate onClick={() => addMut.mutate()} disabled={addMut.isPending}>
               إضافة
             </Button>
           </DialogFooter>
@@ -471,11 +471,11 @@ function WelcomeTemplateButton({ member, departmentId }: { member: any; departme
           </div>
           <DialogFooter className="gap-2">
             {member.welcome_template_override && (
-              <Button variant="outline" onClick={() => mut.mutate(null)} disabled={mut.isPending}>
+              <Button validate variant="outline" onClick={() => mut.mutate(null)} disabled={mut.isPending}>
                 إعادة للافتراضي
               </Button>
             )}
-            <Button onClick={() => mut.mutate(text)} disabled={mut.isPending}>
+            <Button validate onClick={() => mut.mutate(text)} disabled={mut.isPending}>
               حفظ
             </Button>
           </DialogFooter>

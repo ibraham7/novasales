@@ -42,7 +42,7 @@ export const Route = createFileRoute("/api/v1/leads")({
           if (!body || typeof body !== "object") return errorResponse(400, "bad_request", "Invalid JSON body");
           const { z } = await import("zod");
           const parsed = z.object({
-            contactName: z.string().min(1).max(200),
+            contactName: z.string().trim().min(1).max(200),
             phone: z.string().max(50).optional(),
             email: z.string().email().max(200).optional(),
             departmentId: z.string().uuid().optional(),

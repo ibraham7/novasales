@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const EntityType = z.enum(["lead", "opportunity", "contact", "activity", "task"]);
 
@@ -34,7 +34,7 @@ export const createUploadUrl = createServerFn({ method: "POST" })
     z.object({
       entityType: EntityType,
       entityId: z.string().uuid(),
-      fileName: z.string().min(1).max(255),
+      fileName: z.string().trim().min(1).max(255),
     }).parse(d)
   )
   .handler(async ({ data }) => {
@@ -66,7 +66,7 @@ export const registerFile = createServerFn({ method: "POST" })
       entityType: EntityType,
       entityId: z.string().uuid(),
       storagePath: z.string(),
-      fileName: z.string().min(1).max(255),
+      fileName: z.string().trim().min(1).max(255),
       mimeType: z.string().max(100).optional(),
       sizeBytes: z.number().int().min(0).optional(),
     }).parse(d)

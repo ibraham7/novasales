@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listInvoices = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ organization_id: z.string().uuid().optional() }).parse(d))

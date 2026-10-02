@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const EntityType = z.enum(["lead", "opportunity", "contact"]);
 
@@ -20,7 +20,7 @@ export const upsertTag = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid().optional(),
-      name: z.string().min(1).max(50),
+      name: z.string().trim().min(1).max(50),
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#64748b"),
     }).parse(d)
   )

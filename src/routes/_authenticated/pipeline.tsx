@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-r
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -290,7 +290,7 @@ function PipelinePage() {
           <DialogHeader><DialogTitle>مرحلة جديدة</DialogTitle></DialogHeader>
           <div className="space-y-2">
             <Label>اسم المرحلة</Label>
-            <Input
+            <Input required aria-label="اسم المرحلة"
               value={newStageName}
               onChange={(e) => setNewStageName(e.target.value)}
               placeholder="مثال: بانتظار الدفع"
@@ -301,8 +301,8 @@ function PipelinePage() {
             />
           </div>
           <DialogFooter>
-            <Button
-              disabled={!newStageName.trim() || addStageMut.isPending}
+            <Button validate
+              disabled={addStageMut.isPending}
               onClick={() => addStageMut.mutate({ name: newStageName.trim() })}
             >
               إضافة

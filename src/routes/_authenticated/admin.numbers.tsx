@@ -15,7 +15,7 @@ import { listProvidersFn, moveSessionProviderFn } from "@/modules/channels/whats
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Activity, ShieldAlert, ShieldCheck, Clock, Pause, Play, Ban, GitCompare, Smartphone, MonitorSmartphone, Server, Plug, ArrowLeftRight, Bug } from "lucide-react";
 
 
@@ -263,7 +263,7 @@ function NumberDebugPanel({ accountId, onMoved }: { accountId: string; onMoved: 
             <ArrowLeftRight className="h-3 w-3" /> نقل الجلسة إلى:
           </span>
           {others.map((p) => (
-            <Button
+            <Button validate
               key={p.id}
               size="sm"
               variant="outline"
@@ -486,15 +486,15 @@ function AdminNumbers() {
               <div className="flex flex-wrap gap-2 pt-1">
                 {n.health_state === "observation" ? (
                   <>
-                    <Button size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "end_observation" })}>
+                    <Button validate size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "end_observation" })}>
                       إنهاء المراقبة
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "extend_observation", hours: 24 })}>
+                    <Button validate size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "extend_observation", hours: 24 })}>
                       تمديد 24 ساعة
                     </Button>
                   </>
                 ) : (
-                  <Button size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "start_observation", hours: 48 })}>
+                  <Button validate size="sm" variant="outline" onClick={() => control.mutate({ accountId: n.id, action: "start_observation", hours: 48 })}>
                     بدء مراقبة 48 ساعة
                   </Button>
                 )}
@@ -508,15 +508,15 @@ function AdminNumbers() {
                   </Button>
                 )}
                 {n.is_restricted_now ? (
-                  <Button size="sm" variant="outline" onClick={() => recover.mutate(n.id)}>
+                  <Button validate size="sm" variant="outline" onClick={() => recover.mutate(n.id)}>
                     تم رفع التقييد
                   </Button>
                 ) : (
-                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => restrict.mutate(n.id)}>
+                  <Button validate size="sm" variant="ghost" className="text-destructive" onClick={() => restrict.mutate(n.id)}>
                     <Ban className="h-3.5 w-3.5 ml-1" /> تسجيل تقييد الآن
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "reset_score" })}>
+                <Button validate size="sm" variant="ghost" onClick={() => control.mutate({ accountId: n.id, action: "reset_score" })}>
                   تصفير الدرجة
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setOpenDecisions(openDecisions === n.id ? null : n.id)}>

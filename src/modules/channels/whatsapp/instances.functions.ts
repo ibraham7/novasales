@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { loadAccounts } from "./instances.server";
 
 /** الويبهوك الموحّد: /api/public/wa-webhook/{provider}/{token} */
@@ -83,7 +83,7 @@ export const getInstance = createServerFn({ method: "GET" })
 
 export const createInstanceFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ displayName: z.string().min(1).max(80), provider: z.string().min(2).max(40).optional() }).parse(d),
+    z.object({ displayName: z.string().trim().min(1).max(80), provider: z.string().trim().min(2).max(40).optional() }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -265,7 +265,7 @@ export const refreshInstanceStatusFn = createServerFn({ method: "POST" })
 
 export const updateInstanceNameFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ id: z.string().uuid(), displayName: z.string().min(1).max(80) }).parse(d),
+    z.object({ id: z.string().uuid(), displayName: z.string().trim().min(1).max(80) }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -321,7 +321,7 @@ export const syncWebhookFn = createServerFn({ method: "POST" })
  */
 export const moveSessionProviderFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ id: z.string().uuid(), targetProvider: z.string().min(2).max(40) }).parse(d),
+    z.object({ id: z.string().uuid(), targetProvider: z.string().trim().min(2).max(40) }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");

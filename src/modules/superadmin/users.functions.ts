@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const RoleSchema = z.enum(["admin", "owner", "supervisor", "department_supervisor", "sales", "user"]);
 
@@ -140,7 +140,7 @@ export const createUser = createServerFn({ method: "POST" })
     z.object({
       email: z.string().max(255).optional(),
       password: z.string().max(72).optional(),
-      full_name: z.string().min(1).max(120),
+      full_name: z.string().trim().min(1).max(120),
       role: RoleSchema,
       organization_id: z.string().uuid().optional().nullable(),
     }).parse(d)

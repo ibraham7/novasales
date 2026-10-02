@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { FUNNEL_STAGES, normalizePhone, shapeContact } from "./contacts.server";
 
 export const funnelStages = FUNNEL_STAGES;
@@ -58,7 +58,7 @@ export const upsertContact = createServerFn({ method: "POST" })
     z
       .object({
         id: z.string().uuid().optional(),
-        phone: z.string().min(5).max(30),
+        phone: z.string().trim().min(5).max(30),
         name: z.string().max(120).optional().nullable(),
         funnel_stage: z.enum(FUNNEL_STAGES).default("lead"),
         notes: z.string().max(2000).optional().nullable(),
@@ -155,7 +155,7 @@ export const deleteContact = createServerFn({ method: "POST" })
 
 export const updateContactName = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ contactId: z.string().uuid(), name: z.string().min(1).max(120) }).parse(d)
+    z.object({ contactId: z.string().uuid(), name: z.string().trim().min(1).max(120) }).parse(d)
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");

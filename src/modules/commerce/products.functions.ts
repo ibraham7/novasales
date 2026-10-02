@@ -1,6 +1,6 @@
 import { minimumPrice, validateAttributes } from "./product-attributes";
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 import { ProductInput } from "./product-input";
 

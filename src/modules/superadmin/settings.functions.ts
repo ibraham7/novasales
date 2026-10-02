@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const getAllSettings = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -10,7 +10,7 @@ export const getAllSettings = createServerFn({ method: "GET" }).handler(async ()
 });
 
 export const updateSetting = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ key: z.string().min(1), value: z.any() }).parse(d))
+  .inputValidator((d: unknown) => z.object({ key: z.string().trim().min(1), value: z.any() }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;

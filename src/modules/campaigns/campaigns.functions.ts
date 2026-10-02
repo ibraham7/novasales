@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const AudienceSchema = z.object({
   lifecycle_stage: z.string().optional(),
@@ -50,7 +50,7 @@ export const saveCampaign = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid().optional(),
-      name: z.string().min(1).max(200),
+      name: z.string().trim().min(1).max(200),
       channel_account_id: z.string().uuid(),
       template_id: z.string().uuid(),
       audience_filter: AudienceSchema,

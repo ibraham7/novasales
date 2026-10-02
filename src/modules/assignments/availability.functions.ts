@@ -1,6 +1,6 @@
 // Agent availability — يستخدم جدول id_availability الموجود.
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const StatusEnum = z.enum(["available", "busy", "away", "offline"]);
 export type AgentStatus = z.infer<typeof StatusEnum>;

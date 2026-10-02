@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { ROLE_RANK } from "./role-rank";
 
 export const listMembers = createServerFn({ method: "GET" }).handler(async () => {

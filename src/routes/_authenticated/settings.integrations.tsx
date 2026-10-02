@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Copy, KeyRound, Plug, Trash2, Webhook, RefreshCw, Power } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -137,11 +137,11 @@ function ApiKeysTab() {
             <div className="space-y-4">
               <div>
                 <Label>الاسم</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: Zapier Integration" />
+                <Input required aria-label="الاسم" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: Zapier Integration" />
               </div>
               <div>
-                <Label>الصلاحيات</Label>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <Label>الصلاحيات — إلزامي *</Label>
+                <div data-required-group aria-label="الصلاحيات" className="grid grid-cols-2 gap-2 mt-2">
                   {AVAILABLE_SCOPES.map((s) => (
                     <label key={s.key} className="flex items-center gap-2 text-sm cursor-pointer">
                       <Checkbox
@@ -159,7 +159,7 @@ function ApiKeysTab() {
             {createdKey ? (
               <Button onClick={() => { setOpen(false); setCreatedKey(null); }}>تم</Button>
             ) : (
-              <Button onClick={() => createMut.mutate()} disabled={!name || scopes.length === 0 || createMut.isPending}>إنشاء</Button>
+              <Button validate onClick={() => createMut.mutate()} disabled={createMut.isPending}>إنشاء</Button>
             )}
           </DialogFooter>
         </DialogContent>
@@ -234,15 +234,15 @@ function WebhooksTab() {
           <div className="space-y-4">
             <div>
               <Label>الاسم</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: Slack Notifier" />
+              <Input required aria-label="الاسم" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: Slack Notifier" />
             </div>
             <div>
               <Label>URL</Label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.zapier.com/..." />
+              <Input required aria-label="رابط Webhook" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.zapier.com/..." />
             </div>
             <div>
-              <Label>الأحداث</Label>
-              <div className="grid grid-cols-2 gap-2 mt-2 max-h-64 overflow-y-auto">
+              <Label>الأحداث — إلزامي *</Label>
+              <div data-required-group aria-label="الأحداث" className="grid grid-cols-2 gap-2 mt-2 max-h-64 overflow-y-auto">
                 {(eventsQ.data ?? []).map((ev: string) => (
                   <label key={ev} className="flex items-center gap-2 text-sm cursor-pointer">
                     <Checkbox
@@ -256,7 +256,7 @@ function WebhooksTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => createMut.mutate()} disabled={!name || !url || events.length === 0 || createMut.isPending}>إنشاء</Button>
+            <Button validate onClick={() => createMut.mutate()} disabled={createMut.isPending}>إنشاء</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

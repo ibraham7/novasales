@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -130,16 +130,16 @@ function MembersPage() {
                 </Button>
               )}
               {canEdit && (m.is_active ? (
-                <Button size="icon" variant="ghost" onClick={() => deactMut.mutate(m.id)}>
+                <Button validate size="icon" variant="ghost" onClick={() => deactMut.mutate(m.id)}>
                   <UserX className="h-4 w-4" />
                 </Button>
               ) : (
-                <Button size="icon" variant="ghost" onClick={() => actMut.mutate(m.id)}>
+                <Button validate size="icon" variant="ghost" onClick={() => actMut.mutate(m.id)}>
                   <UserCheck className="h-4 w-4" />
                 </Button>
               ))}
               {canEdit && (
-                <Button size="icon" variant="ghost" onClick={() => { if (confirm("إزالة العضو من المؤسسة؟")) rmMut.mutate(m.user_id); }}>
+                <Button validate size="icon" variant="ghost" onClick={() => { if (confirm("إزالة العضو من المؤسسة؟")) rmMut.mutate(m.user_id); }}>
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               )}
@@ -185,7 +185,7 @@ function MembersPage() {
             )}
           </div>
           <DialogFooter>
-            <Button onClick={() => editUser && rolesMut.mutate(editUser)} disabled={rolesMut.isPending || !editUser?.roleId}>
+            <Button validate onClick={() => editUser && rolesMut.mutate(editUser)} disabled={rolesMut.isPending || !editUser?.roleId}>
               حفظ
             </Button>
           </DialogFooter>
@@ -216,7 +216,7 @@ function MembersPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
+            <Button validate
               disabled={credsMut.isPending}
               onClick={() =>
                 credUser &&

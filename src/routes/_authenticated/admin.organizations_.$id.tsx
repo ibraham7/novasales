@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 
@@ -89,7 +89,7 @@ function OrgDetailPage() {
             <div>
               <Label>الخطة</Label>
               <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                <SelectTrigger><SelectValue placeholder="اختر خطة" /></SelectTrigger>
+                <SelectTrigger required aria-label="الخطة"><SelectValue placeholder="اختر خطة" /></SelectTrigger>
                 <SelectContent>
                   {(plansQ.data ?? []).map((p: any) => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -108,7 +108,7 @@ function OrgDetailPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button disabled={!selectedPlan} onClick={() => changePlan.mutate()}>تطبيق</Button>
+            <Button validate disabled={changePlan.isPending} onClick={() => changePlan.mutate()}>تطبيق</Button>
           </div>
 
           <div className="flex flex-wrap gap-2">

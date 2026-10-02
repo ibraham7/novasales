@@ -4,7 +4,7 @@ import { variantStock } from "@/modules/commerce/stock-summary";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { usePermission } from "@/platform/rbac/use-permission";
 import { listProducts } from "@/modules/commerce/products.functions";
 import {
@@ -184,8 +184,8 @@ export function ProductStockDialog({
                 </Button>
               )}
               {adjustment.id === b.id && (
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <Input
+                <div data-validation-scope className="grid gap-2 sm:grid-cols-3">
+                  <Input required
                     aria-label="تغيير الكمية"
                     type="number"
                     step="0.001"
@@ -193,13 +193,13 @@ export function ProductStockDialog({
                     value={adjustment.delta}
                     onChange={(e) => setAdjustment({ ...adjustment, delta: e.target.value })}
                   />
-                  <Input
+                  <Input required
                     aria-label="سبب التصحيح"
                     placeholder="سبب التصحيح"
                     value={adjustment.reason}
                     onChange={(e) => setAdjustment({ ...adjustment, reason: e.target.value })}
                   />
-                  <Button disabled={mutation.isPending} onClick={() => mutation.mutate("adjust")}>
+                  <Button validate disabled={mutation.isPending} onClick={() => mutation.mutate("adjust")}>
                     حفظ التصحيح
                   </Button>
                 </div>
@@ -227,10 +227,10 @@ export function ProductStockDialog({
           ))}
         </section>
         {canManage && (
-          <section className="border-t pt-4 space-y-3">
+          <section data-validation-scope className="border-t pt-4 space-y-3">
             <h3 className="font-semibold">إضافة متغير بخصائص مستقلة</h3>
             <Label>اسم المتغير للعرض</Label>
-            <Input
+            <Input required aria-label="اسم التنويعة"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="مثال: أسود / M أو ذاكرة 16GB"
@@ -241,8 +241,8 @@ export function ProductStockDialog({
               onChange={setValues}
               currency={product?.currency}
             />
-            <Button
-              disabled={mutation.isPending || !label || !Object.keys(values).length}
+            <Button validate
+              disabled={mutation.isPending}
               onClick={() => mutation.mutate("variant")}
             >
               حفظ المتغير
@@ -251,7 +251,7 @@ export function ProductStockDialog({
               تعريف / تعديل خصائص المؤسسة
             </Button>
             {showDefinitions && (
-              <div className="bg-muted/30 border rounded-lg p-3 space-y-2">
+              <div data-validation-scope className="bg-muted/30 border rounded-lg p-3 space-y-2">
                 <p className="text-sm">عرّف خصائص تناسب نشاط مؤسستك. اختر ما يلزم لكل منتج.</p>
                 <select
                   aria-label="تعديل خاصية"
@@ -287,7 +287,7 @@ export function ProductStockDialog({
                     </option>
                   ))}
                 </select>
-                <Input
+                <Input required
                   aria-label="اسم الخاصية"
                   value={attribute.name}
                   placeholder="اسم الخاصية: المقاس، الرام، الطول…"
@@ -351,8 +351,8 @@ export function ProductStockDialog({
                     onChange={(e) => setAttribute({ ...attribute, options: e.target.value })}
                   />
                 )}
-                <Button
-                  disabled={mutation.isPending || !attribute.name}
+                <Button validate
+                  disabled={mutation.isPending}
                   onClick={() => mutation.mutate("attribute")}
                 >
                   حفظ الخاصية
@@ -362,11 +362,11 @@ export function ProductStockDialog({
           </section>
         )}
         {canStock && (
-          <section className="border-t pt-4 space-y-3">
+          <section data-validation-scope className="border-t pt-4 space-y-3">
             <h3 className="font-semibold">استلام دفعة جديدة</h3>
             <Label>المتغير</Label>
             <select
-              aria-label="متغير الدفعة"
+              required aria-label="متغير الدفعة"
               className={selectClass}
               value={variantId || variants.find((v: any) => v.is_default)?.id || ""}
               onChange={(e) => setVariantId(e.target.value)}
@@ -380,7 +380,7 @@ export function ProductStockDialog({
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label>رقم الدفعة</Label>
-                <Input
+                <Input required aria-label="رقم الدفعة"
                   value={batchCode}
                   onChange={(e) => setBatchCode(e.target.value)}
                   placeholder="رقم فريد لكل استلام"
@@ -392,7 +392,7 @@ export function ProductStockDialog({
               </div>
               <div>
                 <Label>الكمية</Label>
-                <Input
+                <Input required aria-label="الكمية"
                   type="number"
                   min="0.001"
                   step="0.001"
@@ -401,9 +401,9 @@ export function ProductStockDialog({
                 />
               </div>
             </div>
-            <Button
+            <Button validate
               disabled={
-                mutation.isPending || !batchCode || !(Number(quantity) > 0) || !variants.length
+                mutation.isPending
               }
               onClick={() => mutation.mutate("receive")}
             >

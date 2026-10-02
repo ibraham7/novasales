@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   getOpportunityByChat,
   updateOpportunity,
@@ -269,6 +269,7 @@ function NotesTab({ opportunityId, onChanged }: { opportunityId: string; onChang
         className="space-y-2 rounded-xl border bg-card p-3"
       >
         <Textarea
+          required aria-label="الملاحظة"
           rows={3}
           value={body}
           onChange={(e) => setBody(e.target.value)}
@@ -276,7 +277,7 @@ function NotesTab({ opportunityId, onChanged }: { opportunityId: string; onChang
           className="resize-none"
         />
         <div className="flex justify-end">
-          <Button size="sm" type="submit" disabled={!body.trim() || mut.isPending}>
+          <Button validate size="sm" type="submit" disabled={mut.isPending}>
             إضافة
           </Button>
         </div>

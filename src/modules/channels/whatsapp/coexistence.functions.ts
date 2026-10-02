@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 /** إعدادات الربط الرسمي المطلوبة للواجهة (لا تحتوي أي سر). */
 export const getCoexistenceSetupFn = createServerFn({ method: "GET" }).handler(async () => {
@@ -12,14 +12,14 @@ export const linkCoexistenceFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z
       .object({
-        code: z.string().min(10).max(2000),
-        redirectUri: z.string().min(1).max(500),
+        code: z.string().trim().min(10).max(2000),
+        redirectUri: z.string().trim().min(1).max(500),
         // بيانات تشخيص غير حساسة لقياس عمر الرمز ومطابقة التطبيق بين المتصفح والخادم.
         codeReceivedAt: z.number().int().positive().optional(),
-        browserAppId: z.string().min(3).max(64).optional(),
-        wabaId: z.string().min(3).max(64).optional(),
-        phoneNumberId: z.string().min(3).max(64).optional(),
-        displayName: z.string().min(1).max(80).optional(),
+        browserAppId: z.string().trim().min(3).max(64).optional(),
+        wabaId: z.string().trim().min(3).max(64).optional(),
+        phoneNumberId: z.string().trim().min(3).max(64).optional(),
+        displayName: z.string().trim().min(1).max(80).optional(),
       })
       .parse(d),
   )

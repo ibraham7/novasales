@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { CURRENCY_CODES } from "./currencies";
 const mediaUrl = z
   .string()
@@ -43,7 +43,7 @@ export const PRODUCT_MEDIA_TYPES = [
 ] as const;
 export const ProductUploadInput = z
   .object({
-    fileName: z.string().min(1).max(255),
+    fileName: z.string().trim().min(1).max(255),
     contentType: z.enum(PRODUCT_MEDIA_TYPES),
     size: z.number().int().positive().optional(),
   })

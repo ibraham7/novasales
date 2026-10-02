@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowRight, Plus, Trash2, Phone, Mail, MessageSquare, Calendar, CheckSquare } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -260,7 +260,7 @@ function ActivitiesTab({ entityId }: { entityId: string }) {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={() => mut.mutate()} disabled={mut.isPending}>حفظ</Button>
+              <Button validate onClick={() => mut.mutate()} disabled={mut.isPending}>حفظ</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -325,13 +325,13 @@ function TasksTab({ entityId }: { entityId: string }) {
       <Card className="p-3 flex gap-2 items-end">
         <div className="flex-1">
           <Label>عنوان المهمة</Label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: اتصل بالعميل" />
+          <Input required aria-label="عنوان المهمة" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: اتصل بالعميل" />
         </div>
         <div>
           <Label>الاستحقاق</Label>
           <Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
         </div>
-        <Button disabled={!title || createMut.isPending} onClick={() => createMut.mutate()}>
+        <Button validate disabled={!title || createMut.isPending} onClick={() => createMut.mutate()}>
           <Plus className="h-4 w-4" />
         </Button>
       </Card>

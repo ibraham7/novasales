@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -54,9 +54,9 @@ function ProfilePage() {
         <div className="space-y-4 max-w-md">
           <div>
             <Label>الاسم الكامل</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input required aria-label="الاسم الكامل" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !name.trim()}>
+          <Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
             حفظ
           </Button>
         </div>
@@ -76,7 +76,7 @@ function ProfilePage() {
                 {isActive ? (
                   <Badge>نشطة</Badge>
                 ) : (
-                  <Button size="sm" variant="outline" onClick={() => switchMut.mutate(o.id)}>
+                  <Button validate size="sm" variant="outline" onClick={() => switchMut.mutate(o.id)}>
                     تبديل
                   </Button>
                 )}

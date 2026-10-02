@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowRight, Plus, Trash2, History } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,16 +65,16 @@ function TemplatesPage() {
           <DialogContent>
             <DialogHeader><DialogTitle>{editId ? "تعديل قالب" : "قالب جديد"}</DialogTitle></DialogHeader>
             <div className="space-y-3">
-              <div><Label>الاسم</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div><Label>الاسم</Label><Input required aria-label="اسم القالب" value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div>
                 <Label>النص (استخدم {`{{name}}`} للمتغيرات)</Label>
-                <Textarea rows={6} value={body} onChange={(e) => setBody(e.target.value)} />
+                <Textarea required aria-label="نص القالب" rows={6} value={body} onChange={(e) => setBody(e.target.value)} />
                 {body && (
                   <div className="text-xs text-muted-foreground mt-1">المتغيرات: {extractVars(body).map((v) => <Badge key={v} variant="outline" className="ml-1">{v}</Badge>)}</div>
                 )}
               </div>
             </div>
-            <DialogFooter><Button onClick={() => saveMut.mutate()} disabled={!name || !body || saveMut.isPending}>حفظ</Button></DialogFooter>
+            <DialogFooter><Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>حفظ</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -89,7 +89,7 @@ function TemplatesPage() {
               </div>
               <Button size="sm" variant="outline" onClick={() => startEdit(t)}>تعديل</Button>
               <Button size="sm" variant="ghost" onClick={() => setHistoryId(t.id)}><History className="h-3 w-3" /></Button>
-              <Button size="sm" variant="ghost" onClick={() => { if (confirm("حذف؟")) delMut.mutate(t.id); }}><Trash2 className="h-3 w-3" /></Button>
+              <Button validate size="sm" variant="ghost" onClick={() => { if (confirm("حذف؟")) delMut.mutate(t.id); }}><Trash2 className="h-3 w-3" /></Button>
             </div>
           </Card>
         ))}

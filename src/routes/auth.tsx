@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { MessageCircle, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import { z } from "zod";
+import { toast } from "@/lib/toast";
+import { z } from "@/lib/validation";
+import { validateControls } from "@/lib/form-validation";
 import { clearLocalAuthStorage, withAuthTimeout } from "@/lib/auth-session";
 
 const searchSchema = z.object({ redirect: z.string().optional() });
@@ -45,6 +46,7 @@ function AuthPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!validateControls(e.currentTarget)) return;
     setLoading(true);
     try {
       if (mode === "signup") {
@@ -103,20 +105,20 @@ function AuthPage() {
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form noValidate onSubmit={onSubmit} className="space-y-4">
           {mode === "signup" && (
             <div className="space-y-2">
               <Label htmlFor="fullname">الاسم الكامل</Label>
-              <Input id="fullname" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+              <Input aria-label="الاسم الكامل" id="fullname" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
             </div>
           )}
           <div className="space-y-2">
             <Label htmlFor="email">اسم المستخدم أو البريد الإلكتروني</Label>
-            <Input id="email" type="text" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" />
+            <Input aria-label="اسم المستخدم أو البريد الإلكتروني" id="email" type="text" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">كلمة المرور</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={6} />
+            <Input aria-label="كلمة المرور" id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={6} />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signup" ? "إنشاء الحساب" : "تسجيل الدخول"}

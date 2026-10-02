@@ -24,7 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { LogOut, Pencil, Plus, RefreshCw, Trash2, QrCode, Smartphone } from "lucide-react";
 
 type ProviderOption = {
@@ -238,7 +238,7 @@ function Instances() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>اسم الجلسة (للعرض)</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: خدمة العملاء" />
+                <Input required aria-label="اسم الجلسة" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: خدمة العملاء" />
               </div>
               <div className="space-y-2">
                 <Label>المحرّك (Provider)</Label>
@@ -272,8 +272,8 @@ function Instances() {
               </div>
             </div>
             <DialogFooter>
-              <Button
-                disabled={!name || !providerId || createMut.isPending}
+              <Button validate
+                disabled={createMut.isPending}
                 onClick={() => createMut.mutate(name)}
               >
                 {createMut.isPending ? "..." : "إنشاء"}
@@ -374,10 +374,10 @@ function Instances() {
                   </div>
 
                   <div className="flex gap-2 flex-wrap pt-2">
-                    <Button size="sm" variant="outline" onClick={() => connectMut.mutate(inst.id)} disabled={connectMut.isPending}>
+                    <Button validate size="sm" variant="outline" onClick={() => connectMut.mutate(inst.id)} disabled={connectMut.isPending}>
                       <QrCode className="h-3.5 w-3.5 ml-1" /> QR
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => refreshMut.mutate(inst.id)} disabled={refreshMut.isPending}>
+                    <Button validate size="sm" variant="ghost" onClick={() => refreshMut.mutate(inst.id)} disabled={refreshMut.isPending}>
                       <RefreshCw className="h-3.5 w-3.5 ml-1" /> مزامنة الرقم
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditing({ id: inst.id, name: inst.display_name ?? "" })}>
@@ -435,10 +435,10 @@ function Instances() {
           <DialogHeader><DialogTitle>تغيير اسم الجلسة</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Label>اسم الجلسة</Label>
-            <Input value={editing?.name ?? ""} onChange={(e) => setEditing((v) => v ? { ...v, name: e.target.value } : v)} />
+            <Input required aria-label="اسم الجلسة" value={editing?.name ?? ""} onChange={(e) => setEditing((v) => v ? { ...v, name: e.target.value } : v)} />
           </div>
           <DialogFooter>
-            <Button disabled={!editing?.name || renameMut.isPending} onClick={() => editing && renameMut.mutate({ id: editing.id, displayName: editing.name })}>
+            <Button validate disabled={renameMut.isPending} onClick={() => editing && renameMut.mutate({ id: editing.id, displayName: editing.name })}>
               حفظ
             </Button>
           </DialogFooter>

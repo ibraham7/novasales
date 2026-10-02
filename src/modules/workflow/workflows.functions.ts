@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listWorkflows = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -34,7 +34,7 @@ export const saveWorkflow = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid().optional(),
-      name: z.string().min(1).max(200),
+      name: z.string().trim().min(1).max(200),
       description: z.string().max(2000).optional(),
       is_active: z.boolean().default(false),
       trigger_type: z.enum(["event", "schedule", "manual"]),

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowLeftRight, UserMinus, History, User as UserIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,7 +101,7 @@ export function OwnershipCard({ leadId, currentOwnerId, departmentId }: Props) {
               <Button size="sm" variant="outline" onClick={() => setOpenDialog("reassign")}>
                 إعادة تعيين
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => unassignMut.mutate()}>
+              <Button validate size="sm" variant="ghost" onClick={() => unassignMut.mutate()}>
                 <UserMinus className="h-4 w-4" />
               </Button>
             </>
@@ -209,7 +209,7 @@ function AssignActionDialog({
           <div>
             <Label>المندوب الجديد</Label>
             <Select value={toUserId} onValueChange={setToUserId}>
-              <SelectTrigger><SelectValue placeholder="اختر مندوباً" /></SelectTrigger>
+              <SelectTrigger required aria-label="المندوب"><SelectValue placeholder="اختر مندوباً" /></SelectTrigger>
               <SelectContent>
                 {filtered
                   .filter((m: any) => !m.is_supervisor && m.user_id)
@@ -233,13 +233,13 @@ function AssignActionDialog({
           </div>
           <div>
             <Label>السبب</Label>
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
+            <Textarea required aria-label="سبب النقل" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>إلغاء</Button>
           {selectedBlocked && <p className="text-xs text-destructive">{BLOCK_MSG}</p>}
-          <Button disabled={!toUserId || !reason || selectedBlocked || mut.isPending} onClick={() => mut.mutate()}>
+          <Button validate disabled={selectedBlocked || mut.isPending} onClick={() => mut.mutate()}>
 
             تأكيد
           </Button>

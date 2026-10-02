@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Megaphone, Plus, Play, Pause, XCircle, Trash2, FileText } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -85,11 +85,11 @@ function CampaignsPage() {
                     <span className="text-red-500">فاشل: {s.failed ?? 0}</span>
                   </div>
                 </div>
-                {c.status === "draft" && <Button size="sm" onClick={() => launchMut.mutate(c.id)}><Play className="h-3 w-3 ml-1" /> إطلاق</Button>}
+                {c.status === "draft" && <Button validate size="sm" onClick={() => launchMut.mutate(c.id)}><Play className="h-3 w-3 ml-1" /> إطلاق</Button>}
                 {c.status === "running" && <Button size="sm" variant="outline" onClick={() => ctlMut.mutate({ id: c.id, action: "pause" })}><Pause className="h-3 w-3 ml-1" /> إيقاف مؤقت</Button>}
                 {c.status === "paused" && <Button size="sm" onClick={() => ctlMut.mutate({ id: c.id, action: "resume" })}><Play className="h-3 w-3 ml-1" /> استئناف</Button>}
                 {(c.status === "running" || c.status === "paused" || c.status === "scheduled") && <Button size="sm" variant="ghost" onClick={() => ctlMut.mutate({ id: c.id, action: "cancel" })}><XCircle className="h-3 w-3" /></Button>}
-                <Button size="sm" variant="ghost" onClick={() => { if (confirm("حذف؟")) delMut.mutate(c.id); }}><Trash2 className="h-3 w-3" /></Button>
+                <Button validate size="sm" variant="ghost" onClick={() => { if (confirm("حذف؟")) delMut.mutate(c.id); }}><Trash2 className="h-3 w-3" /></Button>
               </div>
             </Card>
           );

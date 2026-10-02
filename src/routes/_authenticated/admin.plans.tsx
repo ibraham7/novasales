@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useState } from "react";
 import { Plus, Trash2, Edit } from "lucide-react";
 
@@ -139,8 +139,8 @@ function PlansPage() {
           <DialogHeader><DialogTitle>{form.id ? "تعديل خطة" : "خطة جديدة"}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><Label>الاسم</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-              <div><Label>الكود</Label><Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="starter" /></div>
+              <div><Label>الاسم</Label><Input required aria-label="اسم الخطة" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+              <div><Label>الكود</Label><Input required aria-label="كود الخطة" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="starter" /></div>
             </div>
             <div><Label>الوصف</Label><Textarea value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -205,7 +205,7 @@ function PlansPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
-            <Button onClick={() => submit.mutate()} disabled={submit.isPending}>حفظ</Button>
+            <Button validate onClick={() => submit.mutate()} disabled={submit.isPending}>حفظ</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

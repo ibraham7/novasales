@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,7 +67,7 @@ function InvitePage() {
                 </Badge>
               </div>
             </div>
-            <Button
+            <Button validate
               className="w-full"
               disabled={invQ.data.status !== "valid" || acceptMut.isPending}
               onClick={() => acceptMut.mutate()}

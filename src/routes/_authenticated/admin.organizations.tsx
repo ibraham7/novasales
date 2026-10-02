@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, UserPlus } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/admin/organizations")({
@@ -129,12 +129,12 @@ function OrgsPage() {
             <DialogDescription>أدخل اسم المؤسسة. الـ Slug اختياري وسيُولّد تلقائياً.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div><Label>الاسم</Label><Input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="اسم الشركة" /></div>
+            <div><Label>الاسم</Label><Input required aria-label="اسم المؤسسة" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="اسم الشركة" /></div>
             <div><Label>Slug (اختياري)</Label><Input value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} placeholder="acme" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOrgOpen(false)}>إلغاء</Button>
-            <Button onClick={submitOrg} disabled={busy}>إنشاء</Button>
+            <Button validate onClick={submitOrg} disabled={busy}>إنشاء</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -146,9 +146,9 @@ function OrgsPage() {
             <DialogDescription>سيتم إنشاء الحساب وربطه بهذه المؤسسة مباشرة.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div><Label>الاسم الظاهر</Label><Input value={uForm.full_name} onChange={(e) => setUForm({ ...uForm, full_name: e.target.value })} /></div>
-            <div><Label>البريد الإلكتروني (اسم المستخدم)</Label><Input type="email" value={uForm.email} onChange={(e) => setUForm({ ...uForm, email: e.target.value })} /></div>
-            <div><Label>كلمة المرور</Label><Input type="text" value={uForm.password} onChange={(e) => setUForm({ ...uForm, password: e.target.value })} placeholder="6 أحرف على الأقل" /></div>
+            <div><Label>الاسم الظاهر</Label><Input required aria-label="الاسم الكامل" value={uForm.full_name} onChange={(e) => setUForm({ ...uForm, full_name: e.target.value })} /></div>
+            <div><Label>البريد الإلكتروني (اسم المستخدم)</Label><Input required aria-label="البريد الإلكتروني" type="email" value={uForm.email} onChange={(e) => setUForm({ ...uForm, email: e.target.value })} /></div>
+            <div><Label>كلمة المرور</Label><Input required aria-label="كلمة المرور" type="text" value={uForm.password} onChange={(e) => setUForm({ ...uForm, password: e.target.value })} placeholder="6 أحرف على الأقل" /></div>
             <div>
               <Label>الصلاحية</Label>
               <Select value={uForm.role} onValueChange={(v) => setUForm({ ...uForm, role: v })}>
@@ -161,7 +161,7 @@ function OrgsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUserOpen(false)}>إلغاء</Button>
-            <Button onClick={submitUser} disabled={busy}>إنشاء</Button>
+            <Button validate onClick={submitUser} disabled={busy}>إنشاء</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

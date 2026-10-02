@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 function slugify(s: string) {
   return s
@@ -13,8 +13,8 @@ function slugify(s: string) {
 export const createOrganization = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      name: z.string().min(1).max(120),
-      slug: z.string().min(1).max(60).optional(),
+      name: z.string().trim().min(1).max(120),
+      slug: z.string().trim().min(1).max(60).optional(),
     }).parse(d)
   )
   .handler(async ({ data }) => {

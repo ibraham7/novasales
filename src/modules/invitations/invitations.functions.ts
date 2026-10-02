@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const createInvitation = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
@@ -68,7 +68,7 @@ export const revokeInvitation = createServerFn({ method: "POST" })
   });
 
 export const getInvitationByToken = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => z.object({ token: z.string().min(10) }).parse(d))
+  .inputValidator((d: unknown) => z.object({ token: z.string().trim().min(10) }).parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { hashInviteToken } = await import("./invitations.server");
@@ -101,7 +101,7 @@ export const getInvitationByToken = createServerFn({ method: "GET" })
   });
 
 export const acceptInvitation = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ token: z.string().min(10) }).parse(d))
+  .inputValidator((d: unknown) => z.object({ token: z.string().trim().min(10) }).parse(d))
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const { hashInviteToken } = await import("./invitations.server");

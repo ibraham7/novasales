@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const startImpersonation = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>

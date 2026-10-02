@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const EntityType = z.enum(["lead", "opportunity", "contact"]);
 const TaskStatus = z.enum(["open", "in_progress", "done", "cancelled"]);
@@ -39,7 +39,7 @@ export const createTask = createServerFn({ method: "POST" })
     z.object({
       entityType: EntityType.optional(),
       entityId: z.string().uuid().optional(),
-      title: z.string().min(1).max(200),
+      title: z.string().trim().min(1).max(200),
       description: z.string().max(2000).optional(),
       dueAt: z.string().optional(),
       priority: TaskPriority.default("normal"),

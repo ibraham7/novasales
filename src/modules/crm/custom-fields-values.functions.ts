@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const ENTITY_TABLES: Record<string, string> = {
   lead: "crm_leads",
@@ -10,7 +10,7 @@ const ENTITY_TABLES: Record<string, string> = {
 export const updateEntityCustomFields = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      entityType: z.string().min(1).max(50),
+      entityType: z.string().trim().min(1).max(50),
       entityId: z.string().uuid(),
       customFields: z.record(z.any()),
     }).parse(d),
@@ -47,7 +47,7 @@ export const updateEntityCustomFields = createServerFn({ method: "POST" })
 export const getEntityCustomFields = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) =>
     z.object({
-      entityType: z.string().min(1).max(50),
+      entityType: z.string().trim().min(1).max(50),
       entityId: z.string().uuid(),
     }).parse(d),
   )

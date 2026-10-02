@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { shapeSessionRow } from "./chats.server";
 
 export const listChats = createServerFn({ method: "GET" }).handler(async () => {
@@ -222,7 +222,7 @@ export const sendMessageFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       chatId: z.string().uuid(),
-      text: z.string().min(1).max(4000),
+      text: z.string().trim().min(1).max(4000),
       isInternal: z.boolean().optional().default(false),
       replyToMessageId: z.string().uuid().optional(),
     }).parse(d)
@@ -850,8 +850,8 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
       .object({
         chatId: z.string().uuid(),
         kind: z.enum(["image", "video", "audio", "document"]),
-        fileName: z.string().min(1).max(200),
-        mimeType: z.string().min(1).max(200),
+        fileName: z.string().trim().min(1).max(200),
+        mimeType: z.string().trim().min(1).max(200),
         base64: z.string().min(1), // raw base64 (no data: prefix)
         caption: z.string().max(2000).optional(),
         replyToMessageId: z.string().uuid().optional(),
@@ -1107,7 +1107,7 @@ export const deleteMessageFn = createServerFn({ method: "POST" })
 // Edit an already-sent outbound text message (mirrors WhatsApp's 15-minute edit window).
 export const editMessageFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ messageId: z.string().uuid(), text: z.string().min(1).max(4096) }).parse(d),
+    z.object({ messageId: z.string().uuid(), text: z.string().trim().min(1).max(4096) }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -1305,7 +1305,7 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
       .object({
         messageId: z.string().uuid(),
         targets: z
-          .array(z.object({ kind: z.enum(["session", "phone"]), value: z.string().min(1) }))
+          .array(z.object({ kind: z.enum(["session", "phone"]), value: z.string().trim().min(1) }))
           .min(1)
           .max(20),
       })

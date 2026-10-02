@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Inbox as InboxIcon, ArrowLeftRight, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -207,7 +207,7 @@ function AssignDialog({ opportunity, onClose }: { opportunity: any; onClose: () 
           <div>
             <Label>المندوب</Label>
             <Select value={memberId} onValueChange={setMemberId}>
-              <SelectTrigger>
+              <SelectTrigger required aria-label="المندوب">
                 <SelectValue placeholder="اختر مندوباً" />
               </SelectTrigger>
               <SelectContent>
@@ -232,7 +232,7 @@ function AssignDialog({ opportunity, onClose }: { opportunity: any; onClose: () 
           <div>
             <Label>جلسة الإرسال (رقم المندوب)</Label>
             <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
+              <SelectTrigger required aria-label="حساب واتساب">
                 <SelectValue placeholder="اختر جلسة" />
               </SelectTrigger>
               <SelectContent>
@@ -255,7 +255,7 @@ function AssignDialog({ opportunity, onClose }: { opportunity: any; onClose: () 
 
           <div>
             <Label>رسالة الترحيب</Label>
-            <Textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} />
+            <Textarea required aria-label="نص الرسالة" rows={5} value={text} onChange={(e) => setText(e.target.value)} />
             <p className="text-xs text-muted-foreground mt-1">
               متغيرات متاحة: <code>{"{{contact_name}}"}</code>، <code>{"{{rep_name}}"}</code>
             </p>
@@ -265,7 +265,7 @@ function AssignDialog({ opportunity, onClose }: { opportunity: any; onClose: () 
           <Button variant="outline" onClick={onClose}>
             إلغاء
           </Button>
-          <Button onClick={() => mut.mutate()} disabled={!memberId || !accountId || !text.trim() || memberBlocked || accountBlocked || mut.isPending}>
+          <Button validate onClick={() => mut.mutate()} disabled={memberBlocked || accountBlocked || mut.isPending}>
             تحويل وإرسال
           </Button>
         </DialogFooter>
@@ -298,13 +298,13 @@ function TemplateDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>قالب رسالة الترحيب الافتراضي</DialogTitle>
         </DialogHeader>
-        <Textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} />
+        <Textarea required aria-label="نص الرسالة" rows={6} value={text} onChange={(e) => setText(e.target.value)} />
         <p className="text-xs text-muted-foreground">
           متغيرات: <code>{"{{contact_name}}"}</code>، <code>{"{{rep_name}}"}</code>
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>إلغاء</Button>
-          <Button onClick={() => mut.mutate()} disabled={!text.trim() || mut.isPending}>حفظ</Button>
+          <Button validate onClick={() => mut.mutate()} disabled={mut.isPending}>حفظ</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

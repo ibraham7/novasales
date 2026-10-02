@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 /** List roles available to the current org (system + org-owned custom). */
 export const listRoles = createServerFn({ method: "GET" }).handler(async () => {
@@ -40,8 +40,8 @@ export const listPermissions = createServerFn({ method: "GET" }).handler(async (
 export const createRole = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      key: z.string().min(2).max(40).regex(/^[a-z0-9_-]+$/),
-      name: z.string().min(1).max(80),
+      key: z.string().trim().min(2).max(40).regex(/^[a-z0-9_-]+$/),
+      name: z.string().trim().min(1).max(80),
       permissions: z.array(z.string()).default([]),
     }).parse(d)
   )
@@ -66,7 +66,7 @@ export const createRole = createServerFn({ method: "POST" })
 
 export const updateRole = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ id: z.string().uuid(), name: z.string().min(1).max(80).optional() }).parse(d)
+    z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(80).optional() }).parse(d)
   )
   .handler(async ({ data }) => {
     const { requirePermission } = await import("@/platform/rbac/rbac.server");

@@ -17,7 +17,7 @@ import { useMemo, useState } from "react";
 
 import { Boxes, DollarSign, Package, Pencil, Plus, Search, SlidersHorizontal } from "lucide-react";
 
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { listProducts, upsertProduct } from "@/modules/commerce";
 
@@ -329,7 +329,7 @@ function ProductsPage() {
               <div className="space-y-2">
                 <Label>اسم المنتج *</Label>
 
-                <Input
+                <Input required aria-label="اسم المنتج"
                   value={form.name}
                   onChange={(event) =>
                     setForm((old) => ({
@@ -362,7 +362,7 @@ function ProductsPage() {
                 <div className="space-y-2">
                   <Label>السعر *</Label>
 
-                  <Input
+                  <Input required aria-label="سعر البيع"
                     type="number"
                     min="0"
                     step="0.01"
@@ -462,7 +462,7 @@ function ProductsPage() {
             </div>
 
             <DialogFooter>
-              <Button
+              <Button validate
                 className="w-full sm:w-auto"
                 onClick={() => productMutation.mutate()}
                 disabled={productMutation.isPending || imageUploading}

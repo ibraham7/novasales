@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { matchesSearch } from "@/lib/fuzzy-search";
 
 const LeadStatus = z.enum(["new", "working", "qualified", "unqualified", "converted", "lost"]);
@@ -110,7 +110,7 @@ export const createLead = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       contactId: z.string().uuid().optional(),
-      contactName: z.string().min(1).max(200).optional(),
+      contactName: z.string().trim().min(1).max(200).optional(),
       phone: z.string().max(50).optional(),
       email: z.string().email().max(200).optional(),
       departmentId: z.string().uuid().optional(),
@@ -247,7 +247,7 @@ export const convertLeadToOpportunity = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       leadId: z.string().uuid(),
-      title: z.string().min(1).max(200).optional(),
+      title: z.string().trim().min(1).max(200).optional(),
       amount: z.number().min(0).optional(),
       currency: z.string().length(3).optional(),
       expectedCloseDate: z.string().optional(),

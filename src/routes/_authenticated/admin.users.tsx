@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Ban, UserCheck, UserCog, Trash2, Plus, Building2, KeyRound } from "lucide-react";
 import { useState } from "react";
 
@@ -250,7 +250,7 @@ function UsersPage() {
             <DialogDescription>سيتم تفعيل الحساب تلقائياً بدون تأكيد بريد.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div><Label>الاسم الظاهر</Label><Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
+            <div><Label>الاسم الظاهر</Label><Input required aria-label="الاسم الكامل" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
             <div><Label>اسم المستخدم (أي نص أو أرقام)</Label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="يُولّد تلقائياً" /></div>
             <div><Label>كلمة المرور</Label><Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="تُولّد تلقائياً مثل اسم المستخدم" /></div>
             <div>
@@ -275,7 +275,7 @@ function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
-            <Button onClick={submit} disabled={busy}>إنشاء</Button>
+            <Button validate onClick={submit} disabled={busy}>إنشاء</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -294,7 +294,7 @@ function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCredOpen(false)}>إلغاء</Button>
-            <Button onClick={submitCreds}>حفظ</Button>
+            <Button validate onClick={submitCreds}>حفظ</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -307,7 +307,7 @@ function UsersPage() {
           <div className="space-y-3">
             <Label>اختر المؤسسة</Label>
             <Select value={assignOrgId} onValueChange={setAssignOrgId}>
-              <SelectTrigger><SelectValue placeholder="اختر مؤسسة" /></SelectTrigger>
+              <SelectTrigger required aria-label="المؤسسة"><SelectValue placeholder="اختر مؤسسة" /></SelectTrigger>
               <SelectContent>
                 {(orgsQ.data ?? []).map((o: any) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
               </SelectContent>
@@ -315,7 +315,7 @@ function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOrgOpen(false)}>إلغاء</Button>
-            <Button onClick={submitAssign} disabled={!assignOrgId}>إضافة</Button>
+            <Button validate onClick={submitAssign} >إضافة</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

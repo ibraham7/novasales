@@ -1,6 +1,6 @@
 // Domain event type registry (Zod schemas).
 // Convention: <module>.<aggregate>.<action>
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const EventTypes = {
   // CRM

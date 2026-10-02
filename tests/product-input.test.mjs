@@ -11,7 +11,7 @@ function load(path,dependencies={}) {
  return module.exports;
 }
 const currencies=load('../src/modules/commerce/currencies.ts');
-const {ProductInput,ProductUploadInput}=load('../src/modules/commerce/product-input.ts',{'./currencies':currencies});
+const {ProductInput,ProductUploadInput}=load('../src/modules/commerce/product-input.ts',{'./currencies':currencies, '@/lib/validation':load('../src/lib/validation.ts')});
 test('product editing preserves all images and videos with a selected currency',()=>{
  const images=Array.from({length:12},(_,i)=>`https://example.com/${i}.jpg`);
  const videos=['https://example.com/demo.mp4','https://example.com/demo.webm'];

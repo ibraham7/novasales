@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listPipelines = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -46,7 +46,7 @@ export const getDefaultPipeline = createServerFn({ method: "GET" }).handler(asyn
 
 export const createPipeline = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ name: z.string().min(1).max(100), description: z.string().max(500).optional(), isDefault: z.boolean().optional() }).parse(d)
+    z.object({ name: z.string().trim().min(1).max(100), description: z.string().max(500).optional(), isDefault: z.boolean().optional() }).parse(d)
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -74,7 +74,7 @@ export const updatePipeline = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       pipelineId: z.string().uuid(),
-      name: z.string().min(1).max(100).optional(),
+      name: z.string().trim().min(1).max(100).optional(),
       description: z.string().max(500).nullable().optional(),
       isDefault: z.boolean().optional(),
     }).parse(d)
@@ -113,7 +113,7 @@ export const upsertStage = createServerFn({ method: "POST" })
     z.object({
       id: z.string().uuid().optional(),
       pipelineId: z.string().uuid(),
-      name: z.string().min(1).max(100),
+      name: z.string().trim().min(1).max(100),
       color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#94a3b8"),
       ord: z.number().int().min(0).max(1000),
       probability: z.number().int().min(0).max(100).default(0),

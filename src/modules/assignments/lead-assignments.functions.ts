@@ -1,7 +1,7 @@
 // Lead Assignment functions — lead هو مصدر الحقيقة الوحيد للملكية.
 // كل التغييرات هنا فقط. Trigger tg_sync_opp_owner_from_lead يزامن Opportunities.
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { EventTypes } from "@/platform/events/types";
 
 const ActionEnum = z.enum(["assign", "transfer", "reassign", "unassign"]);

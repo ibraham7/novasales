@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -44,14 +44,14 @@ function OrgSettingsPage() {
       <div className="space-y-4 max-w-md">
         <div>
           <Label>اسم المؤسسة</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
+          <Input required aria-label="اسم المؤسسة" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
           <Label>المعرّف (Slug)</Label>
           <Input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} />
           <p className="text-xs text-muted-foreground mt-1">أحرف صغيرة، أرقام، وشرطات فقط.</p>
         </div>
-        <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !name.trim()}>
+        <Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
           حفظ التغييرات
         </Button>
       </div>

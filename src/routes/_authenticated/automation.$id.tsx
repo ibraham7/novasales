@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowRight, Save, Plus, Trash2, ChevronUp, ChevronDown, Filter, Clock, Send, Hourglass, GitBranch } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -102,13 +102,13 @@ function EditPage() {
         </div>
         <div className="flex gap-2">
           <Link to="/automation/$id/runs" params={{ id }}><Button variant="outline">سجل التشغيل</Button></Link>
-          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}><Save className="h-4 w-4 ml-1" /> حفظ</Button>
+          <Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}><Save className="h-4 w-4 ml-1" /> حفظ</Button>
         </div>
       </div>
 
       <Card className="p-4 space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div><Label>الاسم</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div><Label>الاسم</Label><Input required aria-label="اسم الأتمتة" value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div>
             <Label>نوع المُشغّل</Label>
             <Select value={triggerType} onValueChange={(v) => setTriggerType(v as any)}>

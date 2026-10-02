@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowRight, Users, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -66,11 +66,11 @@ function NewPage() {
         {step === 1 && (
           <>
             <h2 className="text-lg font-semibold">1. المعلومات والقناة</h2>
-            <div><Label>اسم الحملة</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div><Label>اسم الحملة</Label><Input required aria-label="اسم الحملة" value={name} onChange={(e) => setName(e.target.value)} /></div>
             <div>
               <Label>حساب واتساب المُرسل</Label>
               <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                <SelectTrigger required aria-label="حساب واتساب"><SelectValue placeholder="اختر" /></SelectTrigger>
                 <SelectContent>
                   {(instQ.data ?? []).filter((i: any) => i.status === "connected").map((i: any) => (
                     <SelectItem key={i.id} value={i.id}>{i.display_name} ({i.phone_number ?? "-"})</SelectItem>
@@ -78,7 +78,7 @@ function NewPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex justify-end"><Button disabled={!name || !accountId} onClick={() => setStep(2)}>التالي</Button></div>
+            <div className="flex justify-end"><Button validate  onClick={() => setStep(2)}>التالي</Button></div>
           </>
         )}
 
@@ -88,7 +88,7 @@ function NewPage() {
             <div>
               <Label>القالب</Label>
               <Select value={templateId} onValueChange={setTemplateId}>
-                <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                <SelectTrigger required aria-label="القالب"><SelectValue placeholder="اختر" /></SelectTrigger>
                 <SelectContent>
                   {(tplQ.data?.templates ?? []).map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name} (v{t.version})</SelectItem>)}
                 </SelectContent>
@@ -104,7 +104,7 @@ function NewPage() {
             )}
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setStep(1)}>السابق</Button>
-              <Button disabled={!templateId} onClick={() => setStep(3)}>التالي</Button>
+              <Button validate  onClick={() => setStep(3)}>التالي</Button>
             </div>
           </>
         )}
@@ -126,7 +126,7 @@ function NewPage() {
             <div><Label>عدد الرسائل في الدقيقة</Label>
               <Input type="number" value={throttle} onChange={(e) => setThrottle(Math.max(1, Number(e.target.value)))} min={1} max={1000} />
             </div>
-            <Button variant="outline" onClick={() => previewMut.mutate()} disabled={previewMut.isPending}>
+            <Button validate variant="outline" onClick={() => previewMut.mutate()} disabled={previewMut.isPending}>
               <Users className="h-4 w-4 ml-1" /> معاينة الجمهور
             </Button>
             {previewMut.data && (
@@ -140,7 +140,7 @@ function NewPage() {
             )}
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setStep(2)}>السابق</Button>
-              <Button onClick={() => setStep(4)}>التالي</Button>
+              <Button validate onClick={() => setStep(4)}>التالي</Button>
             </div>
           </>
         )}
@@ -153,7 +153,7 @@ function NewPage() {
             </div>
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setStep(3)}>السابق</Button>
-              <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>حفظ كمسودة</Button>
+              <Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>حفظ كمسودة</Button>
             </div>
           </>
         )}

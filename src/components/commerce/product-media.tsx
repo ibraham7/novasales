@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Upload, X, ImageIcon, Play, ChevronLeft, ChevronRight } from "lucide-react";
 import { createProductImageUpload } from "@/modules/commerce/product-images.functions";
 import { PRODUCT_MEDIA_TYPES } from "@/modules/commerce/product-input";

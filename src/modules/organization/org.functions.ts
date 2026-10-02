@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listDepartments = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -17,10 +17,10 @@ export const listDepartments = createServerFn({ method: "GET" }).handler(async (
 export const createDepartment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      name: z.string().min(1).max(80),
+      name: z.string().trim().min(1).max(80),
       shortCode: z.string().max(16).optional().nullable(),
       subtitle: z.string().max(160).optional().nullable(),
-      timezone: z.string().min(1).max(64).default("Asia/Dubai"),
+      timezone: z.string().trim().min(1).max(64).default("Asia/Dubai"),
     }).parse(d)
   )
   .handler(async ({ data }) => {
@@ -46,10 +46,10 @@ export const updateDepartment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid(),
-      name: z.string().min(1).max(80).optional(),
+      name: z.string().trim().min(1).max(80).optional(),
       shortCode: z.string().max(16).nullable().optional(),
       subtitle: z.string().max(160).nullable().optional(),
-      timezone: z.string().min(1).max(64).optional(),
+      timezone: z.string().trim().min(1).max(64).optional(),
     }).parse(d)
   )
   .handler(async ({ data }) => {
@@ -140,7 +140,7 @@ export const addMember = createServerFn({ method: "POST" })
     z.object({
       departmentId: z.string().uuid(),
       userId: z.string().uuid(),
-      displayName: z.string().min(1).max(80).optional(),
+      displayName: z.string().trim().min(1).max(80).optional(),
       isSupervisor: z.boolean().default(false),
       defaultChannelAccountId: z.string().uuid().optional(),
     }).parse(d)
@@ -203,7 +203,7 @@ export const updateMember = createServerFn({ method: "POST" })
       id: z.string().uuid(),
       isSupervisor: z.boolean().optional(),
       defaultChannelAccountId: z.string().uuid().nullable().optional(),
-      displayName: z.string().min(1).max(80).optional(),
+      displayName: z.string().trim().min(1).max(80).optional(),
       welcomeTemplateOverride: z.string().max(2000).nullable().optional(),
     }).parse(d)
   )

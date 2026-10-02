@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Zap, Plus, Play, Trash2, Power } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -89,7 +89,7 @@ function AutomationPage() {
           <DialogContent>
             <DialogHeader><DialogTitle>إنشاء أتمتة</DialogTitle></DialogHeader>
             <div className="space-y-3">
-              <div><Label>الاسم</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div><Label>الاسم</Label><Input required aria-label="اسم الأتمتة" value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div><Label>الوصف</Label><Textarea value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
               <div>
                 <Label>نوع المُشغّل</Label>
@@ -118,7 +118,7 @@ function AutomationPage() {
               )}
             </div>
             <DialogFooter>
-              <Button onClick={() => createMut.mutate()} disabled={!name || createMut.isPending}>إنشاء</Button>
+              <Button validate onClick={() => createMut.mutate()} disabled={createMut.isPending}>إنشاء</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -136,11 +136,11 @@ function AutomationPage() {
               </div>
               {w.description && <div className="text-xs text-muted-foreground mt-1">{w.description}</div>}
             </div>
-            <Button size="sm" variant="outline" onClick={() => runMut.mutate(w.id)}><Play className="h-3 w-3 ml-1" /> تشغيل يدوي</Button>
-            <Button size="sm" variant={w.is_active ? "secondary" : "default"} onClick={() => toggleMut.mutate({ id: w.id, is_active: !w.is_active })}>
+            <Button validate size="sm" variant="outline" onClick={() => runMut.mutate(w.id)}><Play className="h-3 w-3 ml-1" /> تشغيل يدوي</Button>
+            <Button validate size="sm" variant={w.is_active ? "secondary" : "default"} onClick={() => toggleMut.mutate({ id: w.id, is_active: !w.is_active })}>
               <Power className="h-3 w-3 ml-1" /> {w.is_active ? "إيقاف" : "تفعيل"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => { if (confirm("حذف؟")) delMut.mutate(w.id); }}><Trash2 className="h-3 w-3" /></Button>
+            <Button validate size="sm" variant="ghost" onClick={() => { if (confirm("حذف؟")) delMut.mutate(w.id); }}><Trash2 className="h-3 w-3" /></Button>
           </Card>
         ))}
         {q.data && q.data.workflows.length === 0 && (

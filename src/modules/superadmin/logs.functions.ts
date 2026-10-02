@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listAuditLog = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) =>

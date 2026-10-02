@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,7 +83,7 @@ function RolesPage() {
                     <Button size="sm" variant="outline" onClick={() => setEditing({ id: r.id, permissions: r.permissions })}>
                       تعديل الصلاحيات
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => { if (confirm(`حذف الدور ${r.name}؟`)) rmMut.mutate(r.id); }}>
+                    <Button validate size="icon" variant="ghost" onClick={() => { if (confirm(`حذف الدور ${r.name}؟`)) rmMut.mutate(r.id); }}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </>
@@ -91,7 +91,7 @@ function RolesPage() {
                 {currentEditing && (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>إلغاء</Button>
-                    <Button size="sm" onClick={() => saveMut.mutate({ roleId: r.id, permissions: currentEditing.permissions })}>
+                    <Button validate size="sm" onClick={() => saveMut.mutate({ roleId: r.id, permissions: currentEditing.permissions })}>
                       <Save className="h-4 w-4 ml-1" /> حفظ
                     </Button>
                   </>
@@ -143,15 +143,15 @@ function RolesPage() {
           <div className="space-y-3">
             <div>
               <Label>اسم الدور</Label>
-              <Input value={nName} onChange={(e) => setNName(e.target.value)} placeholder="Team Lead" />
+              <Input required aria-label="اسم الصلاحية" value={nName} onChange={(e) => setNName(e.target.value)} placeholder="Team Lead" />
             </div>
             <div>
               <Label>المعرّف</Label>
-              <Input value={nKey} onChange={(e) => setNKey(e.target.value.toLowerCase())} placeholder="team_lead" />
+              <Input required aria-label="مفتاح الصلاحية" value={nKey} onChange={(e) => setNKey(e.target.value.toLowerCase())} placeholder="team_lead" />
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => createMut.mutate()} disabled={!nName.trim() || !nKey.trim() || createMut.isPending}>
+            <Button validate onClick={() => createMut.mutate()} disabled={createMut.isPending}>
               إنشاء
             </Button>
           </DialogFooter>

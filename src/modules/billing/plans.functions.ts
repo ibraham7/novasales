@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -46,8 +46,8 @@ export const listPublicPlans = createServerFn({ method: "GET" }).handler(async (
 
 const upsertPlanSchema = z.object({
   id: z.string().uuid().optional(),
-  code: z.string().min(2).max(60).regex(/^[a-z0-9_-]+$/),
-  name: z.string().min(1).max(120),
+  code: z.string().trim().min(2).max(60).regex(/^[a-z0-9_-]+$/),
+  name: z.string().trim().min(1).max(120),
   description: z.string().max(500).optional().nullable(),
   status: z.enum(["draft", "published", "archived"]).default("draft"),
   price_monthly: z.number().min(0).default(0),

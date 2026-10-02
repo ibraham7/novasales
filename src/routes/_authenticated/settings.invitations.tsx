@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,12 +118,12 @@ function InvitationsPage() {
           <div className="space-y-3">
             <div>
               <Label>البريد الإلكتروني</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@example.com" />
+              <Input required aria-label="البريد الإلكتروني" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@example.com" />
             </div>
             <div>
               <Label>الدور</Label>
               <Select value={roleId} onValueChange={setRoleId}>
-                <SelectTrigger><SelectValue placeholder="اختر دوراً" /></SelectTrigger>
+                <SelectTrigger required aria-label="الصلاحية"><SelectValue placeholder="اختر دوراً" /></SelectTrigger>
                 <SelectContent>
                   {(rolesQ.data ?? []).map((r: any) => (
                     <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
@@ -145,9 +145,9 @@ function InvitationsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button
+            <Button validate
               onClick={() => createMut.mutate()}
-              disabled={!email.trim() || !roleId || createMut.isPending}
+              disabled={createMut.isPending}
             >
               إنشاء الدعوة
             </Button>

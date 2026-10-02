@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const FieldType = z.enum([
   "text",
@@ -12,11 +12,11 @@ const FieldType = z.enum([
   "email",
 ]);
 const Visibility = z.enum(["everyone", "agent", "supervisor", "admin", "owner"]);
-const OptionSchema = z.object({ value: z.string().min(1).max(100), label: z.string().min(1).max(200) });
+const OptionSchema = z.object({ value: z.string().trim().min(1).max(100), label: z.string().trim().min(1).max(200) });
 
 export const listFieldDefs = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) =>
-    z.object({ entityType: z.string().min(1).max(50) }).parse(d),
+    z.object({ entityType: z.string().trim().min(1).max(50) }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -51,11 +51,11 @@ export const upsertFieldDef = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid().optional(),
-      entityType: z.string().min(1).max(50),
-      key: z.string().min(1).max(60).regex(/^[a-z][a-z0-9_]*$/, "المفتاح: أحرف صغيرة وأرقام و _"),
-      label: z.string().min(1).max(200),
+      entityType: z.string().trim().min(1).max(50),
+      key: z.string().trim().min(1).max(60).regex(/^[a-z][a-z0-9_]*$/, "المفتاح: أحرف صغيرة وأرقام و _"),
+      label: z.string().trim().min(1).max(200),
       fieldType: FieldType,
-      fieldGroup: z.string().min(1).max(60).default("General"),
+      fieldGroup: z.string().trim().min(1).max(60).default("General"),
       options: z.array(OptionSchema).default([]),
       defaultValue: z.any().optional(),
       validation: z

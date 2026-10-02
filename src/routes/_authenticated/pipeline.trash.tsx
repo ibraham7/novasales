@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ArrowRight, RotateCcw, Trash2 } from "lucide-react";
 import { listTrashedOpportunities, restoreOpportunity, purgeOpportunity } from "@/modules/crm";
 import { Button } from "@/components/ui/button";
@@ -88,7 +88,7 @@ function TrashPage() {
                 </div>
               </div>
               {o.source && <Badge variant="outline" className="text-[10px]">{o.source}</Badge>}
-              <Button size="sm" variant="outline" className="gap-1" onClick={() => restoreMut.mutate(o.id)}>
+              <Button validate size="sm" variant="outline" className="gap-1" onClick={() => restoreMut.mutate(o.id)}>
                 <RotateCcw className="h-3.5 w-3.5" /> استعادة
               </Button>
               <AlertDialog>

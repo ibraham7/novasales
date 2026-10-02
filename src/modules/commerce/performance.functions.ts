@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const PerformanceInput = z.object({
   period: z.enum(["7d", "30d", "90d", "all"]).default("30d"),

@@ -7,7 +7,7 @@ import { useServerFn } from "@tanstack/react-start";
 
 import { CheckCircle2, Minus, Package, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { confirmSalesOrder, createSalesOrder, listProducts } from "@/modules/commerce";
 
@@ -559,7 +559,7 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
             )}
 
             <div className="grid sm:grid-cols-2 gap-2">
-              <Button
+              <Button validate
                 variant="outline"
                 disabled={!lines.length || mutation.isPending}
                 onClick={() =>
@@ -572,7 +572,7 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
                 حفظ كطلب
               </Button>
 
-              <Button
+              <Button validate
                 disabled={!lines.length || mutation.isPending}
                 onClick={() =>
                   mutation.mutate({

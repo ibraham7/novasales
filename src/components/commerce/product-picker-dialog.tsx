@@ -13,7 +13,7 @@ import { useServerFn } from "@tanstack/react-start";
 
 import { Package, Search, Send, ShoppingBag } from "lucide-react";
 
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { listProducts, sendProductToChatFn } from "@/modules/commerce";
 
@@ -205,7 +205,7 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
                           {Number(product.price)} {product.currency}
                         </div>
 
-                        <Button
+                        <Button validate
                           size="sm"
                           disabled={stock <= 0 || sendMutation.isPending}
                           onClick={() => sendMutation.mutate(product.id)}

@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
-    return (
+    const control = (
       <input
         type={type}
         className={cn(
@@ -13,8 +13,12 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
         )}
         ref={ref}
         {...props}
+        aria-required={props.required || undefined}
+        onChange={(event) => { event.currentTarget.setCustomValidity(""); event.currentTarget.removeAttribute("aria-invalid"); props.onChange?.(event); }}
+        onInvalid={(event) => { event.currentTarget.setCustomValidity(`${props["aria-label"] ?? "الحقل"}: ${event.currentTarget.validity.valueMissing ? "هذا الحقل إلزامي" : "أدخل قيمة صحيحة"}`); props.onInvalid?.(event); }}
       />
     );
+    return props.required ? <div className="min-w-0 w-full"><span className="mb-1 block text-xs text-muted-foreground">إلزامي <span className="text-destructive" aria-hidden="true">*</span></span>{control}</div> : control;
   },
 );
 Input.displayName = "Input";

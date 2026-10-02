@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 // List opportunities awaiting supervisor assignment (owner_agent_id IS NULL)
 export const listUnassigned = createServerFn({ method: "GET" })
@@ -84,7 +84,7 @@ export const getWelcomeTemplate = createServerFn({ method: "GET" }).handler(asyn
 });
 
 export const saveWelcomeTemplate = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ text: z.string().min(1).max(2000) }).parse(d))
+  .inputValidator((d: unknown) => z.object({ text: z.string().trim().min(1).max(2000) }).parse(d))
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
@@ -112,7 +112,7 @@ export const assignOpportunity = createServerFn({ method: "POST" })
       opportunityId: z.string().uuid(),
       memberId: z.string().uuid(),
       sendingAccountId: z.string().uuid(),
-      welcomeText: z.string().min(1).max(2000),
+      welcomeText: z.string().trim().min(1).max(2000),
     }).parse(d)
   )
   .handler(async ({ data }) => {

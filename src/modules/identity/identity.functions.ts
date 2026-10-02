@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const getMyProfile = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -16,7 +16,7 @@ export const getMyProfile = createServerFn({ method: "GET" }).handler(async () =
 
 export const updateMyProfile = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ fullName: z.string().min(1).max(80) }).parse(d)
+    z.object({ fullName: z.string().trim().min(1).max(80) }).parse(d)
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");

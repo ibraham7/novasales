@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { CircleDot } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { getMyAvailability, setMyAvailability } from "@/modules/assignments";
 
 const STATUS_META: Record<string, { label: string; color: string }> = {

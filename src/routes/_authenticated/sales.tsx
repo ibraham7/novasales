@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import {
   confirmSalesOrder,
@@ -428,7 +428,7 @@ function SalesPage() {
                       </div>
 
                       {order.status === "draft" && (
-                        <Button
+                        <Button validate
                           onClick={() => confirmMutation.mutate(order.id)}
                           disabled={confirmMutation.isPending}
                         >
@@ -482,7 +482,7 @@ function SalesPage() {
               <Label>العميل *</Label>
 
               <Select value={contactId} onValueChange={setContactId}>
-                <SelectTrigger>
+                <SelectTrigger required aria-label="العميل">
                   <SelectValue placeholder="اختر العميل" />
                 </SelectTrigger>
 
@@ -653,9 +653,9 @@ function SalesPage() {
               إلغاء
             </Button>
 
-            <Button
-              onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending || !contactId || !lines.length}
+            <Button validate
+              onClick={() => { if (!lines.length) { toast.error("منتجات الطلب: أضف منتجًا واحدًا على الأقل"); return; } createMutation.mutate(); }}
+              disabled={createMutation.isPending}
             >
               {createMutation.isPending ? "جارِ الإنشاء..." : "إنشاء الطلب"}
             </Button>

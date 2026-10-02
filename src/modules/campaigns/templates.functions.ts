@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listTemplates = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -18,8 +18,8 @@ export const saveTemplate = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       id: z.string().uuid().optional(),
-      name: z.string().min(1).max(200),
-      body: z.string().min(1),
+      name: z.string().trim().min(1).max(200),
+      body: z.string().trim().min(1),
       media_url: z.string().url().optional().nullable(),
       variables: z.array(z.string()).default([]),
     }).parse(d)

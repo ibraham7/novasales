@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const getMyOrganization = createServerFn({ method: "GET" }).handler(async () => {
   const { requirePermission } = await import("@/platform/rbac/rbac.server");
@@ -18,8 +18,8 @@ export const getMyOrganization = createServerFn({ method: "GET" }).handler(async
 export const updateOrganization = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      name: z.string().min(1).max(120).optional(),
-      slug: z.string().min(2).max(60).regex(/^[a-z0-9-]+$/).optional(),
+      name: z.string().trim().min(1).max(120).optional(),
+      slug: z.string().trim().min(2).max(60).regex(/^[a-z0-9-]+$/).optional(),
     }).parse(d)
   )
   .handler(async ({ data }) => {

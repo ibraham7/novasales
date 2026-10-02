@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const ScopeSchema = z.array(z.string().max(60)).max(30);
 
@@ -18,7 +18,7 @@ export const listApiKeys = createServerFn({ method: "GET" }).handler(async () =>
 export const createApiKey = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      name: z.string().min(1).max(120),
+      name: z.string().trim().min(1).max(120),
       scopes: ScopeSchema.default(["leads:read", "opportunities:read", "contacts:read"]),
       expiresInDays: z.number().int().positive().max(3650).nullable().default(null),
     }).parse(d),

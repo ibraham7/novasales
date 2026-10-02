@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 async function requireSuperAdmin() {
   const { getWorkspace } = await import("@/platform/workspace/workspace.server");

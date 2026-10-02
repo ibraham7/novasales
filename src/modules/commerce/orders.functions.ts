@@ -1,6 +1,6 @@
 import { minimumPrice, validateSalePrice } from "./product-attributes";
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const OrderItem = z.object({
   productId: z.string().uuid(),

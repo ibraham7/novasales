@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const OPP_STAGES = ["new", "contacted", "qualified", "negotiation", "won", "lost"] as const;
 export type OppStage = (typeof OPP_STAGES)[number];
@@ -237,7 +237,7 @@ export const listOppNotes = createServerFn({ method: "GET" })
 
 export const addOppNote = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ opportunityId: z.string().uuid(), body: z.string().min(1).max(4000) }).parse(d)
+    z.object({ opportunityId: z.string().uuid(), body: z.string().trim().min(1).max(4000) }).parse(d)
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -295,7 +295,7 @@ export const addOppTag = createServerFn({ method: "POST" })
     z
       .object({
         opportunityId: z.string().uuid(),
-        name: z.string().min(1).max(40),
+        name: z.string().trim().min(1).max(40),
       })
       .parse(d)
   )

@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { BadgeCheck, ExternalLink, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
 
 import { getCoexistenceSetupFn, linkCoexistenceFn } from "../whatsapp/coexistence.functions";

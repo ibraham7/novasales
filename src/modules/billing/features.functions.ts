@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listFeatures = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -12,8 +12,8 @@ export const listFeatures = createServerFn({ method: "GET" }).handler(async () =
 export const upsertFeature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      key: z.string().min(2).max(60).regex(/^[a-z0-9_]+$/),
-      label: z.string().min(1).max(120),
+      key: z.string().trim().min(2).max(60).regex(/^[a-z0-9_]+$/),
+      label: z.string().trim().min(1).max(120),
       description: z.string().max(500).optional().nullable(),
       category: z.string().default("general"),
       is_active: z.boolean().default(true),

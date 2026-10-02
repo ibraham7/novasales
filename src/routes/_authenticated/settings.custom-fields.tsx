@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Plus, Trash2, Pencil, Lock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -237,11 +237,11 @@ function FieldEditor({ entityType, initial, onClose, onSave, saving }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>التسمية</Label>
-              <Input value={form.label ?? ""} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+              <Input required aria-label="اسم الحقل" value={form.label ?? ""} onChange={(e) => setForm({ ...form, label: e.target.value })} />
             </div>
             <div>
               <Label>المفتاح (بالإنجليزية)</Label>
-              <Input
+              <Input required aria-label="مفتاح الحقل"
                 value={form.key ?? ""}
                 disabled={isEdit}
                 placeholder="my_field"
@@ -312,7 +312,7 @@ function FieldEditor({ entityType, initial, onClose, onSave, saving }: {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>إلغاء</Button>
-          <Button onClick={submit} disabled={saving}>{saving ? "جاري الحفظ..." : "حفظ"}</Button>
+          <Button validate onClick={submit} disabled={saving}>{saving ? "جاري الحفظ..." : "حفظ"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

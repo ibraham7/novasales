@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { matchesSearch } from "@/lib/fuzzy-search";
 import { Plus, Trash2, MessageSquare, User } from "lucide-react";
 
@@ -131,7 +131,7 @@ function Contacts() {
             <div className="space-y-3">
               <div>
                 <Label>رقم الهاتف (مع الرمز الدولي)</Label>
-                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} dir="ltr" placeholder="9665xxxxxxxx" />
+                <Input required aria-label="رقم الهاتف" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} dir="ltr" placeholder="9665xxxxxxxx" />
               </div>
               <div>
                 <Label>الاسم</Label>
@@ -154,7 +154,7 @@ function Contacts() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={() => saveMut.mutate()} disabled={!form.phone || saveMut.isPending}>حفظ</Button>
+              <Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>حفظ</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -182,7 +182,7 @@ function Contacts() {
                 </div>
                 <Badge variant="secondary">{STAGE_LABEL[c.funnel_stage] ?? c.funnel_stage}</Badge>
                 <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => chatMut.mutate(c.id)} title="محادثة">
+                  <Button validate size="icon" variant="ghost" onClick={() => chatMut.mutate(c.id)} title="محادثة">
                     <MessageSquare className="h-4 w-4" />
                   </Button>
                   <Button size="icon" variant="ghost" onClick={() => {
@@ -194,7 +194,7 @@ function Contacts() {
                   }} title="تعديل">
                     <User className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="text-destructive" onClick={() => { if (confirm("حذف؟")) delMut.mutate(c.id); }}>
+                  <Button validate size="icon" variant="ghost" className="text-destructive" onClick={() => { if (confirm("حذف؟")) delMut.mutate(c.id); }}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 import { randomBytes } from "node:crypto";
 
 export const listWebhooks = createServerFn({ method: "GET" }).handler(async () => {
@@ -18,7 +18,7 @@ export const listWebhooks = createServerFn({ method: "GET" }).handler(async () =
 export const createWebhook = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
-      name: z.string().min(1).max(120),
+      name: z.string().trim().min(1).max(120),
       url: z.string().url().max(500),
       events: z.array(z.string().max(60)).min(1).max(30),
     }).parse(d),
@@ -50,7 +50,7 @@ export const updateWebhook = createServerFn({ method: "POST" })
       id: z.string().uuid(),
       is_active: z.boolean().optional(),
       events: z.array(z.string().max(60)).optional(),
-      name: z.string().min(1).max(120).optional(),
+      name: z.string().trim().min(1).max(120).optional(),
       url: z.string().url().max(500).optional(),
     }).parse(d),
   )

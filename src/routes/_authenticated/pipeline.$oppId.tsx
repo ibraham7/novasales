@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { MediaPreviewDialog, makeItems, type PreviewItem } from "@/components/chat/media-preview-dialog";
 
 import {
@@ -413,7 +413,7 @@ function ContactColumn({ ws, oppId }: { ws: any; oppId: string }) {
             placeholder="اسم التاغ"
             className="h-7 text-xs"
           />
-          <Button size="sm" variant="outline" className="h-7" onClick={() => tagName.trim() && tagMut.mutate()}>
+          <Button validate size="sm" variant="outline" className="h-7" onClick={() => tagName.trim() && tagMut.mutate()}>
             +
           </Button>
         </div>
@@ -434,17 +434,17 @@ function ContactColumn({ ws, oppId }: { ws: any; oppId: string }) {
           )}
         </div>
         <Textarea
-          id="note-input"
+          required aria-label="الملاحظة" id="note-input"
           value={noteBody}
           onChange={(e) => setNoteBody(e.target.value)}
           placeholder="أضف ملاحظة..."
           rows={2}
           className="mt-2 text-xs"
         />
-        <Button
+        <Button validate
           size="sm"
           className="mt-1 w-full"
-          disabled={!noteBody.trim() || noteMut.isPending}
+          disabled={noteMut.isPending}
           onClick={() => noteMut.mutate()}
         >
           حفظ
@@ -489,7 +489,7 @@ function EditableName({ contactId, initial }: { contactId?: string; initial: str
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && mut.mutate()}
         />
-        <Button size="sm" className="h-7" onClick={() => mut.mutate()} disabled={mut.isPending}>
+        <Button validate size="sm" className="h-7" onClick={() => mut.mutate()} disabled={mut.isPending}>
           <Check className="h-3 w-3" />
         </Button>
       </div>
@@ -949,7 +949,7 @@ function MergedChatPane({
                 {editingId === m.id && (
                   <div className="flex items-center gap-1 my-1">
                     <Input
-                      value={editingText}
+                      required aria-label="نص الرسالة" value={editingText}
                       onChange={(e) => setEditingText(e.target.value)}
                       autoFocus
                       className="h-8 text-sm text-foreground bg-background"
@@ -960,10 +960,10 @@ function MergedChatPane({
                         if (e.key === "Escape") setEditingId(null);
                       }}
                     />
-                    <Button
+                    <Button validate
                       size="sm"
                       className="h-8"
-                      disabled={!editingText.trim() || editMsgMut.isPending}
+                      disabled={editMsgMut.isPending}
                       onClick={() => editMsgMut.mutate({ messageId: m.id, text: editingText.trim() })}
                     >
                       حفظ
@@ -1847,7 +1847,7 @@ function SyncHistoryButton({ oppId }: { oppId: string }) {
     onError: (e: any) => toast.error(e?.message ?? "فشل المزامنة"),
   });
   return (
-    <Button
+    <Button validate
       variant="ghost"
       size="sm"
       className="gap-1"

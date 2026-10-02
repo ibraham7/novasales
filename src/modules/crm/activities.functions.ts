@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 const EntityType = z.enum(["lead", "opportunity", "contact"]);
 const ActivityType = z.enum(["call", "meeting", "message", "email", "note", "system", "custom"]);

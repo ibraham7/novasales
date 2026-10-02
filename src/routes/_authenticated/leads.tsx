@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Users2, Plus, Trash2, ArrowRightLeft } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -138,7 +138,7 @@ function LeadsPage() {
               <div className="space-y-3">
                 <div>
                   <Label>الاسم *</Label>
-                  <Input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
+                  <Input required aria-label="اسم العميل" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -160,8 +160,8 @@ function LeadsPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button
-                  disabled={!form.contactName || createMut.isPending}
+                <Button validate
+                  disabled={createMut.isPending}
                   onClick={() => createMut.mutate()}
                 >
                   حفظ
@@ -198,7 +198,7 @@ function LeadsPage() {
                 </td>
                 <td className="p-3">
                   <div className="flex gap-1 justify-end">
-                    <Button
+                    <Button validate
                       size="sm"
                       variant="outline"
                       disabled={l.status === "converted" || convertMut.isPending}

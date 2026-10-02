@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Search, Forward, Check } from "lucide-react";
 
 import { forwardMessageFn, listForwardTargets } from "@/modules/messaging";
@@ -159,7 +159,7 @@ export function ForwardDialog({
           <span className="text-xs text-muted-foreground">
             {chosen.length ? `تم اختيار ${chosen.length}` : "اختر وجهة واحدة أو أكثر"}
           </span>
-          <Button
+          <Button validate
             size="sm"
             disabled={!chosen.length || !messageId || mut.isPending}
             onClick={() => mut.mutate()}

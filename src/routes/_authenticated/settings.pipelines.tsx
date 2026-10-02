@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Plus, Trash2, Star } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -125,11 +125,11 @@ function SettingsPipelinesPage() {
               <DialogHeader><DialogTitle>قمع جديد</DialogTitle></DialogHeader>
               <div>
                 <Label>الاسم</Label>
-                <Input value={newPipeName} onChange={(e) => setNewPipeName(e.target.value)} />
+                <Input required aria-label="اسم المسار" value={newPipeName} onChange={(e) => setNewPipeName(e.target.value)} />
               </div>
               <DialogFooter>
-                <Button
-                  disabled={!newPipeName || createPipeMut.isPending}
+                <Button validate
+                  disabled={createPipeMut.isPending}
                   onClick={() => createPipeMut.mutate()}
                 >
                   حفظ
@@ -151,12 +151,12 @@ function SettingsPipelinesPage() {
                 </div>
                 <div className="flex gap-2">
                   {!current.is_default && (
-                    <Button size="sm" variant="outline" onClick={() => setDefaultMut.mutate(current.id)}>
+                    <Button validate size="sm" variant="outline" onClick={() => setDefaultMut.mutate(current.id)}>
                       <Star className="h-3 w-3 ml-1" /> اجعله افتراضياً
                     </Button>
                   )}
                   {!current.is_default && (
-                    <Button
+                    <Button validate
                       size="sm"
                       variant="ghost"
                       onClick={() => {
@@ -180,7 +180,7 @@ function SettingsPipelinesPage() {
                     }}
                   />
                 ))}
-                <Button
+                <Button validate
                   variant="outline"
                   className="w-full"
                   onClick={() =>
@@ -222,7 +222,7 @@ function StageRow({
   return (
     <div className="flex items-center gap-2 p-2 rounded border bg-muted/20">
       <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
-      <Input className="flex-1" value={name} onChange={(e) => setName(e.target.value)} />
+      <Input required aria-label="اسم المرحلة" className="flex-1" value={name} onChange={(e) => setName(e.target.value)} />
       <Input
         type="color"
         className="w-14 h-9 p-1"

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { z } from "@/lib/validation";
 
 export const listStages = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -70,7 +70,7 @@ export const moveOpportunityStage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       opportunityId: z.string().uuid(),
-      stage: z.string().min(1),
+      stage: z.string().trim().min(1),
     }).parse(d)
   )
   .handler(async ({ data }) => {
