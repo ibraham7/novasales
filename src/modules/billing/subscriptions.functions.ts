@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 
 export const listSubscriptions = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireBillingAdmin } = await import("./admin.server");
+  await requireBillingAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data, error } = await db
@@ -27,6 +29,8 @@ export const setSubscriptionPlan = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
 
@@ -84,6 +88,8 @@ export const cancelSubscription = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const patch = data.immediate
@@ -106,6 +112,8 @@ export const extendTrial = createServerFn({ method: "POST" })
     z.object({ organization_id: z.string().uuid(), days: z.number().int().min(1).max(365) }).parse(d)
   )
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { data: sub } = await db
@@ -126,6 +134,8 @@ export const extendTrial = createServerFn({ method: "POST" })
 export const suspendSubscription = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ organization_id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db
@@ -139,6 +149,8 @@ export const suspendSubscription = createServerFn({ method: "POST" })
 export const reactivateSubscription = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ organization_id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db

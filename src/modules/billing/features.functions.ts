@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 
 export const listFeatures = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireBillingAdmin } = await import("./admin.server");
+  await requireBillingAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data, error } = await db.from("billing_features").select("*").order("sort_order");
@@ -21,6 +23,8 @@ export const upsertFeature = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db.from("billing_features").upsert(data, { onConflict: "key" });
@@ -31,6 +35,8 @@ export const upsertFeature = createServerFn({ method: "POST" })
 export const deleteFeature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ key: z.string() }).parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db.from("billing_features").delete().eq("key", data.key);

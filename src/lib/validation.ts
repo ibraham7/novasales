@@ -29,6 +29,7 @@ export function arabicError(error: unknown): string {
   const message = typeof error === "string" ? error : (error as { message?: string })?.message ?? "";
   if (error instanceof z.ZodError) return error.issues.map(issueMessage).join("؛ ");
   try { const issues = JSON.parse(message); if (Array.isArray(issues) && issues.every(i => i.code && i.path)) return issues.map(issueMessage).join("؛ "); } catch { /* not a serialized validation error */ }
+  if (/billing_.*(schema cache|does not exist)|(?:schema cache|does not exist).*billing_/i.test(message)) return "جداول الخطط والاشتراكات غير مهيأة في قاعدة البيانات؛ تواصل مع إدارة النظام";
   if (/invalid login credentials/i.test(message)) return "اسم المستخدم أو كلمة المرور غير صحيحة";
   if (/email.*confirmed/i.test(message)) return "يرجى تأكيد البريد الإلكتروني قبل تسجيل الدخول";
   if (/already registered|already exists|duplicate key/i.test(message)) return "هذه البيانات مستخدمة بالفعل؛ أدخل قيمة مختلفة";

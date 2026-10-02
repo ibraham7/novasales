@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 
 export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireBillingAdmin } = await import("./admin.server");
+  await requireBillingAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data: plans, error } = await db
@@ -64,35 +66,28 @@ const upsertPlanSchema = z.object({
 export const upsertPlan = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => upsertPlanSchema.parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { features, limits, id, ...planData } = data;
 
-    let planId = id;
-    if (planId) {
-      const { error } = await db.from("billing_plans").update(planData).eq("id", planId);
-      if (error) throw new Error(error.message);
-    } else {
-      const { data: inserted, error } = await db.from("billing_plans").insert(planData).select("id").single();
-      if (error) throw new Error(error.message);
-      planId = inserted.id;
+    const { data: planId, error } = await db.rpc("billing_save_plan", {
+      _plan: { ...planData, ...(id ? { id } : {}) }, _features: features, _limits: limits,
+    });
+    if (error) {
+      if (error.code === "23505") throw new Error("كود الخطة مستخدم بالفعل؛ أدخل كودًا مختلفًا");
+      if (["42P01", "PGRST202", "PGRST205"].includes(error.code)) throw new Error("جداول الخطط غير مهيأة في قاعدة البيانات؛ تواصل مع إدارة النظام");
+      throw new Error("تعذر حفظ الخطة وميزاتها وحدودها؛ حاول مجددًا أو تواصل مع إدارة النظام");
     }
-
-    await db.from("billing_plan_features").delete().eq("plan_id", planId);
-    if (features.length) {
-      await db.from("billing_plan_features").insert(features.map((f) => ({ ...f, plan_id: planId })));
-    }
-    await db.from("billing_plan_limits").delete().eq("plan_id", planId);
-    if (limits.length) {
-      await db.from("billing_plan_limits").insert(limits.map((l) => ({ ...l, plan_id: planId })));
-    }
-
     return { id: planId };
   });
 
 export const deletePlan = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { count } = await db

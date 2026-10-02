@@ -140,14 +140,14 @@ function PlansPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><Label>الاسم</Label><Input required aria-label="اسم الخطة" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-              <div><Label>الكود</Label><Input required aria-label="كود الخطة" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="starter" /></div>
+              <div><Label>الكود</Label><Input required aria-label="كود الخطة" minLength={2} maxLength={60} pattern="[a-z0-9_-]+" title="حروف إنجليزية صغيرة وأرقام وشرطة فقط" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="starter" /></div>
             </div>
             <div><Label>الوصف</Label><Textarea value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div><Label>شهري</Label><Input type="number" value={form.price_monthly} onChange={(e) => setForm({ ...form, price_monthly: Number(e.target.value) })} /></div>
-              <div><Label>ربع سنوي</Label><Input type="number" value={form.price_quarterly} onChange={(e) => setForm({ ...form, price_quarterly: Number(e.target.value) })} /></div>
-              <div><Label>سنوي</Label><Input type="number" value={form.price_yearly} onChange={(e) => setForm({ ...form, price_yearly: Number(e.target.value) })} /></div>
-              <div><Label>أيام التجربة</Label><Input type="number" value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} /></div>
+              <div><Label>شهري</Label><Input type="number" min={0} step="any" value={form.price_monthly} onChange={(e) => setForm({ ...form, price_monthly: Number(e.target.value) })} /></div>
+              <div><Label>ربع سنوي</Label><Input type="number" min={0} step="any" value={form.price_quarterly} onChange={(e) => setForm({ ...form, price_quarterly: Number(e.target.value) })} /></div>
+              <div><Label>سنوي</Label><Input type="number" min={0} step="any" value={form.price_yearly} onChange={(e) => setForm({ ...form, price_yearly: Number(e.target.value) })} /></div>
+              <div><Label>أيام التجربة</Label><Input type="number" min={0} step={1} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} /></div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div><Label>العملة</Label><Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} /></div>
