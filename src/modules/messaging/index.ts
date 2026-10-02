@@ -1,5 +1,6 @@
 export {
   listChats,
+  listChatTextTemplates,
   getChatWithMessages,
   sendMessageFn,
   sendMediaMessageFn,

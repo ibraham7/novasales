@@ -51,8 +51,11 @@ import { toast } from "@/lib/toast";
 import {
   getChatWithMessages,
   sendMessageFn,
+  listChatTextTemplates,
   sendMediaMessageFn,
 } from "@/modules/messaging";
+import { ForwardDialog } from "@/components/chat/forward-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MediaPreviewDialog, makeItems, type PreviewItem } from "@/components/chat/media-preview-dialog";
 
 import {
@@ -132,6 +135,18 @@ function ChatView() {
     );
 
   const sendMedia = useServerFn(sendMediaMessageFn);
+  const [selectedMessage, setSelectedMessage] = useState<MessageRow | null>(null);
+  const [replyMessage, setReplyMessage] = useState<MessageRow | null>(null);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [toolbarPanel, setToolbarPanel] = useState<"templates" | "quick" | "emoji" | null>(null);
+  const fetchTemplates = useServerFn(listChatTextTemplates);
+  const templatesQ = useQuery({ queryKey: ["chat-text-templates"], queryFn: () => fetchTemplates(), enabled: toolbarPanel === "templates" });
+  useEffect(() => { setSelectedMessage(null); setReplyMessage(null); setForwardOpen(false); setToolbarPanel(null); }, [chatId]);
+  function pickMessage(action: "reply" | "forward") {
+    if (!selectedMessage) { toast.error("اختر رسالة من المحادثة أولًا"); return; }
+    if (action === "reply") setReplyMessage(selectedMessage);
+    else setForwardOpen(true);
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
   const [previewCaption, setPreviewCaption] = useState("");
@@ -169,12 +184,14 @@ function ChatView() {
           mimeType: item.file.type || "application/octet-stream",
           base64,
           caption: sent === 0 ? previewCaption.trim() || undefined : undefined,
+          replyToMessageId: replyMessage?.id,
         } });
         sent++;
         setProgress((current) => ({ ...current, [item.id]: 100 }));
       }
       setPreviewItems([]);
       setPreviewCaption("");
+      setReplyMessage(null);
       setProgress({});
     } catch (error) {
       if (sent) setPreviewItems((current) => current.slice(sent));
@@ -303,11 +320,13 @@ function ChatView() {
           data: {
             chatId,
             text,
+            replyToMessageId: replyMessage?.id,
           },
         }),
 
       onSuccess: () => {
         setText("");
+        setReplyMessage(null);
 
         qc.invalidateQueries({
           queryKey: [
@@ -664,8 +683,15 @@ function ChatView() {
                   key={
                     message.id
                   }
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`اختيار رسالة: ${message.content || "مرفق"}`}
+                  aria-pressed={selectedMessage?.id === message.id}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedMessage(message); } }}
+                  onClick={() => setSelectedMessage(message)}
                   className={cn(
-                    "flex",
+                    "flex cursor-pointer rounded-lg",
+                    selectedMessage?.id === message.id && "ring-2 ring-primary",
                     message.from_me
                       ? "justify-start"
                       : "justify-end",
@@ -749,23 +775,23 @@ function ChatView() {
         {/* Composer */}
         <div className="border-t bg-card shrink-0 pb-[env(safe-area-inset-bottom)]">
           <div className="px-2 sm:px-3 pt-2 flex items-center gap-1 overflow-x-auto whitespace-nowrap text-muted-foreground">
-            <ToolBtn label="رد">
+            <ToolBtn label="رد" onClick={() => pickMessage("reply")}>
               <Reply className="h-4 w-4" />
             </ToolBtn>
 
-            <ToolBtn label="تحويل">
+            <ToolBtn label="تحويل" onClick={() => pickMessage("forward")}>
               <Forward className="h-4 w-4" />
             </ToolBtn>
 
-            <ToolBtn label="قوالب">
+            <ToolBtn label="قوالب" onClick={() => setToolbarPanel("templates")}>
               <FileText className="h-4 w-4" />
             </ToolBtn>
 
-            <ToolBtn label="ردود سريعة">
+            <ToolBtn label="ردود سريعة" onClick={() => setToolbarPanel("quick")}>
               <Zap className="h-4 w-4" />
             </ToolBtn>
 
-            <ToolBtn label="Emoji">
+            <ToolBtn label="Emoji" onClick={() => setToolbarPanel("emoji")}>
               <Smile className="h-4 w-4" />
             </ToolBtn>
 
@@ -819,6 +845,19 @@ function ChatView() {
               )}
           </div>
 
+          {replyMessage && <div className="mx-3 mt-2 flex items-center gap-2 rounded-lg border-r-4 border-primary bg-muted p-2 text-sm"><Reply className="h-4 w-4" /><span className="flex-1 truncate">الرد على: {replyMessage.content || "مرفق"}</span><Button type="button" variant="ghost" size="icon" aria-label="إلغاء الرد" onClick={() => setReplyMessage(null)}><X className="h-4 w-4" /></Button></div>}
+          {selectedMessage && <p className="px-3 pt-2 text-xs text-muted-foreground">تم اختيار رسالة للرد أو التحويل <button type="button" className="underline" onClick={() => setSelectedMessage(null)}>إلغاء الاختيار</button></p>}
+          <ForwardDialog open={forwardOpen} onOpenChange={setForwardOpen} messageId={selectedMessage?.id ?? null} onDone={() => qc.invalidateQueries({ queryKey: ["chats-enriched"] })} />
+          <Dialog open={toolbarPanel !== null} onOpenChange={(open) => { if (!open) setToolbarPanel(null); }}>
+            <DialogContent dir="rtl" className="max-w-md"><DialogHeader><DialogTitle>{toolbarPanel === "templates" ? "القوالب النصية" : toolbarPanel === "quick" ? "ردود سريعة" : "الرموز التعبيرية"}</DialogTitle></DialogHeader>
+              <div className="max-h-80 overflow-y-auto space-y-2">
+                {toolbarPanel === "templates" && (templatesQ.isPending ? <p>جارٍ التحميل...</p> : templatesQ.isError ? <div><p>تعذر تحميل القوالب</p><Button onClick={() => templatesQ.refetch()}>إعادة المحاولة</Button></div> : templatesQ.data?.length ? templatesQ.data.map(t => <Button key={t.id} variant="outline" className="w-full justify-start" onClick={() => { setText(t.body); setToolbarPanel(null); }}>{t.name}</Button>) : <p>لا توجد قوالب نصية في مؤسستك. يمكن إضافتها من صفحة قوالب الحملات.</p>)}
+                {toolbarPanel === "templates" && <p className="text-xs text-muted-foreground">يُدرج نص القالب للمراجعة؛ عدّل أي متغيرات قبل الإرسال.</p>}
+                {toolbarPanel === "quick" && ["السلام عليكم، كيف يمكننا مساعدتك؟", "شكرًا لتواصلك معنا، سنرد عليك قريبًا.", "هل يمكنك تزويدنا بتفاصيل الطلب؟", "تم استلام طلبك، شكرًا لك."].map(value => <Button key={value} variant="outline" className="w-full h-auto whitespace-normal text-right justify-start" onClick={() => { setText(value); setToolbarPanel(null); }}>{value}</Button>)}
+                {toolbarPanel === "emoji" && <div className="grid grid-cols-6 gap-2">{["😊", "👍", "❤️", "🙏", "✅", "🌹", "🎉", "👋", "🤝", "📦", "✨", "🙂", "😂", "😍", "👌", "💚", "📍", "🕐"].map(value => <Button key={value} variant="ghost" aria-label={value} onClick={() => { setText(current => current + value); setToolbarPanel(null); }}>{value}</Button>)}</div>}
+              </div>
+            </DialogContent>
+          </Dialog>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -1002,13 +1041,16 @@ function KPI({
 function ToolBtn({
   children,
   label,
+  onClick,
 }: {
   children: ReactNode;
   label: string;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       title={label}
       aria-label={label}
       className="h-8 w-8 shrink-0 flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"

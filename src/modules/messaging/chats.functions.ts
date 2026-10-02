@@ -1584,3 +1584,13 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
 
     return { sent, failed: failures.length, errors: failures };
   });
+
+export const listChatTextTemplates = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+  const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+  const { organizationId } = await requireAnyPermission(["messaging.send"]);
+  const { data, error } = await (supabaseAdmin as any).from("cmp_templates")
+    .select("id,name,body").eq("organization_id", organizationId).order("name");
+  if (error) throw new Error("تعذر تحميل القوالب؛ أعد المحاولة");
+  return (data ?? []) as { id: string; name: string; body: string }[];
+});
