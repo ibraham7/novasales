@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
 import { useState } from "react";
+import { CURRENCY_CODES, currencyName } from "@/modules/commerce/currencies";
 import { Plus, Trash2, Edit } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/plans")({
@@ -150,7 +151,12 @@ function PlansPage() {
               <div><Label>أيام التجربة</Label><Input type="number" min={0} step={1} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} /></div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div><Label>العملة</Label><Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} /></div>
+              <div><Label>العملة</Label>
+                <Select value={form.currency} onValueChange={(currency) => setForm({ ...form, currency })}>
+                  <SelectTrigger required aria-label="عملة الخطة"><SelectValue placeholder="اختر العملة" /></SelectTrigger>
+                  <SelectContent>{CURRENCY_CODES.map((code) => <SelectItem key={code} value={code}>{currencyName(code)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label>الحالة</Label>
                 <Select value={form.status} onValueChange={(v: any) => setForm({ ...form, status: v })}>

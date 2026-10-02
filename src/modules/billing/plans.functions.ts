@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
+import { CURRENCY_CODES } from "@/modules/commerce/currencies";
 
 export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
   const { requireBillingAdmin } = await import("./admin.server");
@@ -55,7 +56,7 @@ const upsertPlanSchema = z.object({
   price_monthly: z.number().min(0).default(0),
   price_quarterly: z.number().min(0).default(0),
   price_yearly: z.number().min(0).default(0),
-  currency: z.string().default("USD"),
+  currency: z.string().trim().toUpperCase().refine((code) => CURRENCY_CODES.includes(code), "العملة: اختر عملة صحيحة من القائمة").default("USD"),
   trial_days: z.number().int().min(0).default(0),
   is_public: z.boolean().default(true),
   sort_order: z.number().int().default(0),
