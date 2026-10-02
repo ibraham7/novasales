@@ -189,14 +189,16 @@ function PlansPage() {
                 {LIMIT_KEYS.map((k) => {
                   const v = getLimit(k);
                   return (
-                    <div key={k} className="flex items-center gap-2">
-                      <Label className="w-40 text-xs">{LIMIT_LABELS[k] ?? k}</Label>
+                    <div key={k} className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_3.5rem] items-center gap-2">
+                      <Label htmlFor={`plan-limit-${k}`} className="text-xs">{LIMIT_LABELS[k] ?? k}</Label>
                       <Input
-                        type="number"
+                        id={`plan-limit-${k}`}
+                        aria-label={LIMIT_LABELS[k] ?? k}
+                        type="number" min={-1} step={1}
                         value={v}
                         onChange={(e) => setLimit(k, Number(e.target.value))}
                       />
-                      {v === -1 && <span className="text-xs text-muted-foreground shrink-0">بلا حدود</span>}
+                      <span className="text-xs text-muted-foreground">{v === -1 ? "بلا حدود" : ""}</span>
                     </div>
                   );
                 })}
