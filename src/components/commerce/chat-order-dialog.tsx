@@ -240,6 +240,8 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
       );
 
       qc.invalidateQueries({ queryKey: ["sales-products"] });
+      qc.invalidateQueries({ queryKey: ["sales-reports"] });
+      qc.invalidateQueries({ queryKey: ["sales-performance"] });
       qc.invalidateQueries({ queryKey: ["sales-products-order"] });
       reset();
       setOpen(false);

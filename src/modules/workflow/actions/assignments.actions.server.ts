@@ -8,11 +8,19 @@ const leadAssign: ActionHandler = async (config, ctx) => {
   const leadId = (config.lead_id ?? ctx.triggerPayload?.lead_id) as string | undefined;
   const ownerUserId = config.owner_user_id as string | undefined;
   if (!leadId || !ownerUserId) return { ok: false, error: "lead_id and owner_user_id required" };
-  const { data: cur } = await db.from("crm_leads").select("owner_user_id, department_id").eq("id", leadId).maybeSingle();
+  const { data: cur } = await db
+    .from("crm_leads")
+    .select("owner_user_id, department_id")
+    .eq("id", leadId)
+    .eq("organization_id", ctx.organizationId)
+    .maybeSingle();
   const fromUser = cur?.owner_user_id ?? null;
   const { error } = await db
     .from("crm_leads")
-    .update({ owner_user_id: ownerUserId, department_id: config.department_id ?? cur?.department_id ?? null })
+    .update({
+      owner_user_id: ownerUserId,
+      department_id: config.department_id ?? cur?.department_id ?? null,
+    })
     .eq("id", leadId)
     .eq("organization_id", ctx.organizationId);
   if (error) return { ok: false, error: error.message };

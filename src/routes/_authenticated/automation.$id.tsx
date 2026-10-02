@@ -1,16 +1,35 @@
+import { linkWorkflowSteps } from "@/modules/workflow/definition";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { toast } from "@/lib/toast";
-import { ArrowRight, Save, Plus, Trash2, ChevronUp, ChevronDown, Filter, Clock, Send, Hourglass, GitBranch } from "lucide-react";
+import {
+  ArrowRight,
+  Save,
+  Plus,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  Filter,
+  Clock,
+  Send,
+  Hourglass,
+  GitBranch,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getWorkflow, saveWorkflow, listActionsCatalog } from "@/modules/workflow";
 
 export const Route = createFileRoute("/_authenticated/automation/$id")({
@@ -18,7 +37,13 @@ export const Route = createFileRoute("/_authenticated/automation/$id")({
   component: EditPage,
 });
 
-const STEP_ICONS: Record<string, any> = { action: Send, delay: Clock, wait_for_event: Hourglass, condition: Filter, branch: GitBranch };
+const STEP_ICONS: Record<string, any> = {
+  action: Send,
+  delay: Clock,
+  wait_for_event: Hourglass,
+  condition: Filter,
+  branch: GitBranch,
+};
 const STEP_TYPES = [
   { v: "action", l: "إجراء" },
   { v: "delay", l: "انتظار زمني" },
@@ -29,10 +54,21 @@ const STEP_TYPES = [
 
 function newStep(type: string): any {
   const id = `s_${Math.random().toString(36).slice(2, 8)}`;
-  if (type === "action") return { id, type, label: "إجراء", icon: "send", action: "messaging.send", config: {} };
+  if (type === "action")
+    return { id, type, label: "إجراء", icon: "send", action: "messaging.send", config: {} };
   if (type === "delay") return { id, type, label: "انتظار", icon: "clock", duration_minutes: 30 };
-  if (type === "wait_for_event") return { id, type, label: "انتظار حدث", icon: "hourglass", event: "messaging.message.received", match: {}, timeout_minutes: 1440 };
-  if (type === "condition") return { id, type, label: "شرط", icon: "filter", expr: { truthy: true } };
+  if (type === "wait_for_event")
+    return {
+      id,
+      type,
+      label: "انتظار حدث",
+      icon: "hourglass",
+      event: "messaging.message.received",
+      match: {},
+      timeout_minutes: 1440,
+    };
+  if (type === "condition")
+    return { id, type, label: "شرط", icon: "filter", expr: { truthy: true } };
   return { id, type: "end", label: "نهاية", icon: "check" };
 }
 
@@ -65,54 +101,122 @@ function EditPage() {
   const saveMut = useMutation({
     mutationFn: () => {
       // Wire next-step: linear chain by default
-      const linked = steps.map((s, i) => ({ ...s, next: s.next ?? steps[i + 1]?.id }));
+      if (steps.some((s) => Object.values(s._jsonErrors ?? {}).some(Boolean)))
+        throw new Error("صحّح إعدادات JSON قبل الحفظ");
+      const linked = linkWorkflowSteps(steps.map(({ _jsonDrafts, _jsonErrors, ...s }) => s));
       return saveFn({
         data: {
-          id, name, description: desc, is_active: q.data?.workflow?.is_active ?? false,
+          id,
+          name,
+          description: desc,
+          is_active: q.data?.workflow?.is_active ?? false,
           trigger_type: triggerType,
           trigger_config: triggerType === "event" ? { event: triggerEvent } : {},
           definition: {
             version: (q.data?.workflow?.definition?.version ?? 1) + 1,
             engine: "v1",
-            metadata: { ...(q.data?.workflow?.definition?.metadata ?? {}), updatedAt: new Date().toISOString() },
+            metadata: {
+              ...(q.data?.workflow?.definition?.metadata ?? {}),
+              updatedAt: new Date().toISOString(),
+            },
             steps: linked,
           },
         },
       });
     },
-    onSuccess: () => { toast.success("تم الحفظ"); qc.invalidateQueries({ queryKey: ["workflow", id] }); },
+    onSuccess: () => {
+      toast.success("تم الحفظ");
+      qc.invalidateQueries({ queryKey: ["workflow", id] });
+      qc.invalidateQueries({ queryKey: ["workflows"] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const updateStep = (i: number, patch: any) => setSteps((s) => s.map((st, idx) => idx === i ? { ...st, ...patch } : st));
+  const updateStep = (i: number, patch: any) =>
+    setSteps((s) => s.map((st, idx) => (idx === i ? { ...st, ...patch } : st)));
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i));
-  const moveStep = (i: number, dir: -1 | 1) => setSteps((s) => {
-    const n = [...s]; const j = i + dir; if (j < 0 || j >= n.length) return s;
-    [n[i], n[j]] = [n[j], n[i]]; return n;
-  });
+  const moveStep = (i: number, dir: -1 | 1) =>
+    setSteps((s) => {
+      const n = [...s];
+      const j = i + dir;
+      if (j < 0 || j >= n.length) return s;
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
 
+  function editJson(i: number, key: string, raw: string) {
+    setSteps((old) =>
+      old.map((s, index) => {
+        if (index !== i) return s;
+        const next = {
+          ...s,
+          _jsonDrafts: { ...s._jsonDrafts, [key]: raw },
+          _jsonErrors: { ...s._jsonErrors },
+        };
+        try {
+          const parsed = JSON.parse(raw);
+          if (key !== "expr" && (!parsed || typeof parsed !== "object" || Array.isArray(parsed)))
+            throw new Error();
+          next[key] = parsed;
+          next._jsonErrors[key] = false;
+        } catch {
+          next._jsonErrors[key] = true;
+        }
+        return next;
+      }),
+    );
+  }
+  if (q.isError)
+    return (
+      <div role="alert" className="p-6">
+        تعذر تحميل الأتمتة <Button onClick={() => q.refetch()}>إعادة المحاولة</Button>
+      </div>
+    );
+  if (!q.isLoading && !q.data?.workflow) return <div className="p-6">الأتمتة غير موجودة</div>;
   if (q.isLoading) return <div className="p-8">جاري التحميل...</div>;
 
   return (
-    <div className="p-8 space-y-6" dir="rtl">
-      <div className="flex items-center justify-between">
+    <div className="p-3 sm:p-6 lg:p-8 space-y-6 min-w-0" dir="rtl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link to="/automation"><Button size="sm" variant="ghost"><ArrowRight className="h-4 w-4" /></Button></Link>
+          <Link to="/automation">
+            <Button size="sm" variant="ghost">
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
           <h1 className="text-2xl font-bold">تعديل الأتمتة</h1>
         </div>
         <div className="flex gap-2">
-          <Link to="/automation/$id/runs" params={{ id }}><Button variant="outline">سجل التشغيل</Button></Link>
-          <Button validate onClick={() => saveMut.mutate()} disabled={saveMut.isPending}><Save className="h-4 w-4 ml-1" /> حفظ</Button>
+          <Link to="/automation/$id/runs" params={{ id }}>
+            <Button variant="outline">سجل التشغيل</Button>
+          </Link>
+          <Button
+            validate
+            onClick={() => saveMut.mutate()}
+            disabled={saveMut.isPending || !q.data?.canManage}
+          >
+            <Save className="h-4 w-4 ml-1" /> حفظ
+          </Button>
         </div>
       </div>
 
       <Card className="p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div><Label>الاسم</Label><Input required aria-label="اسم الأتمتة" value={name} onChange={(e) => setName(e.target.value)} /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label>الاسم</Label>
+            <Input
+              required
+              aria-label="اسم الأتمتة"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
           <div>
             <Label>نوع المُشغّل</Label>
             <Select value={triggerType} onValueChange={(v) => setTriggerType(v as any)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="event">حدث</SelectItem>
                 <SelectItem value="manual">يدوي</SelectItem>
@@ -124,27 +228,42 @@ function EditPage() {
           <div>
             <Label>الحدث</Label>
             <Select value={triggerEvent} onValueChange={setTriggerEvent}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="crm.lead.created">crm.lead.created</SelectItem>
                 <SelectItem value="crm.lead.assigned">crm.lead.assigned</SelectItem>
                 <SelectItem value="crm.opportunity.created">crm.opportunity.created</SelectItem>
-                <SelectItem value="crm.opportunity.stage_changed">crm.opportunity.stage_changed</SelectItem>
-                <SelectItem value="messaging.message.received">messaging.message.received</SelectItem>
+                <SelectItem value="crm.opportunity.stage_changed">
+                  crm.opportunity.stage_changed
+                </SelectItem>
+                <SelectItem value="messaging.message.received">
+                  messaging.message.received
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
         )}
-        <div><Label>الوصف</Label><Textarea value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
+        <div>
+          <Label>الوصف</Label>
+          <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} />
+        </div>
       </Card>
 
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">الخطوات ({steps.length})</h2>
           <Select value="" onValueChange={(v) => v && setSteps((s) => [...s, newStep(v)])}>
-            <SelectTrigger className="w-48"><SelectValue placeholder="إضافة خطوة" /></SelectTrigger>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="إضافة خطوة" />
+            </SelectTrigger>
             <SelectContent>
-              {STEP_TYPES.map((t) => <SelectItem key={t.v} value={t.v}>{t.l}</SelectItem>)}
+              {STEP_TYPES.map((t) => (
+                <SelectItem key={t.v} value={t.v}>
+                  {t.l}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -156,20 +275,34 @@ function EditPage() {
               <Card key={s.id} className="p-4">
                 <div className="flex items-start gap-3">
                   <Icon className="h-5 w-5 text-primary mt-1" />
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Input className="w-64" value={s.label ?? ""} onChange={(e) => updateStep(i, { label: e.target.value })} placeholder="اسم الخطوة" />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        className="w-full sm:w-64"
+                        value={s.label ?? ""}
+                        onChange={(e) => updateStep(i, { label: e.target.value })}
+                        placeholder="اسم الخطوة"
+                      />
                       <Badge variant="outline">{s.type}</Badge>
                       <code className="text-xs text-muted-foreground">{s.id}</code>
                     </div>
                     {s.type === "action" && (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs">الإجراء</Label>
-                          <Select value={s.action} onValueChange={(v) => updateStep(i, { action: v })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          <Select
+                            value={s.action}
+                            onValueChange={(v) => updateStep(i, { action: v })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
                             <SelectContent>
-                              {(actionsQ.data?.actions ?? []).map((a: string) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                              {(actionsQ.data?.actions ?? []).map((a: string) => (
+                                <SelectItem key={a} value={a}>
+                                  {a}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -178,31 +311,60 @@ function EditPage() {
                           <Textarea
                             className="font-mono text-xs"
                             rows={3}
-                            value={JSON.stringify(s.config ?? {}, null, 2)}
-                            onChange={(e) => {
-                              try { updateStep(i, { config: JSON.parse(e.target.value) }); } catch {}
-                            }}
+                            value={s._jsonDrafts?.config ?? JSON.stringify(s.config ?? {}, null, 2)}
+                            aria-invalid={s._jsonErrors?.config || undefined}
+                            onBlur={() =>
+                              s._jsonErrors?.config &&
+                              toast.error("صيغة JSON غير صحيحة؛ صححها قبل الحفظ")
+                            }
+                            onChange={(e) => editJson(i, "config", e.target.value)}
                           />
                         </div>
                       </div>
                     )}
                     {s.type === "delay" && (
-                      <div><Label className="text-xs">الدقائق</Label>
-                        <Input type="number" value={s.duration_minutes} onChange={(e) => updateStep(i, { duration_minutes: Number(e.target.value) })} />
+                      <div>
+                        <Label className="text-xs">الدقائق</Label>
+                        <Input
+                          type="number"
+                          value={s.duration_minutes}
+                          onChange={(e) =>
+                            updateStep(i, { duration_minutes: Number(e.target.value) })
+                          }
+                        />
                       </div>
                     )}
                     {s.type === "wait_for_event" && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div><Label className="text-xs">اسم الحدث</Label>
-                          <Input value={s.event} onChange={(e) => updateStep(i, { event: e.target.value })} /></div>
-                        <div><Label className="text-xs">مهلة (دقائق)</Label>
-                          <Input type="number" value={s.timeout_minutes} onChange={(e) => updateStep(i, { timeout_minutes: Number(e.target.value) })} /></div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">اسم الحدث</Label>
+                          <Input
+                            value={s.event}
+                            onChange={(e) => updateStep(i, { event: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">مهلة (دقائق)</Label>
+                          <Input
+                            type="number"
+                            value={s.timeout_minutes}
+                            onChange={(e) =>
+                              updateStep(i, { timeout_minutes: Number(e.target.value) })
+                            }
+                          />
+                        </div>
                         <div className="col-span-2">
                           <Label className="text-xs">شرط المطابقة (JSON)</Label>
                           <Textarea
-                            className="font-mono text-xs" rows={2}
-                            value={JSON.stringify(s.match ?? {}, null, 2)}
-                            onChange={(e) => { try { updateStep(i, { match: JSON.parse(e.target.value) }); } catch {} }}
+                            className="font-mono text-xs"
+                            rows={2}
+                            value={s._jsonDrafts?.match ?? JSON.stringify(s.match ?? {}, null, 2)}
+                            aria-invalid={s._jsonErrors?.match || undefined}
+                            onBlur={() =>
+                              s._jsonErrors?.match &&
+                              toast.error("صيغة JSON غير صحيحة؛ صححها قبل الحفظ")
+                            }
+                            onChange={(e) => editJson(i, "match", e.target.value)}
                           />
                         </div>
                       </div>
@@ -211,23 +373,73 @@ function EditPage() {
                       <div>
                         <Label className="text-xs">الشرط (JSON)</Label>
                         <Textarea
-                          className="font-mono text-xs" rows={2}
-                          value={JSON.stringify(s.expr ?? {}, null, 2)}
-                          onChange={(e) => { try { updateStep(i, { expr: JSON.parse(e.target.value) }); } catch {} }}
+                          className="font-mono text-xs"
+                          rows={2}
+                          value={s._jsonDrafts?.expr ?? JSON.stringify(s.expr ?? {}, null, 2)}
+                          aria-invalid={s._jsonErrors?.expr || undefined}
+                          onBlur={() =>
+                            s._jsonErrors?.expr &&
+                            toast.error("صيغة JSON غير صحيحة؛ صححها قبل الحفظ")
+                          }
+                          onChange={(e) => editJson(i, "expr", e.target.value)}
                         />
+                      </div>
+                    )}
+                    {(s.type === "condition" || s.type === "wait_for_event") && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {(s.type === "condition"
+                          ? [
+                              ["onTrue", "عند تحقق الشرط"],
+                              ["onFalse", "عند عدم تحققه"],
+                            ]
+                          : [
+                              ["onEvent", "عند وصول الحدث"],
+                              ["onTimeout", "عند انتهاء المهلة"],
+                            ]
+                        ).map(([key, label]) => (
+                          <label className="text-xs space-y-1" key={key}>
+                            <span>{label}</span>
+                            <select
+                              className="w-full border rounded h-9 bg-background"
+                              value={s[key] ?? ""}
+                              onChange={(e) =>
+                                updateStep(i, { [key]: e.target.value || undefined })
+                              }
+                            >
+                              <option value="">
+                                {key === "onTimeout" ? "إنهاء التشغيل" : "الخطوة التالية"}
+                              </option>
+                              {steps
+                                .filter((target) => target.id !== s.id)
+                                .map((target) => (
+                                  <option key={target.id} value={target.id}>
+                                    {target.label || target.id}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                        ))}
                       </div>
                     )}
                   </div>
                   <div className="flex flex-col gap-1">
-                    <Button size="icon" variant="ghost" onClick={() => moveStep(i, -1)}><ChevronUp className="h-3 w-3" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => moveStep(i, 1)}><ChevronDown className="h-3 w-3" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => removeStep(i)}><Trash2 className="h-3 w-3" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => moveStep(i, -1)}>
+                      <ChevronUp className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => moveStep(i, 1)}>
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => removeStep(i)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
               </Card>
             );
           })}
-          {steps.length === 0 && <Card className="p-6 text-center text-muted-foreground">أضف الخطوة الأولى.</Card>}
+          {steps.length === 0 && (
+            <Card className="p-6 text-center text-muted-foreground">أضف الخطوة الأولى.</Card>
+          )}
         </div>
       </div>
     </div>

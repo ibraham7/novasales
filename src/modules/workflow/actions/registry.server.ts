@@ -16,7 +16,7 @@ export interface ActionResult {
 
 export type ActionHandler = (
   config: Record<string, unknown>,
-  ctx: ActionContext
+  ctx: ActionContext,
 ) => Promise<ActionResult>;
 
 const registry = new Map<string, ActionHandler>();

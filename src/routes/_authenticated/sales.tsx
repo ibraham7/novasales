@@ -287,6 +287,8 @@ function SalesPage() {
 
     onSuccess: () => {
       toast.success("تم تأكيد البيع وخصم الكمية من المخزون");
+      qc.invalidateQueries({ queryKey: ["sales-reports"] });
+      qc.invalidateQueries({ queryKey: ["sales-performance"] });
       qc.invalidateQueries({ queryKey: ["sales-products-order"] });
       qc.invalidateQueries({ queryKey: ["chat-order-products"] });
 

@@ -11,7 +11,10 @@ function matchesFilter(match: Record<string, any>, payload: Record<string, any>)
     let expected: any = v;
     if (typeof v === "string") {
       const m = v.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
-      if (m) expected = m[1].split(".").reduce((acc: any, key) => (acc == null ? acc : acc[key]), payload);
+      if (m)
+        expected = m[1]
+          .split(".")
+          .reduce((acc: any, key) => (acc == null ? acc : acc[key]), payload);
     }
     if (payload?.[k] !== expected) return false;
   }
@@ -25,12 +28,13 @@ export async function dispatchEvent(evt: {
   payload: Record<string, unknown>;
 }): Promise<void> {
   // 1) Start new runs for matching workflows
-  const { data: wfs } = await db
+  const { data: wfs, error: workflowError } = await db
     .from("wf_workflows")
     .select("id, trigger_config")
     .eq("organization_id", evt.organizationId)
     .eq("is_active", true)
     .eq("trigger_type", "event");
+  if (workflowError) throw new Error("تعذر تحميل قواعد الأتمتة");
   for (const wf of (wfs ?? []) as any[]) {
     const cfg = wf.trigger_config ?? {};
     if (cfg.event !== evt.type) continue;
@@ -43,17 +47,18 @@ export async function dispatchEvent(evt: {
         triggerEventId: evt.id,
       });
     } catch (e) {
-      console.error("[wf.dispatch] startRun failed", e);
+      if (!(e instanceof Error && e.message.includes("duplicate"))) throw e;
     }
   }
 
   // 2) Resume waiting jobs
-  const { data: jobs } = await db
+  const { data: jobs, error: jobsError } = await db
     .from("wf_jobs")
     .select("*")
     .eq("organization_id", evt.organizationId)
     .eq("status", "pending")
     .eq("wait_kind", "event");
+  if (jobsError) throw new Error("تعذر تحميل انتظار الأحداث");
   for (const job of (jobs ?? []) as any[]) {
     const wm = job.wait_match ?? {};
     if (wm.event !== evt.type) continue;
@@ -61,7 +66,7 @@ export async function dispatchEvent(evt: {
     // Claim
     const { data: claimed } = await db
       .from("wf_jobs")
-      .update({ status: "done", claimed_at: new Date().toISOString() })
+      .update({ status: "processing", claimed_at: new Date().toISOString() })
       .eq("id", job.id)
       .eq("status", "pending")
       .select("id")
@@ -69,8 +74,13 @@ export async function dispatchEvent(evt: {
     if (!claimed) continue;
     try {
       await resumeRun(job.run_id, job.resume_step_id ?? null);
+      await db.from("wf_jobs").update({ status: "done" }).eq("id", job.id);
     } catch (e) {
-      console.error("[wf.dispatch] resumeRun failed", e);
+      await db
+        .from("wf_jobs")
+        .update({ status: "failed", error: (e as Error).message })
+        .eq("id", job.id);
+      throw e;
     }
   }
 }

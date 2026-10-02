@@ -13,13 +13,15 @@ const messagingSend: ActionHandler = async (config, ctx) => {
 
   // Resolve phone
   let phone = config.phone as string | undefined;
-  const contactId = (config.contact_id as string | undefined) ??
+  const contactId =
+    (config.contact_id as string | undefined) ??
     (ctx.triggerPayload?.contact_id as string | undefined) ??
     (ctx.runContext?.contact_id as string | undefined);
   if (!phone && contactId) {
     const { data: cp } = await db
       .from("crm_contact_points")
       .select("identifier")
+      .eq("organization_id", ctx.organizationId)
       .eq("contact_id", contactId)
       .eq("channel_type", channel)
       .maybeSingle();
@@ -33,8 +35,19 @@ const messagingSend: ActionHandler = async (config, ctx) => {
     const templateId = String(config.template_id);
     const version = Number(config.template_version ?? 0);
     const tv = version
-      ? await db.from("cmp_template_versions").select("body,media_url").eq("template_id", templateId).eq("version", version).maybeSingle()
-      : await db.from("cmp_templates").select("body,media_url").eq("id", templateId).maybeSingle();
+      ? await db
+          .from("cmp_template_versions")
+          .select("body,media_url")
+          .eq("organization_id", ctx.organizationId)
+          .eq("template_id", templateId)
+          .eq("version", version)
+          .maybeSingle()
+      : await db
+          .from("cmp_templates")
+          .select("body,media_url")
+          .eq("organization_id", ctx.organizationId)
+          .eq("id", templateId)
+          .maybeSingle();
     body = tv.data?.body;
   }
   if (!body) return { ok: false, error: "no_body" };
@@ -42,7 +55,7 @@ const messagingSend: ActionHandler = async (config, ctx) => {
   // Variable interpolation ({{var}})
   const variables = (config.variables ?? {}) as Record<string, unknown>;
   body = body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, k) => {
-    const v = (variables[k] ?? (ctx.triggerPayload as any)?.[k]);
+    const v = variables[k] ?? (ctx.triggerPayload as any)?.[k];
     return v == null ? "" : String(v);
   });
 
@@ -50,6 +63,7 @@ const messagingSend: ActionHandler = async (config, ctx) => {
   const { data: acc } = await db
     .from("msg_channel_accounts")
     .select("id, external_ref, organization_id")
+    .eq("organization_id", ctx.organizationId)
     .eq("id", accountId)
     .maybeSingle();
   if (!acc?.external_ref) return { ok: false, error: "account_unavailable" };
@@ -82,7 +96,11 @@ const messagingSend: ActionHandler = async (config, ctx) => {
       const r: any = await opSendText(accountId, phone, body);
       sent = true;
       externalId = r?.key?.id ?? null;
-      await risk.recordOutbound({ orgId: ctx.organizationId, accountId, isNewConversation: !knownSession });
+      await risk.recordOutbound({
+        orgId: ctx.organizationId,
+        accountId,
+        isNewConversation: !knownSession,
+      });
     }
   } catch (e) {
     await risk.recordHealthEvent({
@@ -94,7 +112,7 @@ const messagingSend: ActionHandler = async (config, ctx) => {
     return { ok: false, error: (e as Error).message };
   }
 
-
+  if (!sent) return { ok: false, error: "مزود واتساب غير مهيأ للإرسال" };
   // Record session + outbound message
   const remoteJid = `${phone}@s.whatsapp.net`;
   const { data: existing } = await db
@@ -122,7 +140,10 @@ const messagingSend: ActionHandler = async (config, ctx) => {
       .single();
     sessionId = s?.id;
   } else {
-    await db.from("msg_sessions").update({ last_message_preview: preview, last_message_at: now }).eq("id", sessionId);
+    await db
+      .from("msg_sessions")
+      .update({ last_message_preview: preview, last_message_at: now })
+      .eq("id", sessionId);
   }
   if (sessionId) {
     await db.from("msg_messages").insert({
