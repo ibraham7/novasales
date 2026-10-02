@@ -5,10 +5,17 @@ import { shapeSessionRow } from "./chats.server";
 export const listChats = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
   const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-  const { canAccessOpportunityRow, getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
+  const { canAccessOpportunityRow, getOpportunityVisibility } =
+    await import("@/platform/rbac/data-scope.server");
   const db = supabaseAdmin as any;
   const { organizationId } = await getWorkspace();
-  const access = await requireAnyPermission(["messaging.send", "crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
+  const access = await requireAnyPermission([
+    "messaging.send",
+    "crm.opportunities.view",
+    "opportunities.view",
+    "opportunities.view_department",
+    "opportunities.view_own",
+  ]);
   const { data, error } = await db
     .from("msg_sessions")
     .select("*")
@@ -18,14 +25,25 @@ export const listChats = createServerFn({ method: "GET" }).handler(async () => {
   if (error) throw new Error(error.message);
   const sessionIds = (data ?? []).map((session: any) => session.id);
   const { data: links } = sessionIds.length
-    ? await db.from("crm_opportunity_sessions").select("session_ref, opportunity_id").in("session_ref", sessionIds)
+    ? await db
+        .from("crm_opportunity_sessions")
+        .select("session_ref, opportunity_id")
+        .in("session_ref", sessionIds)
     : { data: [] };
-  const oppIds = Array.from(new Set((links ?? []).map((link: any) => link.opportunity_id).filter(Boolean)));
+  const oppIds = Array.from(
+    new Set((links ?? []).map((link: any) => link.opportunity_id).filter(Boolean)),
+  );
   const { data: opps } = oppIds.length
-    ? await db.from("opp_opportunities").select("id, owner_agent_id, department_id").in("id", oppIds).eq("organization_id", organizationId)
+    ? await db
+        .from("opp_opportunities")
+        .select("id, owner_agent_id, department_id")
+        .in("id", oppIds)
+        .eq("organization_id", organizationId)
     : { data: [] };
   const oppById = new Map((opps ?? []).map((opp: any) => [opp.id, opp]));
-  const oppBySession = new Map((links ?? []).map((link: any) => [link.session_ref, oppById.get(link.opportunity_id)]));
+  const oppBySession = new Map(
+    (links ?? []).map((link: any) => [link.session_ref, oppById.get(link.opportunity_id)]),
+  );
   const rows: any[] = [];
   for (const s of data ?? []) {
     const opp: any = oppBySession.get(s.id);
@@ -39,12 +57,15 @@ export const listChats = createServerFn({ method: "GET" }).handler(async () => {
 export const getChatWithMessages = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ chatId: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const [{ getWorkspace, supabaseAdmin }, { requireAnyPermission }, { canAccessOpportunityRow, getOpportunityVisibility }] =
-      await Promise.all([
-        import("@/platform/workspace/workspace.server"),
-        import("@/platform/rbac/rbac.server"),
-        import("@/platform/rbac/data-scope.server"),
-      ]);
+    const [
+      { getWorkspace, supabaseAdmin },
+      { requireAnyPermission },
+      { canAccessOpportunityRow, getOpportunityVisibility },
+    ] = await Promise.all([
+      import("@/platform/workspace/workspace.server"),
+      import("@/platform/rbac/rbac.server"),
+      import("@/platform/rbac/data-scope.server"),
+    ]);
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
     // Permissions, session, link and the message page are independent reads.
@@ -53,9 +74,15 @@ export const getChatWithMessages = createServerFn({ method: "GET" })
         "messaging.send",
         "crm.opportunities.view",
         "opportunities.view",
-        "opportunities.view_department", "opportunities.view_own",
+        "opportunities.view_department",
+        "opportunities.view_own",
       ]),
-      db.from("msg_sessions").select("*").eq("id", data.chatId).eq("organization_id", organizationId).maybeSingle(),
+      db
+        .from("msg_sessions")
+        .select("*")
+        .eq("id", data.chatId)
+        .eq("organization_id", organizationId)
+        .maybeSingle(),
       db
         .from("crm_opportunity_sessions")
         .select("opportunity_id")
@@ -86,27 +113,16 @@ export const getChatWithMessages = createServerFn({ method: "GET" })
     } else if (getOpportunityVisibility(access) !== "all") {
       return null;
     }
-    const chat = await shapeSessionRow(
-      organizationId,
-      sess,
-      db,
-    );
+    const chat = await shapeSessionRow(organizationId, sess, db);
 
-    const rawMessages = [
-      ...(msgsRes?.data ?? []),
-    ].reverse();
+    const rawMessages = [...(msgsRes?.data ?? [])].reverse();
 
     const mediaPaths = Array.from(
       new Set(
         rawMessages
           .map((m: any) =>
-            typeof m.media_url === "string" &&
-              m.media_url.startsWith(
-                "crm-files/",
-              )
-              ? m.media_url.slice(
-                "crm-files/".length,
-              )
+            typeof m.media_url === "string" && m.media_url.startsWith("crm-files/")
+              ? m.media_url.slice("crm-files/".length)
               : null,
           )
           .filter(Boolean),
@@ -115,96 +131,85 @@ export const getChatWithMessages = createServerFn({ method: "GET" })
 
     const signedRes =
       mediaPaths.length > 0
-        ? await db.storage
-          .from("crm-files")
-          .createSignedUrls(
-            mediaPaths,
-            3600,
-          )
+        ? await db.storage.from("crm-files").createSignedUrls(mediaPaths, 3600)
         : { data: [] };
 
-    const signedMap =
-      new Map<string, string>();
+    const signedMap = new Map<string, string>();
 
-    ((signedRes as any)?.data ?? []).forEach(
-      (row: any) => {
-        if (
-          row?.path &&
-          row?.signedUrl
-        ) {
-          signedMap.set(
-            `crm-files/${row.path}`,
-            row.signedUrl,
-          );
-        }
-      },
-    );
+    ((signedRes as any)?.data ?? []).forEach((row: any) => {
+      if (row?.path && row?.signedUrl) {
+        signedMap.set(`crm-files/${row.path}`, row.signedUrl);
+      }
+    });
 
-    const messages = rawMessages.map(
-      (m: any) => {
-        const rawUrl:
-          | string
-          | null =
-          m.media_url ?? null;
+    const messages = rawMessages.map((m: any) => {
+      const rawUrl: string | null = m.media_url ?? null;
 
-        return {
-          id: m.id,
-          chat_id: m.session_id,
-          content: m.content,
-          status: m.status,
+      return {
+        id: m.id,
+        chat_id: m.session_id,
+        content: m.content,
+        status: m.status,
 
-          from_me:
-            m.direction === "outbound",
+        from_me: m.direction === "outbound",
 
-          is_internal:
-            m.is_internal === true,
+        is_internal: m.is_internal === true,
 
-          created_at: m.created_at,
+        created_at: m.created_at,
 
-          message_type:
-            m.message_type ?? "text",
+        message_type: m.message_type ?? "text",
 
-          media_url:
-            rawUrl &&
-              signedMap.has(rawUrl)
-              ? signedMap.get(rawUrl)!
-              : rawUrl,
+        media_url: rawUrl && signedMap.has(rawUrl) ? signedMap.get(rawUrl)! : rawUrl,
 
-          media_meta:
-            m.media_meta ?? {},
-        };
-      },
-    );
+        media_meta: m.media_meta ?? {},
+      };
+    });
 
     void db
       .from("msg_sessions")
       .update({ unread_count: 0 })
       .eq("id", data.chatId)
       .eq("organization_id", organizationId)
-      .then(() => undefined, () => undefined);
+      .then(
+        () => undefined,
+        () => undefined,
+      );
     return { chat, messages };
   });
 
-
-async function buildQuotedFromMessageId(db: any, organizationId: string, messageId: string, peerJid: string) {
+async function buildQuotedFromMessageId(
+  db: any,
+  organizationId: string,
+  messageId: string,
+  peerJid: string,
+) {
   const { data: q } = await db
     .from("msg_messages")
     .select("id, external_id, direction, content, message_type, media_meta, sent_by_user_id")
     .eq("id", messageId)
     .eq("organization_id", organizationId)
     .maybeSingle();
-  if (!q || !q.external_id) return {
-    quoted: null as any, snapshot: q ? {
-      message_id: q.id, from_me: q.direction === "outbound", content: q.content,
-      message_type: q.message_type, media_meta: q.media_meta, sent_by_user_id: q.sent_by_user_id,
-    } : null
-  };
+  if (!q || !q.external_id)
+    return {
+      quoted: null as any,
+      snapshot: q
+        ? {
+            message_id: q.id,
+            from_me: q.direction === "outbound",
+            content: q.content,
+            message_type: q.message_type,
+            media_meta: q.media_meta,
+            sent_by_user_id: q.sent_by_user_id,
+          }
+        : null,
+    };
   const fromMe = q.direction === "outbound";
   let message: Record<string, unknown> = { conversation: q.content ?? "" };
   if (q.message_type === "image") message = { imageMessage: { caption: q.content ?? "" } };
   else if (q.message_type === "video") message = { videoMessage: { caption: q.content ?? "" } };
   else if (q.message_type === "audio") message = { audioMessage: { ptt: true } };
-  else if (q.message_type === "document") message = { documentMessage: { fileName: q.media_meta?.file_name ?? "file" } };
+  else if (q.message_type === "document")
+    message = { documentMessage: { fileName: q.media_meta?.file_name ?? "file" } };
   return {
     quoted: { key: { id: q.external_id, remoteJid: peerJid, fromMe }, message },
     snapshot: {
@@ -220,27 +225,34 @@ async function buildQuotedFromMessageId(db: any, organizationId: string, message
 
 export const sendMessageFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      chatId: z.string().uuid(),
-      text: z.string().trim().min(1).max(4000),
-      isInternal: z.boolean().optional().default(false),
-      replyToMessageId: z.string().uuid().optional(),
-    }).parse(d)
+    z
+      .object({
+        chatId: z.string().uuid(),
+        text: z.string().trim().min(1).max(4000),
+        isInternal: z.boolean().optional().default(false),
+        replyToMessageId: z.string().uuid().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const [{ getWorkspace, supabaseAdmin }, { requireAnyPermission }, { canAccessOpportunityRow, getOpportunityVisibility }] =
-      await Promise.all([
-        import("@/platform/workspace/workspace.server"),
-        import("@/platform/rbac/rbac.server"),
-        import("@/platform/rbac/data-scope.server"),
-      ]);
+    const [
+      { getWorkspace, supabaseAdmin },
+      { requireAnyPermission },
+      { canAccessOpportunityRow, getOpportunityVisibility },
+    ] = await Promise.all([
+      import("@/platform/workspace/workspace.server"),
+      import("@/platform/rbac/rbac.server"),
+      import("@/platform/rbac/data-scope.server"),
+    ]);
     const db = supabaseAdmin as any;
     const { userId, organizationId } = await getWorkspace();
 
     // Run permission resolution, the opportunity link and the session lookup
     // concurrently — they don't depend on each other.
     const [access, chatLinkRes, sessionRes] = await Promise.all([
-      requireAnyPermission(data.isInternal ? ["internal_comms.write", "messaging.send"] : ["messaging.send"]),
+      requireAnyPermission(
+        data.isInternal ? ["internal_comms.write", "messaging.send"] : ["messaging.send"],
+      ),
       db
         .from("crm_opportunity_sessions")
         .select("opportunity_id")
@@ -249,7 +261,9 @@ export const sendMessageFn = createServerFn({ method: "POST" })
         .maybeSingle(),
       db
         .from("msg_sessions")
-        .select("id, channel_account_id, peer_identifier, msg_channel_accounts(external_ref, status)")
+        .select(
+          "id, channel_account_id, peer_identifier, msg_channel_accounts(external_ref, status)",
+        )
         .eq("id", data.chatId)
         .eq("organization_id", organizationId)
         .maybeSingle(),
@@ -264,7 +278,8 @@ export const sendMessageFn = createServerFn({ method: "POST" })
         .eq("id", chatLink.opportunity_id)
         .eq("organization_id", organizationId)
         .maybeSingle();
-      if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("لا تملك صلاحية إرسال رسالة في هذه المحادثة");
+      if (!opp || !canAccessOpportunityRow(access, opp))
+        throw new Error("لا تملك صلاحية إرسال رسالة في هذه المحادثة");
     } else if (getOpportunityVisibility(access) !== "all") {
       throw new Error("لا تملك صلاحية إرسال رسالة في هذه المحادثة");
     }
@@ -273,11 +288,15 @@ export const sendMessageFn = createServerFn({ method: "POST" })
     let replySnapshot: any = null;
     let quotedRef: any = null;
     if (data.replyToMessageId) {
-      const q = await buildQuotedFromMessageId(db, organizationId, data.replyToMessageId, sess?.peer_identifier ?? "");
+      const q = await buildQuotedFromMessageId(
+        db,
+        organizationId,
+        data.replyToMessageId,
+        sess?.peer_identifier ?? "",
+      );
       replySnapshot = q.snapshot;
       quotedRef = q.quoted;
     }
-
 
     // Internal (team-only) notes: never call Evolution, never touch preview.
     if (data.isInternal) {
@@ -328,7 +347,8 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       source: "manual",
       peer: sess.peer_identifier,
     });
-    if (!guard.allowed) throw new Error(guard.message ?? "تم إيقاف الإرسال من هذا الرقم مؤقتاً لحمايته.");
+    if (!guard.allowed)
+      throw new Error(guard.message ?? "تم إيقاف الإرسال من هذا الرقم مؤقتاً لحمايته.");
 
     const number = String(sess.peer_identifier).split("@")[0];
     let externalId: string | null = null;
@@ -354,7 +374,6 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       });
     }
 
-
     const { data: msg } = await db
       .from("msg_messages")
       .insert({
@@ -374,7 +393,10 @@ export const sendMessageFn = createServerFn({ method: "POST" })
 
     const previewUpdate = db
       .from("msg_sessions")
-      .update({ last_message_preview: data.text.slice(0, 500), last_message_at: new Date().toISOString() })
+      .update({
+        last_message_preview: data.text.slice(0, 500),
+        last_message_at: new Date().toISOString(),
+      })
       .eq("id", data.chatId);
 
     // Advance the linked opportunity from the FIRST stage (usually "جديد") to
@@ -418,7 +440,6 @@ export const sendMessageFn = createServerFn({ method: "POST" })
 
     await Promise.all([previewUpdate, stageAdvance]);
 
-
     if (sendError) throw new Error(sendError);
     return {
       id: msg.id,
@@ -431,10 +452,9 @@ export const sendMessageFn = createServerFn({ method: "POST" })
     };
   });
 
-
 export const createChatFromContact = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ contactId: z.string().uuid(), instanceId: z.string().uuid() }).parse(d)
+    z.object({ contactId: z.string().uuid(), instanceId: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -486,7 +506,7 @@ export const saveChatContactToCrm = createServerFn({ method: "POST" })
           .default("lead"),
         notes: z.string().max(2000).optional().nullable(),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -563,12 +583,12 @@ export const saveChatContactToCrm = createServerFn({ method: "POST" })
         .maybeSingle();
       const { data: defaultStage } = defaultPipe?.id
         ? await db
-          .from("crm_pipeline_stages")
-          .select("id, probability")
-          .eq("pipeline_id", defaultPipe.id)
-          .order("ord", { ascending: true })
-          .limit(1)
-          .maybeSingle()
+            .from("crm_pipeline_stages")
+            .select("id, probability")
+            .eq("pipeline_id", defaultPipe.id)
+            .order("ord", { ascending: true })
+            .limit(1)
+            .maybeSingle()
         : { data: null };
       const { data: openOpp } = await db
         .from("opp_opportunities")
@@ -607,14 +627,12 @@ export const saveChatContactToCrm = createServerFn({ method: "POST" })
           .eq("organization_id", organizationId);
       }
       if (oppId) {
-        await db
-          .from("crm_opportunity_sessions")
-          .insert({
-            organization_id: organizationId,
-            opportunity_id: oppId,
-            session_ref: data.chatId,
-            channel: "whatsapp",
-          });
+        await db.from("crm_opportunity_sessions").insert({
+          organization_id: organizationId,
+          opportunity_id: oppId,
+          session_ref: data.chatId,
+          channel: "whatsapp",
+        });
       }
     }
 
@@ -632,7 +650,7 @@ export const updateChatContact = createServerFn({ method: "POST" })
           .optional(),
         notes: z.string().max(2000).optional().nullable(),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
@@ -675,7 +693,8 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
     const access = await requireAnyPermission([
       "crm.opportunities.view",
       "opportunities.view",
-      "opportunities.view_department", "opportunities.view_own",
+      "opportunities.view_department",
+      "opportunities.view_own",
       "messaging.send",
     ]);
 
@@ -702,7 +721,9 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
         .eq("opportunity_id", data.opportunityId),
     ]);
     const phones: string[] = Array.from(
-      new Set((cps ?? []).map((c: any) => String(c.identifier ?? "").replace(/\D/g, "")).filter(Boolean)),
+      new Set(
+        (cps ?? []).map((c: any) => String(c.identifier ?? "").replace(/\D/g, "")).filter(Boolean),
+      ),
     ) as string[];
     const jids: string[] = phones.flatMap((p) => [`${p}@s.whatsapp.net`, p, `${p}@c.us`]);
     const linkedIds: string[] = (links ?? []).map((l: any) => l.session_ref).filter(Boolean);
@@ -711,10 +732,18 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
     const sessionCols = "id, channel_account_id, peer_identifier, last_message_at";
     const [byJid, byId] = await Promise.all([
       jids.length
-        ? db.from("msg_sessions").select(sessionCols).eq("organization_id", organizationId).in("peer_identifier", jids)
+        ? db
+            .from("msg_sessions")
+            .select(sessionCols)
+            .eq("organization_id", organizationId)
+            .in("peer_identifier", jids)
         : Promise.resolve({ data: [] }),
       linkedIds.length
-        ? db.from("msg_sessions").select(sessionCols).eq("organization_id", organizationId).in("id", linkedIds)
+        ? db
+            .from("msg_sessions")
+            .select(sessionCols)
+            .eq("organization_id", organizationId)
+            .in("id", linkedIds)
         : Promise.resolve({ data: [] }),
     ]);
     const sessionMap = new Map<string, any>();
@@ -735,9 +764,9 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
         : Promise.resolve({ data: [] }),
       accIds.length
         ? db
-          .from("plugin_whatsapp_evolution_instances")
-          .select("channel_account_id, phone_number")
-          .in("channel_account_id", accIds)
+            .from("plugin_whatsapp_evolution_instances")
+            .select("channel_account_id, phone_number")
+            .in("channel_account_id", accIds)
         : Promise.resolve({ data: [] }),
       db
         .from("msg_messages")
@@ -751,7 +780,9 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
     ]);
     const msgs = [...(msgsDesc ?? [])].reverse();
     const accMap = new Map((accs ?? []).map((a: any) => [a.id, a]));
-    const phoneMap = new Map((plugins ?? []).map((p: any) => [p.channel_account_id, p.phone_number]));
+    const phoneMap = new Map(
+      (plugins ?? []).map((p: any) => [p.channel_account_id, p.phone_number]),
+    );
     const accountLabel = (accId: string | null | undefined, acc: any) => {
       const phone = accId ? phoneMap.get(accId) : null;
       return acc?.display_name ?? (phone ? `+${phone}` : null);
@@ -789,7 +820,8 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
     });
 
     const primary = [...sessions].sort(
-      (a, b) => new Date(b.last_message_at ?? 0).getTime() - new Date(a.last_message_at ?? 0).getTime(),
+      (a, b) =>
+        new Date(b.last_message_at ?? 0).getTime() - new Date(a.last_message_at ?? 0).getTime(),
     )[0];
 
     void db
@@ -797,8 +829,10 @@ export const getMergedChatForOpportunity = createServerFn({ method: "GET" })
       .update({ unread_count: 0 })
       .in("id", sessionIds)
       .eq("organization_id", organizationId)
-      .then(() => undefined, () => undefined);
-
+      .then(
+        () => undefined,
+        () => undefined,
+      );
 
     return {
       primary_session_id: primary?.id ?? null,
@@ -861,7 +895,8 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-    const { canAccessOpportunityRow, getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
+    const { canAccessOpportunityRow, getOpportunityVisibility } =
+      await import("@/platform/rbac/data-scope.server");
     const db = supabaseAdmin as any;
     const { userId, organizationId } = await getWorkspace();
     const access = await requireAnyPermission(["messaging.send"]);
@@ -879,7 +914,8 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
         .eq("id", chatLink.opportunity_id)
         .eq("organization_id", organizationId)
         .maybeSingle();
-      if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("لا تملك صلاحية إرسال في هذه المحادثة");
+      if (!opp || !canAccessOpportunityRow(access, opp))
+        throw new Error("لا تملك صلاحية إرسال في هذه المحادثة");
     } else if (getOpportunityVisibility(access) !== "all") {
       throw new Error("لا تملك صلاحية إرسال في هذه المحادثة");
     }
@@ -898,6 +934,12 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!acc) throw new Error("جلسة الواتساب غير مرتبطة");
 
+    const { ensureLimit } = await import("@/modules/billing/entitlements.server");
+    await ensureLimit(
+      "storage_mb",
+      Buffer.byteLength(data.base64, "base64") / 1048576,
+      organizationId,
+    );
     // Upload to private storage for our own playback.
     const buffer = Buffer.from(data.base64, "base64");
     const safeName = data.fileName.replace(/[^\w.\-]+/g, "_").slice(0, 120) || "file";
@@ -925,7 +967,12 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
     let replySnapshot: any = null;
     let quotedRef: any = null;
     if (data.replyToMessageId) {
-      const q = await buildQuotedFromMessageId(db, organizationId, data.replyToMessageId, sess.peer_identifier);
+      const q = await buildQuotedFromMessageId(
+        db,
+        organizationId,
+        data.replyToMessageId,
+        sess.peer_identifier,
+      );
       replySnapshot = q.snapshot;
       quotedRef = q.quoted;
     }
@@ -968,7 +1015,8 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
       source: "manual",
       peer: sess.peer_identifier,
     });
-    if (!guard.allowed) throw new Error(guard.message ?? "تم إيقاف الإرسال من هذا الرقم مؤقتاً لحمايته.");
+    if (!guard.allowed)
+      throw new Error(guard.message ?? "تم إيقاف الإرسال من هذا الرقم مؤقتاً لحمايته.");
 
     try {
       try {
@@ -989,7 +1037,6 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
         detail: { error: sendError },
       });
     }
-
 
     const preview =
       data.caption?.trim() ||
@@ -1022,7 +1069,10 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
 
     await db
       .from("msg_sessions")
-      .update({ last_message_preview: preview.slice(0, 500), last_message_at: new Date().toISOString() })
+      .update({
+        last_message_preview: preview.slice(0, 500),
+        last_message_at: new Date().toISOString(),
+      })
       .eq("id", data.chatId);
 
     if (sendError) throw new Error(sendError);
@@ -1038,7 +1088,8 @@ export const deleteMessageFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-    const { canAccessOpportunityRow, getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
+    const { canAccessOpportunityRow, getOpportunityVisibility } =
+      await import("@/platform/rbac/data-scope.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
     const access = await requireAnyPermission(["messaging.send"]);
@@ -1077,11 +1128,20 @@ export const deleteMessageFn = createServerFn({ method: "POST" })
       .eq("id", msg.session_id)
       .maybeSingle();
     const { data: acc } = sess?.channel_account_id
-      ? await db.from("msg_channel_accounts").select("external_ref").eq("id", sess.channel_account_id).maybeSingle()
+      ? await db
+          .from("msg_channel_accounts")
+          .select("external_ref")
+          .eq("id", sess.channel_account_id)
+          .maybeSingle()
       : { data: null };
 
     // Only outbound messages can be revoked on WhatsApp; inbound → delete locally only.
-    if (msg.direction === "outbound" && msg.external_id && acc?.external_ref && sess?.peer_identifier) {
+    if (
+      msg.direction === "outbound" &&
+      msg.external_id &&
+      acc?.external_ref &&
+      sess?.peer_identifier
+    ) {
       try {
         const { opDeleteMessage } = await import("@/modules/channels/whatsapp/channel-ops.server");
         await opDeleteMessage(sess.channel_account_id, {
@@ -1097,7 +1157,13 @@ export const deleteMessageFn = createServerFn({ method: "POST" })
 
     await db
       .from("msg_messages")
-      .update({ status: "deleted", content: null, media_url: null, media_meta: {}, message_type: "text" })
+      .update({
+        status: "deleted",
+        content: null,
+        media_url: null,
+        media_meta: {},
+        message_type: "text",
+      })
       .eq("id", data.messageId)
       .eq("organization_id", organizationId);
 
@@ -1112,14 +1178,17 @@ export const editMessageFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-    const { canAccessOpportunityRow, getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
+    const { canAccessOpportunityRow, getOpportunityVisibility } =
+      await import("@/platform/rbac/data-scope.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
     const access = await requireAnyPermission(["messaging.send"]);
 
     const { data: msg } = await db
       .from("msg_messages")
-      .select("id, session_id, direction, external_id, status, message_type, is_internal, created_at")
+      .select(
+        "id, session_id, direction, external_id, status, message_type, is_internal, created_at",
+      )
       .eq("id", data.messageId)
       .eq("organization_id", organizationId)
       .maybeSingle();
@@ -1157,7 +1226,11 @@ export const editMessageFn = createServerFn({ method: "POST" })
         .eq("id", msg.session_id)
         .maybeSingle();
       const { data: acc } = sess?.channel_account_id
-        ? await db.from("msg_channel_accounts").select("external_ref").eq("id", sess.channel_account_id).maybeSingle()
+        ? await db
+            .from("msg_channel_accounts")
+            .select("external_ref")
+            .eq("id", sess.channel_account_id)
+            .maybeSingle()
         : { data: null };
 
       if (msg.external_id && acc?.external_ref && sess?.peer_identifier) {
@@ -1203,12 +1276,24 @@ export const reactToMessageFn = createServerFn({ method: "POST" })
     if (!msg) throw new Error("الرسالة غير موجودة");
     if (msg.status === "deleted") throw new Error("لا يمكن التفاعل مع رسالة محذوفة");
 
-    const { data: prof } = await db.from("profiles").select("full_name").eq("id", userId).maybeSingle();
+    const { data: prof } = await db
+      .from("profiles")
+      .select("full_name")
+      .eq("id", userId)
+      .maybeSingle();
 
     const current: any[] = Array.isArray(msg.reactions) ? msg.reactions : [];
     const others = current.filter((r: any) => r?.user_id !== userId);
     const next = data.emoji
-      ? [...others, { user_id: userId, name: prof?.full_name ?? null, emoji: data.emoji, at: new Date().toISOString() }]
+      ? [
+          ...others,
+          {
+            user_id: userId,
+            name: prof?.full_name ?? null,
+            emoji: data.emoji,
+            at: new Date().toISOString(),
+          },
+        ]
       : others;
 
     // Mirror the reaction on WhatsApp when possible.
@@ -1220,13 +1305,21 @@ export const reactToMessageFn = createServerFn({ method: "POST" })
           .eq("id", msg.session_id)
           .maybeSingle();
         const { data: acc } = sess?.channel_account_id
-          ? await db.from("msg_channel_accounts").select("external_ref").eq("id", sess.channel_account_id).maybeSingle()
+          ? await db
+              .from("msg_channel_accounts")
+              .select("external_ref")
+              .eq("id", sess.channel_account_id)
+              .maybeSingle()
           : { data: null };
         if (acc?.external_ref && sess?.peer_identifier) {
           const { opSendReaction } = await import("@/modules/channels/whatsapp/channel-ops.server");
           await opSendReaction(
             sess.channel_account_id,
-            { id: msg.external_id, remoteJid: sess.peer_identifier, fromMe: msg.direction === "outbound" },
+            {
+              id: msg.external_id,
+              remoteJid: sess.peer_identifier,
+              fromMe: msg.direction === "outbound",
+            },
             data.emoji,
           );
         }
@@ -1256,27 +1349,37 @@ export const listForwardTargets = createServerFn({ method: "GET" }).handler(asyn
   const [sessRes, contactsRes] = await Promise.all([
     db
       .from("msg_sessions")
-      .select("id, peer_identifier, push_name, profile_pic_url, last_message_at, last_message_preview")
+      .select(
+        "id, peer_identifier, push_name, profile_pic_url, last_message_at, last_message_preview",
+      )
       .eq("organization_id", organizationId)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(30),
     db
       .from("crm_contacts")
-      .select("id, display_name, full_name, avatar_url, crm_contact_points(identifier, channel_type)")
+      .select(
+        "id, display_name, full_name, avatar_url, crm_contact_points(identifier, channel_type)",
+      )
       .eq("organization_id", organizationId)
       .order("last_activity_at", { ascending: false, nullsFirst: false })
       .limit(100),
   ]);
 
-  const chats: Array<{ kind: "session"; id: string; name: string; phone: string; avatar_url: string | null; last_message_at: string | null }> =
-    (sessRes?.data ?? []).map((s: any) => ({
-      kind: "session" as const,
-      id: s.id,
-      name: s.push_name || `+${String(s.peer_identifier ?? "").split("@")[0]}`,
-      phone: String(s.peer_identifier ?? "").split("@")[0],
-      avatar_url: s.profile_pic_url ?? null,
-      last_message_at: s.last_message_at,
-    }));
+  const chats: Array<{
+    kind: "session";
+    id: string;
+    name: string;
+    phone: string;
+    avatar_url: string | null;
+    last_message_at: string | null;
+  }> = (sessRes?.data ?? []).map((s: any) => ({
+    kind: "session" as const,
+    id: s.id,
+    name: s.push_name || `+${String(s.peer_identifier ?? "").split("@")[0]}`,
+    phone: String(s.peer_identifier ?? "").split("@")[0],
+    avatar_url: s.profile_pic_url ?? null,
+    last_message_at: s.last_message_at,
+  }));
   const chatPhones = new Set(chats.map((c) => c.phone));
 
   const contacts = (contactsRes?.data ?? [])
@@ -1421,10 +1524,16 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
         if (!guard.allowed) throw new Error(guard.reason ?? "تم إيقاف الإرسال لحماية الرقم");
 
         if (kind === "text" || !mediaUrl) {
-          const res = (await ops.opSendText(accountId, number, msg.content ?? "")) as Record<string, unknown>;
+          const res = (await ops.opSendText(accountId, number, msg.content ?? "")) as Record<
+            string,
+            unknown
+          >;
           externalId = ((res?.key as { id?: string } | undefined)?.id ?? null) as string | null;
         } else if (kind === "audio") {
-          const res = (await ops.opSendAudioNote(accountId, number, mediaUrl)) as Record<string, unknown>;
+          const res = (await ops.opSendAudioNote(accountId, number, mediaUrl)) as Record<
+            string,
+            unknown
+          >;
           externalId = ((res?.key as { id?: string } | undefined)?.id ?? null) as string | null;
         } else {
           const res = (await ops.opSendMedia(accountId, number, {
@@ -1438,8 +1547,6 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
         }
 
         await risk.recordOutbound({ orgId: organizationId, accountId });
-
-
 
         await db.from("msg_messages").insert({
           organization_id: organizationId,
@@ -1457,7 +1564,13 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
 
         const preview =
           (msg.content && String(msg.content).slice(0, 500)) ||
-          (kind === "image" ? "📷 صورة" : kind === "video" ? "🎬 فيديو" : kind === "audio" ? "🎙️ رسالة صوتية" : "📎 ملف");
+          (kind === "image"
+            ? "📷 صورة"
+            : kind === "video"
+              ? "🎬 فيديو"
+              : kind === "audio"
+                ? "🎙️ رسالة صوتية"
+                : "📎 ملف");
         await db
           .from("msg_sessions")
           .update({ last_message_preview: preview, last_message_at: new Date().toISOString() })

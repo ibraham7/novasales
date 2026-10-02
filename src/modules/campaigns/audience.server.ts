@@ -1,86 +1,96 @@
-// Audience resolution + send-time estimator.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
+import { allRows } from "./access.server";
 const db = supabaseAdmin as any;
-
 export interface AudienceFilter {
-  lifecycle_stage?: string;      // "lead" | "customer" ...
+  lifecycle_stage?: string;
   department_id?: string;
   tag_ids?: string[];
   lead_status?: string;
-  has_whatsapp?: boolean;
   contact_ids?: string[];
-  limit?: number;
 }
-
 export interface AudienceRecipient {
   contact_id: string;
   phone: string;
   display_name: string | null;
 }
-
-export async function resolveAudience(orgId: string, filter: AudienceFilter): Promise<AudienceRecipient[]> {
-  if (filter.contact_ids?.length) {
-    const { data } = await db
+export async function resolveAudience(
+  org: string,
+  filter: AudienceFilter,
+): Promise<AudienceRecipient[]> {
+  const contacts = await allRows(() => {
+    let q = db
       .from("crm_contacts")
-      .select("id, display_name, full_name, crm_contact_points!inner(identifier, channel_type, is_primary)")
-      .eq("organization_id", orgId)
-      .in("id", filter.contact_ids)
-      .eq("crm_contact_points.channel_type", "whatsapp");
-    return (data ?? []).map((c: any) => ({
-      contact_id: c.id,
-      phone: c.crm_contact_points?.[0]?.identifier ?? "",
-      display_name: c.display_name ?? c.full_name ?? null,
-    })).filter((r: AudienceRecipient) => r.phone);
+      .select("id,display_name,full_name,primary_department_id,lifecycle_stage")
+      .eq("organization_id", org)
+      .order("id");
+    if (filter.lifecycle_stage) q = q.eq("lifecycle_stage", filter.lifecycle_stage);
+    if (filter.department_id) q = q.eq("primary_department_id", filter.department_id);
+    if (filter.contact_ids?.length) q = q.in("id", filter.contact_ids);
+    return q;
+  });
+  let allowed = new Set(contacts.map((c) => c.id));
+  if (filter.tag_ids?.length)
+    throw new Error(
+      "فلترة الحملات بالوسوم غير متاحة حاليًا؛ استخدم المرحلة أو القسم أو العملاء المحددين",
+    );
+  if (filter.lead_status) {
+    const leads = await allRows(() =>
+      db
+        .from("crm_leads")
+        .select("id,contact_id")
+        .eq("organization_id", org)
+        .eq("status", filter.lead_status)
+        .order("id"),
+    );
+    const ids = new Set(leads.map((l) => l.contact_id));
+    allowed = new Set([...allowed].filter((id) => ids.has(id)));
   }
-
-  let q = db
-    .from("crm_contacts")
-    .select("id, display_name, full_name, primary_department_id, lifecycle_stage, crm_contact_points!inner(identifier, channel_type)")
-    .eq("organization_id", orgId)
-    .eq("crm_contact_points.channel_type", "whatsapp")
-    .limit(filter.limit ?? 10000);
-  if (filter.lifecycle_stage) q = q.eq("lifecycle_stage", filter.lifecycle_stage);
-  if (filter.department_id) q = q.eq("primary_department_id", filter.department_id);
-  const { data } = await q;
-  let rows: AudienceRecipient[] = (data ?? []).map((c: any) => ({
-    contact_id: c.id,
-    phone: c.crm_contact_points?.[0]?.identifier ?? "",
-    display_name: c.display_name ?? c.full_name ?? null,
-  })).filter((r: AudienceRecipient) => r.phone);
-
-  if (filter.tag_ids?.length) {
-    const { data: links } = await db
-      .from("crm_tag_links")
-      .select("entity_id")
-      .eq("organization_id", orgId)
-      .eq("entity_type", "contact")
-      .in("tag_id", filter.tag_ids);
-    const tagged = new Set((links ?? []).map((l: any) => l.entity_id));
-    rows = rows.filter((r) => tagged.has(r.contact_id));
+  const points = await allRows(() =>
+    db
+      .from("crm_contact_points")
+      .select("id,contact_id,identifier,is_primary")
+      .eq("organization_id", org)
+      .eq("channel_type", "whatsapp")
+      .order("is_primary", { ascending: false })
+      .order("id"),
+  );
+  const byId = new Map(contacts.map((c) => [c.id, c]));
+  const phones = new Set<string>(),
+    seen = new Set<string>();
+  const out: AudienceRecipient[] = [];
+  for (const p of points) {
+    const phone = String(p.identifier ?? "")
+      .split("@")[0]
+      .replace(/\D/g, "");
+    if (
+      !allowed.has(p.contact_id) ||
+      seen.has(p.contact_id) ||
+      phones.has(phone) ||
+      !/^\d{7,15}$/.test(phone)
+    )
+      continue;
+    const c = byId.get(p.contact_id);
+    seen.add(p.contact_id);
+    phones.add(phone);
+    out.push({
+      contact_id: p.contact_id,
+      phone,
+      display_name: c?.display_name ?? c?.full_name ?? null,
+    });
   }
-  return rows;
+  return out;
 }
-
-export async function previewAudience(orgId: string, filter: AudienceFilter): Promise<{ count: number; sample: AudienceRecipient[] }> {
-  const rows = await resolveAudience(orgId, { ...filter, limit: 100 });
-  const count = rows.length >= 100 ? await countAudience(orgId, filter) : rows.length;
-  return { count, sample: rows.slice(0, 10) };
+export async function previewAudience(org: string, filter: AudienceFilter) {
+  const rows = await resolveAudience(org, filter);
+  return { count: rows.length, sample: rows.slice(0, 10) };
 }
-
-async function countAudience(orgId: string, filter: AudienceFilter): Promise<number> {
-  const rows = await resolveAudience(orgId, { ...filter, limit: 10000 });
-  return rows.length;
-}
-
-// Human "4h 10m" formatter.
-export function estimateSendTime(count: number, throttlePerMinute: number): {
-  minutes: number; label: string;
-} {
-  const perMin = Math.max(1, throttlePerMinute);
-  const minutes = Math.ceil(count / perMin);
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
-  return { minutes, label };
+export function estimateSendTime(count: number, perMinute: number) {
+  const minutes = Math.ceil(count / Math.max(1, perMinute));
+  return {
+    minutes,
+    label:
+      minutes >= 60
+        ? `${Math.floor(minutes / 60)} ساعة و${minutes % 60} دقيقة`
+        : `${minutes} دقيقة`,
+  };
 }

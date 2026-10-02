@@ -31,7 +31,9 @@ export async function getSubscription(organizationId?: string): Promise<Subscrip
   return data ?? null;
 }
 
-export async function getEffectiveFeatures(organizationId?: string): Promise<Record<string, boolean>> {
+export async function getEffectiveFeatures(
+  organizationId?: string,
+): Promise<Record<string, boolean>> {
   const orgId = organizationId ?? (await getWorkspace()).organizationId;
   const { data, error } = await db.rpc("billing_get_effective_features", { _org_id: orgId });
   if (error) throw new Error(error.message);
@@ -63,17 +65,56 @@ export async function getCurrentUsage(organizationId?: string): Promise<Record<s
   const period = new Date().toISOString().slice(0, 7);
 
   const [seats, wa, messages, leads, opps, contacts, wfs, cmps] = await Promise.all([
-    db.from("org_memberships").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("is_active", true),
-    db.from("msg_channel_accounts").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
-    db.from("billing_usage_counters").select("value").eq("organization_id", orgId).eq("period", period),
+    db
+      .from("org_memberships")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("is_active", true),
+    db
+      .from("msg_channel_accounts")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    db
+      .from("msg_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("direction", "outbound")
+      .in("status", ["sent", "delivered", "read"])
+      .gte("created_at", period + "-01T00:00:00Z")
+      .lt(
+        "created_at",
+        new Date(
+          Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1),
+        ).toISOString(),
+      ),
     db.from("crm_leads").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
-    db.from("opp_opportunities").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
-    db.from("crm_contacts").select("id", { count: "exact", head: true }).eq("organization_id", orgId),
-    db.from("wf_workflows").select("id", { count: "exact", head: true }).eq("organization_id", orgId).eq("is_active", true),
-    db.from("cmp_campaigns").select("id", { count: "exact", head: true }).eq("organization_id", orgId).in("status", ["scheduled", "running"]),
+    db
+      .from("opp_opportunities")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    db
+      .from("crm_contacts")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    db
+      .from("wf_workflows")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("is_active", true),
+    db
+      .from("cmp_campaigns")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .in("status", ["scheduled", "running"]),
   ]);
 
-  const messagesTotal = (messages.data ?? []).reduce((a: number, r: any) => a + Number(r.value ?? 0), 0);
+  if ([seats, wa, messages, leads, opps, contacts, wfs, cmps].some((r) => r.error))
+    throw new Error("تعذر حساب الاستخدام؛ أعد المحاولة");
+  const { data: storage, error: storageError } = await db.rpc("billing_storage_mb", {
+    _org_id: orgId,
+  });
+  if (storageError) throw new Error("تعذر حساب مساحة التخزين");
+  const messagesTotal = messages.count ?? 0;
 
   return {
     seats: seats.count ?? 0,
@@ -84,6 +125,6 @@ export async function getCurrentUsage(organizationId?: string): Promise<Record<s
     contacts: contacts.count ?? 0,
     active_workflows: wfs.count ?? 0,
     active_campaigns: cmps.count ?? 0,
-    storage_mb: 0,
+    storage_mb: Number(storage ?? 0),
   };
 }

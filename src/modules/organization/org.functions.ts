@@ -1,32 +1,44 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
+import {
+  teamAccess,
+  teamRow,
+  ownDepartment,
+  ownAccount,
+  supervisorRole,
+} from "./team-access.server";
+import { validTimezone } from "./team-input";
 
 export const listDepartments = createServerFn({ method: "GET" }).handler(async () => {
-  const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-  const db = supabaseAdmin as any;
-  const { organizationId } = await getWorkspace();
+  const { db, organizationId } = await teamAccess();
   const { data, error } = await db
     .from("org_departments")
     .select("*")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: true });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
   return data ?? [];
 });
 
 export const createDepartment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      name: z.string().trim().min(1).max(80),
-      shortCode: z.string().max(16).optional().nullable(),
-      subtitle: z.string().max(160).optional().nullable(),
-      timezone: z.string().trim().min(1).max(64).default("Asia/Dubai"),
-    }).parse(d)
+    z
+      .object({
+        name: z.string().trim().min(1).max(80),
+        shortCode: z.string().max(16).optional().nullable(),
+        subtitle: z.string().max(160).optional().nullable(),
+        timezone: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .refine(validTimezone, "اختر منطقة زمنية صحيحة")
+          .default("Asia/Dubai"),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { db, organizationId } = await teamAccess(true);
     const { data: row, error } = await db
       .from("org_departments")
       .insert({
@@ -38,50 +50,96 @@ export const createDepartment = createServerFn({ method: "POST" })
       })
       .select()
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     return row;
   });
 
 export const updateDepartment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      id: z.string().uuid(),
-      name: z.string().trim().min(1).max(80).optional(),
-      shortCode: z.string().max(16).nullable().optional(),
-      subtitle: z.string().max(160).nullable().optional(),
-      timezone: z.string().trim().min(1).max(64).optional(),
-    }).parse(d)
+    z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().trim().min(1).max(80).optional(),
+        shortCode: z.string().max(16).nullable().optional(),
+        subtitle: z.string().max(160).nullable().optional(),
+        timezone: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .refine(validTimezone, "اختر منطقة زمنية صحيحة")
+          .optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { db, organizationId } = await teamAccess(true);
+    await ownDepartment(db, data.id, organizationId);
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.shortCode !== undefined) patch.short_code = data.shortCode?.trim() || null;
     if (data.subtitle !== undefined) patch.subtitle = data.subtitle?.trim() || null;
     if (data.timezone !== undefined) patch.timezone = data.timezone;
-    const { error } = await db.from("org_departments").update(patch).eq("id", data.id).eq("organization_id", organizationId);
-    if (error) throw new Error(error.message);
+    const { error } = await db
+      .from("org_departments")
+      .update(patch)
+      .eq("id", data.id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     return { ok: true };
   });
 
 export const deleteDepartment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { error } = await db.from("org_departments").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { db, organizationId } = await teamAccess(true);
+    await ownDepartment(db, data.id, organizationId);
+    const checks = await Promise.all([
+      db
+        .from("org_department_members")
+        .select("id")
+        .eq("department_id", data.id)
+        .eq("organization_id", organizationId)
+        .eq("is_active", true)
+        .limit(1),
+      db
+        .from("msg_channel_account_departments")
+        .select("account_id")
+        .eq("department_id", data.id)
+        .eq("organization_id", organizationId)
+        .limit(1),
+      db
+        .from("crm_leads")
+        .select("id")
+        .eq("department_id", data.id)
+        .eq("organization_id", organizationId)
+        .limit(1),
+      db
+        .from("opp_opportunities")
+        .select("id")
+        .eq("department_id", data.id)
+        .eq("organization_id", organizationId)
+        .limit(1),
+    ]);
+    if (checks.some((r) => r.error)) throw new Error("تعذر التحقق من ارتباطات القسم");
+    if (checks.some((r) => r.data?.length))
+      throw new Error("انقل الأعضاء والعملاء وأرقام واتساب قبل حذف القسم");
+    const { error } = await db
+      .from("org_departments")
+      .delete()
+      .eq("id", data.id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     return { ok: true };
   });
 
 export const listMembers = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => z.object({ departmentId: z.string().uuid().optional() }).parse(d ?? {}))
+  .inputValidator((d: unknown) =>
+    z.object({ departmentId: z.string().uuid().optional() }).parse(d ?? {}),
+  )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { db, organizationId } = await teamAccess();
+    if (data.departmentId) await ownDepartment(db, data.departmentId, organizationId);
     let q = db
       .from("org_department_members")
       .select("*")
@@ -89,29 +147,46 @@ export const listMembers = createServerFn({ method: "GET" })
       .eq("is_active", true);
     if (data.departmentId) q = q.eq("department_id", data.departmentId);
     const { data: rows, error } = await q.order("created_at", { ascending: true });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     // enrich with profile + channel_account
     const userIds = Array.from(new Set((rows ?? []).map((r: any) => r.user_id)));
-    const accIds = Array.from(new Set((rows ?? []).map((r: any) => r.default_channel_account_id).filter(Boolean)));
+    const accIds = Array.from(
+      new Set((rows ?? []).map((r: any) => r.default_channel_account_id).filter(Boolean)),
+    );
     const [{ data: profiles }, { data: accs }, { data: plugins }] = await Promise.all([
       userIds.length
         ? db.from("profiles").select("id, full_name").in("id", userIds)
         : Promise.resolve({ data: [] }),
       accIds.length
-        ? db.from("msg_channel_accounts").select("id, display_name").in("id", accIds)
+        ? db
+            .from("msg_channel_accounts")
+            .select("id, display_name")
+            .eq("organization_id", organizationId)
+            .in("id", accIds)
         : Promise.resolve({ data: [] }),
       accIds.length
-        ? db.from("plugin_whatsapp_evolution_instances").select("channel_account_id, phone_number").in("channel_account_id", accIds)
+        ? db
+            .from("plugin_whatsapp_evolution_instances")
+            .select("channel_account_id, phone_number")
+            .eq("organization_id", organizationId)
+            .in("channel_account_id", accIds)
         : Promise.resolve({ data: [] }),
     ]);
     const pMap = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name]));
     const aMap = new Map((accs ?? []).map((a: any) => [a.id, a.display_name]));
-    const phoneMap = new Map((plugins ?? []).map((p: any) => [p.channel_account_id, p.phone_number]));
+    const phoneMap = new Map(
+      (plugins ?? []).map((p: any) => [p.channel_account_id, p.phone_number]),
+    );
     return (rows ?? []).map((r: any) => ({
       ...r,
       profile_name: pMap.get(r.user_id) ?? null,
       channel_account_name: r.default_channel_account_id
-        ? [aMap.get(r.default_channel_account_id), phoneMap.get(r.default_channel_account_id) ? `+${phoneMap.get(r.default_channel_account_id)}` : null]
+        ? [
+            aMap.get(r.default_channel_account_id),
+            phoneMap.get(r.default_channel_account_id)
+              ? `+${phoneMap.get(r.default_channel_account_id)}`
+              : null,
+          ]
             .filter(Boolean)
             .join(" — ")
         : null,
@@ -120,42 +195,52 @@ export const listMembers = createServerFn({ method: "GET" })
 
 /** مستخدمو المؤسسة المتاحون لإضافتهم كأعضاء في قسم (بدون إنشاء حسابات جديدة). */
 export const listOrgUsers = createServerFn({ method: "GET" }).handler(async () => {
-  const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-  const db = supabaseAdmin as any;
-  const { organizationId } = await getWorkspace();
-  const { data: memberships } = await db
+  const { db, organizationId } = await teamAccess();
+  const { data: memberships, error: membershipError } = await db
     .from("org_memberships")
     .select("user_id")
     .eq("organization_id", organizationId)
     .eq("is_active", true);
-  const userIds: string[] = Array.from(new Set((memberships ?? []).map((m: any) => String(m.user_id))));
+  if (membershipError) throw new Error("تعذر تحميل مستخدمي المؤسسة");
+  const userIds: string[] = Array.from(
+    new Set((memberships ?? []).map((m: any) => String(m.user_id))),
+  );
   if (userIds.length === 0) return [];
-  const { data: profiles } = await db.from("profiles").select("id, full_name").in("id", userIds);
+  const { data: profiles, error: profileError } = await db
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", userIds);
+  if (profileError) throw new Error("تعذر تحميل أسماء المستخدمين");
   const pMap = new Map<string, string>((profiles ?? []).map((p: any) => [p.id, p.full_name]));
   return userIds.map((id) => ({ id, full_name: pMap.get(id) ?? "مستخدم" }));
 });
 
 export const addMember = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      departmentId: z.string().uuid(),
-      userId: z.string().uuid(),
-      displayName: z.string().trim().min(1).max(80).optional(),
-      isSupervisor: z.boolean().default(false),
-      defaultChannelAccountId: z.string().uuid().optional(),
-    }).parse(d)
+    z
+      .object({
+        departmentId: z.string().uuid(),
+        userId: z.string().uuid(),
+        displayName: z.string().trim().min(1).max(80).optional(),
+        isSupervisor: z.boolean().default(false),
+        defaultChannelAccountId: z.string().uuid().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { db, organizationId } = await teamAccess(true);
 
+    await ownDepartment(db, data.departmentId, organizationId);
+    if (data.defaultChannelAccountId)
+      await ownAccount(db, data.defaultChannelAccountId, organizationId);
+    if (data.isSupervisor) await supervisorRole(db, data.userId, organizationId, data.departmentId);
     // العضو يجب أن يكون مستخدماً موجوداً في المؤسسة — لا ننشئ حسابات جديدة أبداً
     const { data: membership } = await db
       .from("org_memberships")
       .select("user_id")
       .eq("organization_id", organizationId)
       .eq("user_id", data.userId)
+      .eq("is_active", true)
       .maybeSingle();
     if (!membership) throw new Error("هذا المستخدم ليس ضمن المؤسسة");
 
@@ -167,7 +252,11 @@ export const addMember = createServerFn({ method: "POST" })
       .eq("user_id", data.userId)
       .maybeSingle();
 
-    const { data: prof } = await db.from("profiles").select("full_name").eq("id", data.userId).maybeSingle();
+    const { data: prof } = await db
+      .from("profiles")
+      .select("full_name")
+      .eq("id", data.userId)
+      .maybeSingle();
     const displayName = data.displayName?.trim() || prof?.full_name || "مستخدم";
 
     if (existing) {
@@ -179,8 +268,9 @@ export const addMember = createServerFn({ method: "POST" })
           display_name: displayName,
           default_channel_account_id: data.defaultChannelAccountId ?? null,
         })
-        .eq("id", existing.id);
-      if (error) throw new Error(error.message);
+        .eq("id", existing.id)
+        .eq("organization_id", organizationId);
+      if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
       return { ok: true, userId: data.userId };
     }
 
@@ -192,99 +282,133 @@ export const addMember = createServerFn({ method: "POST" })
       display_name: displayName,
       default_channel_account_id: data.defaultChannelAccountId ?? null,
     });
-    if (mErr) throw new Error(mErr.message);
+    if (mErr) throw new Error("تعذر إضافة العضو؛ أعد المحاولة");
     return { ok: true, userId: data.userId };
   });
 
-
 export const updateMember = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      id: z.string().uuid(),
-      isSupervisor: z.boolean().optional(),
-      defaultChannelAccountId: z.string().uuid().nullable().optional(),
-      displayName: z.string().trim().min(1).max(80).optional(),
-      welcomeTemplateOverride: z.string().max(2000).nullable().optional(),
-    }).parse(d)
+    z
+      .object({
+        id: z.string().uuid(),
+        isSupervisor: z.boolean().optional(),
+        defaultChannelAccountId: z.string().uuid().nullable().optional(),
+        displayName: z.string().trim().min(1).max(80).optional(),
+        welcomeTemplateOverride: z.string().max(2000).nullable().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
+    const { db, organizationId } = await teamAccess(true);
+    const member = await teamRow(
+      db
+        .from("org_department_members")
+        .select("*")
+        .eq("id", data.id)
+        .eq("organization_id", organizationId)
+        .maybeSingle(),
+      "تحميل العضو",
+    );
+    if (data.defaultChannelAccountId)
+      await ownAccount(db, data.defaultChannelAccountId, organizationId);
+    if (data.isSupervisor)
+      await supervisorRole(db, member.user_id, organizationId, member.department_id);
     const patch: Record<string, unknown> = {};
     if (data.isSupervisor !== undefined) patch.is_supervisor = data.isSupervisor;
-    if (data.defaultChannelAccountId !== undefined) patch.default_channel_account_id = data.defaultChannelAccountId;
+    if (data.defaultChannelAccountId !== undefined)
+      patch.default_channel_account_id = data.defaultChannelAccountId;
     if (data.displayName !== undefined) patch.display_name = data.displayName;
     if (data.welcomeTemplateOverride !== undefined) {
       const v = data.welcomeTemplateOverride?.trim();
       patch.welcome_template_override = v ? v : null;
     }
-    const { error } = await db.from("org_department_members").update(patch).eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { error } = await db
+      .from("org_department_members")
+      .update(patch)
+      .eq("id", data.id)
+      .eq("organization_id", organizationId)
+      .select("id")
+      .single();
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     return { ok: true };
   });
-
 
 export const removeMember = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { error } = await db.from("org_department_members").update({ is_active: false }).eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { db, organizationId } = await teamAccess(true);
+    const { error } = await db
+      .from("org_department_members")
+      .update({ is_active: false })
+      .eq("id", data.id)
+      .eq("organization_id", organizationId)
+      .select("id")
+      .single();
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     return { ok: true };
   });
 
 export const assignAccountToDepartment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      accountId: z.string().uuid(),
-      departmentId: z.string().uuid().nullable(),
-      action: z.enum(["link", "unlink"]).default("link"),
-    }).parse(d)
+    z
+      .object({
+        accountId: z.string().uuid(),
+        departmentId: z.string().uuid().nullable(),
+        action: z.enum(["link", "unlink"]).default("link"),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { db, organizationId } = await teamAccess(true);
 
+    await ownAccount(db, data.accountId, organizationId);
+    if (data.departmentId) await ownDepartment(db, data.departmentId, organizationId);
     // Unlink: either a specific department, or (departmentId=null) all departments.
     if (data.action === "unlink") {
-      let q = db.from("msg_channel_account_departments").delete().eq("account_id", data.accountId);
+      let q = db
+        .from("msg_channel_account_departments")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("account_id", data.accountId);
       if (data.departmentId) q = q.eq("department_id", data.departmentId);
       const { error } = await q;
-      if (error) throw new Error(error.message);
+      if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
       // Keep legacy single column in sync (first remaining link, if any).
-      const { data: remaining } = await db
+      const { data: remaining, error: remainingError } = await db
         .from("msg_channel_account_departments")
         .select("department_id")
+        .eq("organization_id", organizationId)
         .eq("account_id", data.accountId)
         .limit(1)
         .maybeSingle();
-      await db
+      if (remainingError) throw new Error("تعذر تحديث ارتباطات الرقم؛ حدّث الصفحة وأعد المحاولة");
+      const { error: syncError } = await db
         .from("msg_channel_accounts")
         .update({ department_id: remaining?.department_id ?? null })
+        .eq("organization_id", organizationId)
         .eq("id", data.accountId);
+      if (syncError) throw new Error("تم إلغاء الربط، لكن تعذر مزامنة الرقم؛ أعد المحاولة");
       return { ok: true };
     }
 
     // Link (many-to-many): allow the same number to belong to multiple departments.
-    if (!data.departmentId) throw new Error("departmentId required for link");
-    const { error } = await db
-      .from("msg_channel_account_departments")
-      .upsert(
-        {
-          account_id: data.accountId,
-          department_id: data.departmentId,
-          organization_id: organizationId,
-        },
-        { onConflict: "account_id,department_id" },
-      );
-    if (error) throw new Error(error.message);
+    if (!data.departmentId) throw new Error("اختر القسم لربط الرقم");
+    const { error } = await db.from("msg_channel_account_departments").upsert(
+      {
+        account_id: data.accountId,
+        department_id: data.departmentId,
+        organization_id: organizationId,
+      },
+      { onConflict: "account_id,department_id" },
+    );
+    if (error) throw new Error("تعذر حفظ أو تحميل بيانات الأقسام؛ أعد المحاولة");
     // Keep legacy single column populated (first link) for older readers.
-    await db
+    const { error: syncError } = await db
       .from("msg_channel_accounts")
       .update({ department_id: data.departmentId })
+      .eq("organization_id", organizationId)
       .eq("id", data.accountId)
       .is("department_id", null);
+    if (syncError) throw new Error("تم الربط، لكن تعذر مزامنة الرقم؛ أعد المحاولة");
     return { ok: true };
   });

@@ -21,12 +21,14 @@ export const getMySubscription = createServerFn({ method: "GET" }).handler(async
 
 export const setSubscriptionPlan = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      organization_id: z.string().uuid(),
-      plan_id: z.string().uuid(),
-      billing_period: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
-      start_trial: z.boolean().default(false),
-    }).parse(d)
+    z
+      .object({
+        organization_id: z.string().uuid(),
+        plan_id: z.string().uuid(),
+        billing_period: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
+        start_trial: z.boolean().default(false),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { requireBillingAdmin } = await import("./admin.server");
@@ -34,15 +36,22 @@ export const setSubscriptionPlan = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
 
-    const { data: plan } = await db.from("billing_plans").select("trial_days").eq("id", data.plan_id).maybeSingle();
+    const { data: plan } = await db
+      .from("billing_plans")
+      .select("trial_days,status")
+      .eq("id", data.plan_id)
+      .maybeSingle();
+    if (!plan || plan.status !== "published") throw new Error("اختر خطة منشورة وصحيحة");
     const now = new Date();
-    const periodMonths = data.billing_period === "monthly" ? 1 : data.billing_period === "quarterly" ? 3 : 12;
+    const periodMonths =
+      data.billing_period === "monthly" ? 1 : data.billing_period === "quarterly" ? 3 : 12;
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + periodMonths);
 
-    const trialEnds = data.start_trial && plan?.trial_days
-      ? new Date(now.getTime() + plan.trial_days * 86400000).toISOString()
-      : null;
+    const trialEnds =
+      data.start_trial && plan?.trial_days
+        ? new Date(now.getTime() + plan.trial_days * 86400000).toISOString()
+        : null;
 
     const patch = {
       plan_id: data.plan_id,
@@ -65,7 +74,9 @@ export const setSubscriptionPlan = createServerFn({ method: "POST" })
       const { error } = await db.from("billing_subscriptions").update(patch).eq("id", existing.id);
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await db.from("billing_subscriptions").insert({ organization_id: data.organization_id, provider: "manual", ...patch });
+      const { error } = await db
+        .from("billing_subscriptions")
+        .insert({ organization_id: data.organization_id, provider: "manual", ...patch });
       if (error) throw new Error(error.message);
     }
 
@@ -82,20 +93,31 @@ export const setSubscriptionPlan = createServerFn({ method: "POST" })
 
 export const cancelSubscription = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      organization_id: z.string().uuid(),
-      immediate: z.boolean().default(false),
-    }).parse(d)
+    z
+      .object({
+        organization_id: z.string().uuid(),
+        immediate: z.boolean().default(false),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { requireBillingAdmin } = await import("./admin.server");
     await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
+    const { data: sub, error: subError } = await db
+      .from("billing_subscriptions")
+      .select("id")
+      .eq("organization_id", data.organization_id)
+      .maybeSingle();
+    if (subError || !sub) throw new Error("الاشتراك غير موجود");
     const patch = data.immediate
       ? { status: "canceled", canceled_at: new Date().toISOString(), cancel_at_period_end: false }
       : { cancel_at_period_end: true, canceled_at: new Date().toISOString() };
-    const { error } = await db.from("billing_subscriptions").update(patch).eq("organization_id", data.organization_id);
+    const { error } = await db
+      .from("billing_subscriptions")
+      .update(patch)
+      .eq("organization_id", data.organization_id);
     if (error) throw new Error(error.message);
     await db.from("platform_audit_log").insert({
       action: "subscription.canceled",
@@ -109,7 +131,9 @@ export const cancelSubscription = createServerFn({ method: "POST" })
 
 export const extendTrial = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ organization_id: z.string().uuid(), days: z.number().int().min(1).max(365) }).parse(d)
+    z
+      .object({ organization_id: z.string().uuid(), days: z.number().int().min(1).max(365) })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { requireBillingAdmin } = await import("./admin.server");
@@ -121,7 +145,10 @@ export const extendTrial = createServerFn({ method: "POST" })
       .select("trial_ends_at")
       .eq("organization_id", data.organization_id)
       .maybeSingle();
-    const base = sub?.trial_ends_at ? new Date(sub.trial_ends_at) : new Date();
+    if (!sub) throw new Error("الاشتراك غير موجود");
+    const base = new Date(
+      Math.max(Date.now(), sub.trial_ends_at ? Date.parse(sub.trial_ends_at) : Date.now()),
+    );
     const newDate = new Date(base.getTime() + data.days * 86400000);
     const { error } = await db
       .from("billing_subscriptions")

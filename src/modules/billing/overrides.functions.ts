@@ -4,6 +4,8 @@ import { z } from "@/lib/validation";
 export const listOverrides = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ organization_id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { data: rows, error } = await db
@@ -17,17 +19,21 @@ export const listOverrides = createServerFn({ method: "GET" })
 
 export const createOverride = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      organization_id: z.string().uuid(),
-      feature_key: z.string().optional().nullable(),
-      is_enabled: z.boolean().optional().nullable(),
-      limit_key: z.string().optional().nullable(),
-      limit_value: z.number().int().optional().nullable(),
-      reason: z.string().max(500).optional().nullable(),
-      expires_at: z.string().optional().nullable(),
-    }).parse(d)
+    z
+      .object({
+        organization_id: z.string().uuid(),
+        feature_key: z.string().optional().nullable(),
+        is_enabled: z.boolean().optional().nullable(),
+        limit_key: z.string().optional().nullable(),
+        limit_value: z.number().int().optional().nullable(),
+        reason: z.string().max(500).optional().nullable(),
+        expires_at: z.string().optional().nullable(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db.from("billing_subscription_overrides").insert(data);
@@ -38,6 +44,8 @@ export const createOverride = createServerFn({ method: "POST" })
 export const deleteOverride = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    const { requireBillingAdmin } = await import("./admin.server");
+    await requireBillingAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db.from("billing_subscription_overrides").delete().eq("id", data.id);

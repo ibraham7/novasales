@@ -7,10 +7,7 @@ export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
   await requireBillingAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
-  const { data: plans, error } = await db
-    .from("billing_plans")
-    .select("*")
-    .order("sort_order");
+  const { data: plans, error } = await db.from("billing_plans").select("*").order("sort_order");
   if (error) throw new Error(error.message);
 
   const ids = (plans ?? []).map((p: any) => p.id);
@@ -29,17 +26,19 @@ export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
 export const listPublicPlans = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
-  const { data: plans } = await db
+  const { data: plans, error } = await db
     .from("billing_plans")
     .select("*")
     .eq("status", "published")
     .eq("is_public", true)
     .order("sort_order");
+  if (error) throw new Error("تعذر تحميل الخطط المتاحة");
   const ids = (plans ?? []).map((p: any) => p.id);
   const [feats, lims] = await Promise.all([
     ids.length ? db.from("billing_plan_features").select("*").in("plan_id", ids) : { data: [] },
     ids.length ? db.from("billing_plan_limits").select("*").in("plan_id", ids) : { data: [] },
   ]);
+  if (feats.error || lims.error) throw new Error("تعذر تحميل تفاصيل الخطط");
   return (plans ?? []).map((p: any) => ({
     ...p,
     features: (feats.data ?? []).filter((f: any) => f.plan_id === p.id),
@@ -49,14 +48,24 @@ export const listPublicPlans = createServerFn({ method: "GET" }).handler(async (
 
 const upsertPlanSchema = z.object({
   id: z.string().uuid().optional(),
-  code: z.string().trim().min(2).max(60).regex(/^[a-z0-9_-]+$/),
+  code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(60)
+    .regex(/^[a-z0-9_-]+$/),
   name: z.string().trim().min(1).max(120),
   description: z.string().max(500).optional().nullable(),
   status: z.enum(["draft", "published", "archived"]).default("draft"),
   price_monthly: z.number().min(0).default(0),
   price_quarterly: z.number().min(0).default(0),
   price_yearly: z.number().min(0).default(0),
-  currency: z.string().trim().toUpperCase().refine((code) => CURRENCY_CODES.includes(code), "العملة: اختر عملة صحيحة من القائمة").default("USD"),
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .refine((code) => CURRENCY_CODES.includes(code), "العملة: اختر عملة صحيحة من القائمة")
+    .default("USD"),
   trial_days: z.number().int().min(0).default(0),
   is_public: z.boolean().default(true),
   sort_order: z.number().int().default(0),
@@ -74,11 +83,14 @@ export const upsertPlan = createServerFn({ method: "POST" })
     const { features, limits, id, ...planData } = data;
 
     const { data: planId, error } = await db.rpc("billing_save_plan", {
-      _plan: { ...planData, ...(id ? { id } : {}) }, _features: features, _limits: limits,
+      _plan: { ...planData, ...(id ? { id } : {}) },
+      _features: features,
+      _limits: limits,
     });
     if (error) {
       if (error.code === "23505") throw new Error("كود الخطة مستخدم بالفعل؛ أدخل كودًا مختلفًا");
-      if (["42P01", "PGRST202", "PGRST205"].includes(error.code)) throw new Error("جداول الخطط غير مهيأة في قاعدة البيانات؛ تواصل مع إدارة النظام");
+      if (["42P01", "PGRST202", "PGRST205"].includes(error.code))
+        throw new Error("جداول الخطط غير مهيأة في قاعدة البيانات؛ تواصل مع إدارة النظام");
       throw new Error("تعذر حفظ الخطة وميزاتها وحدودها؛ حاول مجددًا أو تواصل مع إدارة النظام");
     }
     return { id: planId };

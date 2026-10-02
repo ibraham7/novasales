@@ -38,7 +38,10 @@ export async function handleProviderWebhook(providerId: string, payload: unknown
     externalRef: accountRef,
     providerId,
   };
-  await db.from("msg_channel_accounts").update({ last_webhook_at: new Date().toISOString() }).eq("id", ctx.accountId);
+  await db
+    .from("msg_channel_accounts")
+    .update({ last_webhook_at: new Date().toISOString() })
+    .eq("id", ctx.accountId);
 
   for (const event of events) {
     try {
@@ -61,7 +64,7 @@ async function handleOne(db: Db, ctx: AccountCtx, event: NormalizedEvent) {
     case "message.out":
       return onMessage(db, ctx, event.message);
     case "message.status":
-      return onStatus(db, event);
+      return onStatus(db, ctx, event);
     case "chat.read":
       return onChatRead(db, event.peer);
   }
@@ -95,7 +98,11 @@ async function onConnectionState(
       orgId: ctx.orgId,
       accountId: ctx.accountId,
       eventType: status === "disconnected" ? "disconnected" : "reconnected",
-      detail: { state: event.rawState ?? null, previous: prevAcc?.status ?? null, provider: ctx.providerId },
+      detail: {
+        state: event.rawState ?? null,
+        previous: prevAcc?.status ?? null,
+        provider: ctx.providerId,
+      },
     });
   }
   // اكتشاف تلقائي للتقييد من أحداث المزوّد.
@@ -105,7 +112,12 @@ async function onConnectionState(
     raw: event.raw,
   });
   if (reason) {
-    await risk.openRestriction({ orgId: ctx.orgId, accountId: ctx.accountId, source: "automatic", reason });
+    await risk.openRestriction({
+      orgId: ctx.orgId,
+      accountId: ctx.accountId,
+      source: "automatic",
+      reason,
+    });
   } else if (status === "connected") {
     await risk.closeRestriction(ctx.accountId);
     if (prevAcc?.status && prevAcc.status !== "connected") {
@@ -143,7 +155,12 @@ async function onReaction(
   const next = event.emoji
     ? [
         ...others,
-        { user_id: peerKey, name: event.actorName ?? "العميل", emoji: event.emoji, at: new Date().toISOString() },
+        {
+          user_id: peerKey,
+          name: event.actorName ?? "العميل",
+          emoji: event.emoji,
+          at: new Date().toISOString(),
+        },
       ]
     : others;
   await db.from("msg_messages").update({ reactions: next }).eq("id", target.id);
@@ -163,7 +180,7 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
     .maybeSingle();
   if (!cp?.contact_id) {
     const safeName = !fromMe && pushName ? pushName : null;
-    const safeAvatar = !fromMe ? payloadPic ?? null : null;
+    const safeAvatar = !fromMe ? (payloadPic ?? null) : null;
     const { data: c } = await db
       .from("crm_contacts")
       .insert({
@@ -238,7 +255,7 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
         external_thread_id: peer,
         peer_identifier: peer,
         push_name: !fromMe && pushName ? pushName : null,
-        profile_pic_url: !fromMe ? payloadPic ?? null : null,
+        profile_pic_url: !fromMe ? (payloadPic ?? null) : null,
         last_message_preview: previewText.slice(0, 500),
         last_message_at: new Date().toISOString(),
         unread_count: fromMe ? 0 : 1,
@@ -257,12 +274,17 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
     try {
       const { opDownloadMedia } = await import("./channel-ops.server");
       // بعض المزوّدين (واتساب الرسمي) يعطون معرّف وسائط مستقلاً عن معرّف الرسالة.
-      const dl = await opDownloadMedia(accountId, { id: msg.mediaId ?? externalId, remoteJid: peer, fromMe });
+      const dl = await opDownloadMedia(accountId, {
+        id: msg.mediaId ?? externalId,
+        remoteJid: peer,
+        fromMe,
+      });
       if (dl?.base64) {
         const buf = Buffer.from(dl.base64, "base64");
         const mime = dl.mimetype ?? msg.mediaMime ?? "application/octet-stream";
         const safeName =
-          (msg.mediaFileName ?? `file-${externalId}`).replace(/[^\w.\-]+/g, "_").slice(0, 120) || "file";
+          (msg.mediaFileName ?? `file-${externalId}`).replace(/[^\w.\-]+/g, "_").slice(0, 120) ||
+          "file";
         const path = `chat-media/${orgId}/${sessionId}/${Date.now()}-${safeName}`;
         const { error: upErr } = await db.storage
           .from("crm-files")
@@ -284,7 +306,11 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
 
   // 4) الرسالة (مع منع التكرار: صدى رسائلنا الصادرة)
   if (externalId) {
-    const { data: dupe } = await db.from("msg_messages").select("id").eq("external_id", externalId).limit(1);
+    const { data: dupe } = await db
+      .from("msg_messages")
+      .select("id")
+      .eq("external_id", externalId)
+      .limit(1);
     if (dupe && dupe.length > 0) return;
   }
   const { error: msgErr } = await db.from("msg_messages").insert({
@@ -303,7 +329,8 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
   // 5) طبقة المخاطر: الرسائل الصادرة من جوال المندوب تُحسب على سقوف الرقم أيضاً
   {
     const risk = await import("@/modules/risk/risk.server");
-    if (fromMe) await risk.recordOutbound({ orgId, accountId, isNewConversation: false, origin: "phone" });
+    if (fromMe)
+      await risk.recordOutbound({ orgId, accountId, isNewConversation: false, origin: "phone" });
     else await risk.recordInbound(accountId);
   }
 
@@ -352,12 +379,26 @@ async function ensureOpportunity(
   let accountDepartmentId: string | undefined;
   if (ownerUserId) {
     const [{ data: appRoleRow }, { data: rbacRoleRows }, { data: deptLinks }] = await Promise.all([
-      db.from("user_roles").select("role").eq("user_id", ownerUserId).eq("role", "sales").maybeSingle(),
-      db.from("rbac_user_roles").select("rbac_roles(key)").eq("user_id", ownerUserId).eq("organization_id", orgId),
-      db.from("msg_channel_account_departments").select("department_id").eq("account_id", accountId).limit(1),
+      db
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", ownerUserId)
+        .eq("role", "sales")
+        .maybeSingle(),
+      db
+        .from("rbac_user_roles")
+        .select("rbac_roles(key)")
+        .eq("user_id", ownerUserId)
+        .eq("organization_id", orgId),
+      db
+        .from("msg_channel_account_departments")
+        .select("department_id")
+        .eq("account_id", accountId)
+        .limit(1),
     ]);
     ownerIsSales =
-      Boolean(appRoleRow?.role) || Boolean((rbacRoleRows ?? []).some((row: any) => row.rbac_roles?.key === "sales"));
+      Boolean(appRoleRow?.role) ||
+      Boolean((rbacRoleRows ?? []).some((row: any) => row.rbac_roles?.key === "sales"));
     accountDepartmentId = (deptLinks ?? [])[0]?.department_id as string | undefined;
   }
 
@@ -439,7 +480,11 @@ async function ensureOpportunity(
       if (!openOpp.owner_agent_id && ownerUserId) patch.owner_agent_id = ownerUserId;
       if (!openOpp.department_id && accountDepartmentId) patch.department_id = accountDepartmentId;
       if (Object.keys(patch).length > 0) {
-        await db.from("opp_opportunities").update(patch).eq("id", openOpp.id).eq("organization_id", orgId);
+        await db
+          .from("opp_opportunities")
+          .update(patch)
+          .eq("id", openOpp.id)
+          .eq("organization_id", orgId);
       }
     }
     if (oppId) {
@@ -469,24 +514,36 @@ async function ensureOpportunity(
       patch.first_response_at = new Date().toISOString();
     }
     if (!currentOpp?.owner_agent_id && ownerUserId) patch.owner_agent_id = ownerUserId;
-    if (!currentOpp?.department_id && accountDepartmentId) patch.department_id = accountDepartmentId;
+    if (!currentOpp?.department_id && accountDepartmentId)
+      patch.department_id = accountDepartmentId;
     if (Object.keys(patch).length > 0) {
       await db.from("opp_opportunities").update(patch).eq("id", oppId).eq("organization_id", orgId);
     }
   }
 }
 
-async function onStatus(db: Db, event: Extract<NormalizedEvent, { kind: "message.status" }>) {
+async function onStatus(
+  db: Db,
+  ctx: AccountCtx,
+  event: Extract<NormalizedEvent, { kind: "message.status" }>,
+) {
   const nowIso = new Date().toISOString();
   const isRead = event.status === "read";
   const { data: chatRows } = await db
     .from("msg_messages")
     .select("id, session_id, direction, status")
+    .eq("organization_id", ctx.orgId)
     .eq("external_id", event.externalId);
   for (const chatMsg of (chatRows ?? []) as any[]) {
     if (!chatMsg || chatMsg.status === "deleted") continue;
     if (chatMsg.direction === "outbound") {
-      const rank: Record<string, number> = { queued: 0, sending: 1, sent: 2, delivered: 3, read: 4 };
+      const rank: Record<string, number> = {
+        queued: 0,
+        sending: 1,
+        sent: 2,
+        delivered: 3,
+        read: 4,
+      };
       if ((rank[event.status] ?? 0) > (rank[chatMsg.status] ?? 0)) {
         await db.from("msg_messages").update({ status: event.status }).eq("id", chatMsg.id);
       }
@@ -500,12 +557,14 @@ async function onStatus(db: Db, event: Extract<NormalizedEvent, { kind: "message
     await db
       .from("cmp_recipients")
       .update({ status: "delivered", delivered_at: nowIso })
+      .eq("organization_id", ctx.orgId)
       .eq("external_message_id", event.externalId)
       .in("status", ["sent"]);
   } else if (isRead) {
     await db
       .from("cmp_recipients")
       .update({ status: "read", read_at: nowIso })
+      .eq("organization_id", ctx.orgId)
       .eq("external_message_id", event.externalId)
       .in("status", ["sent", "delivered"]);
   }

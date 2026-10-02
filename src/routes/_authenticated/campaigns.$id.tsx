@@ -15,64 +15,132 @@ export const Route = createFileRoute("/_authenticated/campaigns/$id")({
 });
 
 const STATUS_COLOR: Record<string, string> = {
-  queued: "bg-slate-500", sending: "bg-blue-500", sent: "bg-blue-500",
-  delivered: "bg-emerald-500", read: "bg-emerald-600", failed: "bg-red-500", skipped: "bg-slate-400",
+  queued: "bg-slate-500",
+  sending: "bg-blue-500",
+  sent: "bg-blue-500",
+  delivered: "bg-emerald-500",
+  read: "bg-emerald-600",
+  failed: "bg-red-500",
+  skipped: "bg-slate-400",
 };
 
 function DetailPage() {
   const { id } = Route.useParams();
   const get = useServerFn(getCampaign);
-  const q = useQuery({ queryKey: ["campaign", id], queryFn: () => get({ data: { id } }), refetchInterval: 5000 });
+  const q = useQuery({
+    queryKey: ["campaign", id],
+    queryFn: () => get({ data: { id } }),
+    refetchInterval: 5000,
+  });
   const [filter, setFilter] = useState("");
 
   const c = q.data?.campaign;
   const s = c?.stats ?? {};
-  const recipients = (q.data?.recipients ?? []).filter((r: any) =>
-    !filter || r.phone.includes(filter) || (r.variables?.name ?? "").includes(filter)
+  const recipients = (q.data?.recipients ?? []).filter(
+    (r: any) => !filter || r.phone.includes(filter) || (r.variables?.name ?? "").includes(filter),
   );
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 space-y-6 min-w-0" dir="rtl">
+    <div className="p-3 sm:p-6 lg:p-3 sm:p-6 lg:p-8 space-y-6 min-w-0 min-w-0" dir="rtl">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/campaigns"><Button size="sm" variant="ghost"><ArrowRight className="h-4 w-4" /></Button></Link>
+        <Link to="/campaigns">
+          <Button size="sm" variant="ghost">
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </Link>
         <h1 className="text-2xl font-bold">{c?.name ?? "..."}</h1>
-        {c && <Badge>{c.status}</Badge>}
+        {c && (
+          <Badge>
+            {
+              (
+                {
+                  draft: "مسودة",
+                  scheduled: "مجدولة",
+                  running: "قيد التشغيل",
+                  paused: "متوقفة",
+                  completed: "منتهية",
+                  cancelled: "ملغاة",
+                  failed: "فشلت",
+                } as Record<string, string>
+              )[c.status]
+            }
+          </Badge>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        {[
-          { l: "الإجمالي", v: s.total ?? 0 },
-          { l: "في الطابور", v: s.queued ?? 0 },
-          { l: "مُرسل", v: s.sent ?? 0 },
-          { l: "مُسلّم", v: s.delivered ?? 0 },
-          { l: "مقروء", v: s.read ?? 0 },
-          { l: "فاشل", v: s.failed ?? 0 },
-        ].map((k) => (
-          <Card key={k.l} className="p-4">
-            <div className="text-xs text-muted-foreground">{k.l}</div>
-            <div className="text-2xl font-bold mt-1">{k.v}</div>
-          </Card>
-        ))}
-      </div>
+      {q.isPending && <Card className="p-8">جارٍ التحميل…</Card>}
+      {q.isError && (
+        <Card className="p-8 text-destructive">
+          تعذر تحميل البيانات. <Button onClick={() => q.refetch()}>إعادة المحاولة</Button>
+        </Card>
+      )}
+      {!q.isPending && !q.isError && c && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+            {[
+              { l: "الإجمالي", v: s.total ?? 0 },
+              { l: "في الطابور", v: s.queued ?? 0 },
+              { l: "مُرسل", v: s.sent ?? 0 },
+              { l: "مُسلّم", v: s.delivered ?? 0 },
+              { l: "مقروء", v: s.read ?? 0 },
+              { l: "فاشل", v: s.failed ?? 0 },
+            ].map((k) => (
+              <Card key={k.l} className="p-4">
+                <div className="text-xs text-muted-foreground">{k.l}</div>
+                <div className="text-2xl font-bold mt-1">{k.v}</div>
+              </Card>
+            ))}
+          </div>
 
-      <Card className="p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-          <h2 className="font-semibold">المستلمون</h2>
-          <Input placeholder="بحث..." value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full sm:w-64" />
-        </div>
-        <div className="space-y-1 max-h-[500px] overflow-auto">
-          {recipients.map((r: any) => (
-            <div key={r.id} className="flex flex-wrap items-center gap-2 sm:gap-3 py-2 border-b last:border-0 break-all">
-              <Badge className={STATUS_COLOR[r.status]}>{r.status}</Badge>
-              <span className="font-mono text-sm">{r.phone}</span>
-              <span className="text-sm text-muted-foreground">{r.variables?.name ?? ""}</span>
-              {r.error && <span className="text-xs text-red-500 mr-auto">{r.error}</span>}
-              {r.sent_at && <span className="text-xs text-muted-foreground mr-auto">{new Date(r.sent_at).toLocaleString()}</span>}
+          {c?.error && <Card className="p-4 text-destructive">{c.error}</Card>}
+          <Card className="p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <h2 className="font-semibold">المستلمون</h2>
+              <Input
+                placeholder="بحث..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="w-full sm:w-64"
+              />
             </div>
-          ))}
-          {recipients.length === 0 && <div className="text-center text-muted-foreground py-8">لا مستلمون بعد.</div>}
-        </div>
-      </Card>
+            <div className="space-y-1 max-h-[500px] overflow-auto">
+              {recipients.map((r: any) => (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center gap-2 sm:gap-3 py-2 border-b last:border-0 break-all"
+                >
+                  <Badge className={STATUS_COLOR[r.status]}>
+                    {
+                      (
+                        {
+                          queued: "في الطابور",
+                          sending: "جارٍ الإرسال",
+                          sent: "مرسل",
+                          delivered: "مسلم",
+                          read: "مقروء",
+                          failed: "فشل",
+                          skipped: "متجاوز",
+                        } as Record<string, string>
+                      )[r.status]
+                    }
+                  </Badge>
+                  <span className="font-mono text-sm">{r.phone}</span>
+                  <span className="text-sm text-muted-foreground">{r.variables?.name ?? ""}</span>
+                  {r.error && <span className="text-xs text-red-500 mr-auto">{r.error}</span>}
+                  {r.sent_at && (
+                    <span className="text-xs text-muted-foreground mr-auto">
+                      {new Date(r.sent_at).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {recipients.length === 0 && (
+                <div className="text-center text-muted-foreground py-8">لا مستلمون بعد.</div>
+              )}
+            </div>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

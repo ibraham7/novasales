@@ -4,7 +4,12 @@
  * ولا يعرف أي محرّك يعمل تحته. القدرات تُفرض هنا أيضاً (لا على الواجهة فقط).
  */
 import { resolveAccountProvider } from "./registry.server";
-import { CAPABILITY_LABELS, type CapabilityKey, type MessageKeyRef, type OutboundQuote } from "./provider";
+import {
+  CAPABILITY_LABELS,
+  type CapabilityKey,
+  type MessageKeyRef,
+  type OutboundQuote,
+} from "./provider";
 
 async function noteProviderError(accountId: string, message: string) {
   try {
@@ -34,6 +39,10 @@ async function withProvider<T>(
   run: (args: { ref: Awaited<ReturnType<typeof resolveAccountProvider>> }) => Promise<T>,
 ): Promise<T> {
   const ref = await resolveAccountProvider(accountId);
+  if (["sendText", "sendMedia", "sendAudioNote"].includes(method)) {
+    const { ensureLimit } = await import("@/modules/billing/entitlements.server");
+    await ensureLimit("monthly_messages", 1, ref.organizationId);
+  }
   const supported =
     (capability ? ref.provider.capabilities[capability] : true) &&
     typeof (ref.provider as unknown as Record<string, unknown>)[method] === "function";
@@ -77,7 +86,12 @@ export async function opSendMedia(
   );
 }
 
-export async function opSendAudioNote(accountId: string, to: string, audio: string, quoted?: OutboundQuote) {
+export async function opSendAudioNote(
+  accountId: string,
+  to: string,
+  audio: string,
+  quoted?: OutboundQuote,
+) {
   return withProvider(accountId, "supportsAudioNote", "sendAudioNote", ({ ref }) =>
     ref.provider.sendAudioNote!(ref.externalRef, to, audio, quoted),
   );
@@ -130,7 +144,8 @@ export async function opDownloadMedia(accountId: string, key: MessageKeyRef) {
 
 export async function opGetProfilePicture(accountId: string, identifier: string) {
   const ref = await resolveAccountProvider(accountId);
-  if (!ref.provider.capabilities.supportsProfilePicture || !ref.provider.getProfilePicture) return null;
+  if (!ref.provider.capabilities.supportsProfilePicture || !ref.provider.getProfilePicture)
+    return null;
   return ref.provider.getProfilePicture(ref.externalRef, identifier).catch(() => null);
 }
 

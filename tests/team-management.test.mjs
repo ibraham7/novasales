@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import ts from 'typescript';
+import {validTimezone} from '../src/modules/organization/team-input.ts';
+const source=(await readFile(new URL('../src/modules/organization/team-access.server.ts',import.meta.url),'utf8')).replace(/import[^;]+;/g,'');
+const compiled=ts.transpileModule('const supabaseAdmin=globalThis.__teamDb;const requireAnyPermission=globalThis.__teamPermission;'+source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const tables={org_departments:[{id:'own',organization_id:'a'},{id:'foreign',organization_id:'b'}],msg_channel_accounts:[{id:'phone',organization_id:'b'}],rbac_roles:[{id:'role',key:'department_supervisor',organization_id:'a'}],rbac_user_roles:[{role_id:'role',user_id:'user',organization_id:'a',scope_department_id:'own'}]};
+globalThis.__teamDb={from(table){let rows=tables[table]??[];const q={select(){return q},eq(k,v){rows=rows.filter(r=>r[k]===v);return q},in(k,values){rows=rows.filter(r=>values.includes(r[k]));return q},maybeSingle(){return Promise.resolve({data:rows[0]??null,error:null})},then(resolve){return Promise.resolve({data:rows,error:null}).then(resolve)}};return q;}};
+const calls=[];globalThis.__teamPermission=async p=>{calls.push(p);return {organizationId:'a'}};
+const mod=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
+test('department and account guards reject foreign references',async()=>{await mod.ownDepartment(globalThis.__teamDb,'own','a');await assert.rejects(mod.ownDepartment(globalThis.__teamDb,'foreign','a'));await assert.rejects(mod.ownAccount(globalThis.__teamDb,'phone','a'));});
+test('supervisor requires a role that covers this department',async()=>{await mod.supervisorRole(globalThis.__teamDb,'user','a','own');await assert.rejects(mod.supervisorRole(globalThis.__teamDb,'user','a','other'));await assert.rejects(mod.supervisorRole(globalThis.__teamDb,'unknown','a','own'));});
+test('write access requires management permission',async()=>{await mod.teamAccess(true);assert.deepEqual(calls.at(-1),['department.manage','org.manage']);});
+test('timezone validates actual IANA values',()=>{assert.equal(validTimezone('Europe/Istanbul'),true);assert.equal(validTimezone('Asia/Damascus'),true);assert.equal(validTimezone('Dubai'),false);assert.equal(validTimezone(''),false);});
