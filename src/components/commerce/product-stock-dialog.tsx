@@ -1,3 +1,4 @@
+import { ProductPropertyManager } from "./product-property-manager";
 import { ProductAttributeFields } from "./product-attribute-fields";
 import type { AttributeDefinition } from "@/modules/commerce/product-attributes";
 import { variantStock } from "@/modules/commerce/stock-summary";
@@ -250,115 +251,7 @@ export function ProductStockDialog({
             <Button variant="outline" onClick={() => setShowDefinitions(!showDefinitions)}>
               تعريف / تعديل خصائص المؤسسة
             </Button>
-            {showDefinitions && (
-              <div data-validation-scope className="bg-muted/30 border rounded-lg p-3 space-y-2">
-                <p className="text-sm">عرّف خصائص تناسب نشاط مؤسستك. اختر ما يلزم لكل منتج.</p>
-                <select
-                  aria-label="تعديل خاصية"
-                  className={selectClass}
-                  value={attribute.id ?? ""}
-                  onChange={(e) => {
-                    const a = (attributes as Attribute[]).find((a) => a.id === e.target.value);
-                    setAttribute(
-                      a
-                        ? {
-                            id: a.id,
-                            name: a.name,
-                            kind: a.kind as typeof attribute.kind,
-                            options: a.options.join("\n"),
-                            scope: a.scope,
-                            isPriceFloor: a.is_price_floor,
-                          }
-                        : {
-                            id: undefined,
-                            name: "",
-                            kind: "text",
-                            options: "",
-                            scope: "variant",
-                            isPriceFloor: false,
-                          },
-                    );
-                  }}
-                >
-                  <option value="">خاصية جديدة</option>
-                  {(attributes as Attribute[]).map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-                <Input required
-                  aria-label="اسم الخاصية"
-                  value={attribute.name}
-                  placeholder="اسم الخاصية: المقاس، الرام، الطول…"
-                  onChange={(e) => setAttribute({ ...attribute, name: e.target.value })}
-                />
-                <select
-                  aria-label="نوع الخاصية"
-                  className={selectClass}
-                  disabled={!!attribute.id}
-                  value={attribute.kind}
-                  onChange={(e) =>
-                    setAttribute({
-                      ...attribute,
-                      kind: e.target.value as typeof attribute.kind,
-                      scope: e.target.value === "money" ? "product" : attribute.scope,
-                      isPriceFloor: false,
-                    })
-                  }
-                >
-                  <option value="text">نص حر</option>
-                  <option value="select">اختيار واحد</option>
-                  <option value="multiselect">اختيارات متعددة</option>
-                  <option value="number">رقم</option>
-                  <option value="date">تاريخ</option>
-                  <option value="money">سعر / مبلغ بعملة المنتج</option>
-                </select>
-                <select
-                  aria-label="مكان الخاصية"
-                  className={selectClass}
-                  disabled={!!attribute.id || attribute.kind === "money"}
-                  value={attribute.scope}
-                  onChange={(e) =>
-                    setAttribute({ ...attribute, scope: e.target.value as "product" | "variant" })
-                  }
-                >
-                  <option value="variant">خاصية تميز متغيرات المخزون (لون، مقاس…)</option>
-                  <option value="product">حقل عام للمنتج (تكلفة، مواصفات…)</option>
-                </select>
-                {attribute.kind === "money" && (
-                  <label className="flex gap-2 items-center text-sm">
-                    <input
-                      type="checkbox"
-                      checked={attribute.isPriceFloor}
-                      onChange={(e) =>
-                        setAttribute({ ...attribute, isPriceFloor: e.target.checked })
-                      }
-                    />
-                    استخدام هذا السعر حدًا أدنى للبيع
-                  </label>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  حقول المنتج تُملأ من تعديل المنتج. يُطبّق الحد الأدنى عند تعبئة قيمته للمنتج. حقول
-                  السعر تستخدم عملته؛ إذا فُعّل أكثر من حد أدنى يُطبّق الأعلى.
-                </p>
-                {["select", "multiselect"].includes(attribute.kind) && (
-                  <textarea
-                    aria-label="الخيارات"
-                    className={selectClass}
-                    placeholder="كل خيار في سطر"
-                    value={attribute.options}
-                    onChange={(e) => setAttribute({ ...attribute, options: e.target.value })}
-                  />
-                )}
-                <Button validate
-                  disabled={mutation.isPending}
-                  onClick={() => mutation.mutate("attribute")}
-                >
-                  حفظ الخاصية
-                </Button>
-              </div>
-            )}
+            {showDefinitions && <ProductPropertyManager/>}
           </section>
         )}
         {canStock && (

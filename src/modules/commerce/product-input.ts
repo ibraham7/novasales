@@ -16,6 +16,7 @@ export const ProductInput = z.object({
       z.union([
         z.string().trim().max(500),
         z.number().finite(),
+        z.boolean(),
         z.array(z.string().trim().max(100)).max(100),
       ]),
     )

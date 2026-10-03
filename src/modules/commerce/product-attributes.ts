@@ -1,12 +1,12 @@
 export type AttributeDefinition = {
   id: string;
   name: string;
-  kind: "text" | "select" | "multiselect" | "number" | "date" | "money";
+  kind: "text" | "select" | "multiselect" | "number" | "date" | "money" | "boolean" | "url" | "file";
   scope: "product" | "variant";
   options: string[];
   is_price_floor: boolean;
 };
-export type AttributeValue = string | number | string[];
+export type AttributeValue = string | number | boolean | string[];
 export function validateAttributes(
   values: Record<string, AttributeValue>,
   definitions: AttributeDefinition[],
@@ -19,6 +19,10 @@ export function validateAttributes(
     if (def.kind === "number") valid = typeof value === "number" && Number.isFinite(value);
     if (def.kind === "money")
       valid = typeof value === "number" && Number.isFinite(value) && value >= 0;
+    if (def.kind === "boolean") valid = typeof value === "boolean";
+    if (def.kind === "url" || def.kind === "file") {
+      try { const u = new URL(String(value)); valid = typeof value === "string" && ["http:", "https:"].includes(u.protocol); } catch { valid = false; }
+    }
     if (def.kind === "text") valid = typeof value === "string" && !!value.trim();
     if (def.kind === "date")
       valid =

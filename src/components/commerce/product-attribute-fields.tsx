@@ -24,7 +24,7 @@ export function ProductAttributeFields({
                 const next = { ...values };
                 if (e.target.checked)
                   next[def.id] =
-                    def.kind === "multiselect"
+                    def.kind === "boolean" ? false : def.kind === "multiselect"
                       ? []
                       : ["number", "money"].includes(def.kind)
                         ? 0
@@ -38,7 +38,9 @@ export function ProductAttributeFields({
             {def.is_price_floor ? " — حد أدنى للبيع" : ""}
           </label>
           {def.id in values &&
-            (def.kind === "select" ? (
+            (def.kind === "boolean" ? (
+              <select aria-label={def.name} className={selectClass} value={String(values[def.id])} onChange={e => onChange({...values,[def.id]:e.target.value === "true"})}><option value="true">نعم</option><option value="false">لا</option></select>
+            ) : def.kind === "select" ? (
               <select
                 className={selectClass}
                 aria-label={def.name}
@@ -72,12 +74,13 @@ export function ProductAttributeFields({
             ) : (
               <Input
                 aria-label={def.name}
+                placeholder={def.kind === "file" ? "رابط مباشر للملف (HTTPS)" : undefined}
                 type={
                   def.kind === "date"
                     ? "date"
                     : ["number", "money"].includes(def.kind)
                       ? "number"
-                      : "text"
+                      : ["url", "file"].includes(def.kind) ? "url" : "text"
                 }
                 step={["number", "money"].includes(def.kind) ? "any" : undefined}
                 min={def.kind === "money" ? 0 : undefined}

@@ -142,7 +142,7 @@ export function ProductFilters({
                 {d.name}
                 {d.scope === "variant" ? " — المتبقي بالمخزون" : ""}
               </Label>
-              {["select", "multiselect"].includes(d.kind) ? (
+              {d.kind === "boolean" ? (<select aria-label={`فلترة ${d.name}`} className="w-full border rounded-md bg-background p-2" value={value.attributes[d.id]?.values?.[0] ?? ""} onChange={e=>update(d.id,{values:e.target.value?[e.target.value]:[]})}><option value="">كل القيم</option><option value="true">نعم</option><option value="false">لا</option></select>) : ["select", "multiselect"].includes(d.kind) ? (
                 <div className="flex flex-wrap gap-2">
                   {d.options.map((o) => (
                     <label key={o} className="text-xs flex items-center gap-1">

@@ -12,6 +12,7 @@ const DateValue = z
 const Value = z.union([
   z.string().trim().max(500),
   z.number().finite(),
+        z.boolean(),
   z.array(z.string().trim().max(100)).max(100),
 ]);
 
@@ -38,7 +39,7 @@ export const saveProductAttribute = createServerFn({ method: "POST" })
       .object({
         id: z.string().uuid().optional(),
         name: z.string().trim().min(1).max(80),
-        kind: z.enum(["text", "select", "multiselect", "number", "date", "money"]),
+        kind: z.enum(["text", "select", "multiselect", "number", "date", "money", "boolean", "url", "file"]),
         scope: z.enum(["product", "variant"]).default("variant"),
         isPriceFloor: z.boolean().default(false),
         options: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
@@ -87,7 +88,7 @@ export const saveProductAttribute = createServerFn({ method: "POST" })
           .eq("organization_id", organizationId)
       : db.from("sales_product_attributes").insert({ ...row, organization_id: organizationId });
     const { data: result, error } = await q.select("*").single();
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(error.code === "23505" ? "توجد خاصية بهذا الاسم؛ اخترها للتعديل أو استخدم اسمًا آخر" : "تعذر حفظ الخاصية؛ أعد المحاولة");
     return result;
   });
 

@@ -1,3 +1,5 @@
+import { ProductPropertyManager } from "@/components/commerce/product-property-manager";
+import { usePermission } from "@/platform/rbac/use-permission";
 import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
 import { ProductAttributeFields } from "@/components/commerce/product-attribute-fields";
 import { ProductFilters } from "@/components/commerce/product-filters";
@@ -144,11 +146,15 @@ function ProductsPage() {
   const saveProduct = useServerFn(upsertProduct);
 
   const fetchAttributes = useServerFn(listProductAttributes);
-  const { data: attributes = [] } = useQuery({
+  const attributesQ = useQuery({
     queryKey: ["product-attributes"],
     queryFn: () => fetchAttributes(),
   });
 
+  const attributes = attributesQ.data ?? [];
+  const canManageProperties = usePermission("products.manage");
+  const [propertiesOpen,setPropertiesOpen] = useState(false);
+  const [inlineProperties,setInlineProperties] = useState(false);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(EMPTY_PRODUCT_FILTERS);
 
@@ -301,6 +307,7 @@ function ProductsPage() {
           </p>
         </div>
 
+        {canManageProperties && <div className="flex flex-col gap-2"><Button type="button" variant="outline" onClick={()=>setPropertiesOpen(true)}>إدارة الخصائص والقيم</Button><Dialog open={propertiesOpen} onOpenChange={setPropertiesOpen}><DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>خصائص المؤسسة وقيمها</DialogTitle></DialogHeader><ProductPropertyManager/></DialogContent></Dialog></div>}
         <Dialog
           open={productDialogOpen}
           onOpenChange={(open) => {
@@ -402,7 +409,11 @@ function ProductsPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>حقول المنتج والأسعار المخصصة</Label>
+                <Label>خصائص المنتج</Label>
+                {canManageProperties && <Button type="button" variant="outline" size="sm" onClick={()=>setInlineProperties(!inlineProperties)}>{inlineProperties ? "إغلاق إدارة الخصائص" : "إضافة خاصية أو قيم جديدة"}</Button>}
+                {inlineProperties && <div className="border rounded-lg p-3"><ProductPropertyManager onSaved={()=>setInlineProperties(false)}/></div>}
+                {attributesQ.isError && <div className="text-destructive text-sm">تعذر تحميل الخصائص <Button type="button" variant="outline" onClick={()=>attributesQ.refetch()}>إعادة المحاولة</Button></div>}
+                {!attributes.length && !attributesQ.isPending && !attributesQ.isError && <p className="text-sm text-muted-foreground">لا توجد خصائص بعد. أضف خاصية وحدد قيمها من الزر أعلاه.</p>}
                 <ProductAttributeFields
                   definitions={(attributes as AttributeDefinition[]).filter(
                     (a) => a.scope === "product",
@@ -412,8 +423,7 @@ function ProductsPage() {
                   currency={form.currency}
                 />
                 <p className="text-xs text-muted-foreground">
-                  عرّف الحقول التي تحتاجها من «الخصائص والدفعات»؛ يمكنك تسميتها سعر التصنيع أو
-                  التكلفة أو أي اسم آخر.
+                  اختر الخصائص المناسبة لهذا المنتج. المقاسات والألوان ذات الكميات المختلفة تُضاف من «خيارات المخزون والدفعات» بعد حفظ المنتج.
                 </p>
               </div>
               <ProductMediaEditor
@@ -634,7 +644,7 @@ function ProductsPage() {
                         }}
                       >
                         <Boxes className="h-4 w-4 ml-1" />
-                        الخصائص والدفعات
+                        خيارات المخزون والدفعات
                       </Button>
                     </div>
                   </CardContent>

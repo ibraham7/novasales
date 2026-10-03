@@ -18,9 +18,9 @@ export function ProductStockSummary({
         .map((d) => (
           <p key={d.id}>
             <strong>{d.name}: </strong>
-            {Array.isArray(product.attributes[d.id])
+            {["url", "file"].includes(d.kind) && /^https?:\/\//i.test(String(product.attributes[d.id])) ? <a href={String(product.attributes[d.id])} target="_blank" rel="noopener noreferrer" className="text-primary underline">{d.kind === "file" ? "فتح الملف" : "فتح الرابط"}</a> : Array.isArray(product.attributes[d.id])
               ? product.attributes[d.id].join("، ")
-              : String(product.attributes[d.id])}
+              : typeof product.attributes[d.id] === "boolean" ? (product.attributes[d.id] ? "نعم" : "لا") : String(product.attributes[d.id])}
             {d.kind === "money" ? ` ${product.currency}` : ""}
             {d.is_price_floor ? " — الحد الأدنى للبيع" : ""}
           </p>
