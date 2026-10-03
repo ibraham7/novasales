@@ -79,6 +79,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
     };
 
     if (data.id) {
+      if (data.initialVariants?.length) throw new Error("المخزون الأولي يخص المنتج الجديد؛ استخدم إدارة الدفعات لتعديل المخزون");
       const { data: row, error } = await db
         .from("sales_products")
         .update(payload)
@@ -90,23 +91,20 @@ export const upsertProduct = createServerFn({ method: "POST" })
       return row;
     }
 
-    const { data: row, error } = await db
-      .from("sales_products")
-      .insert({ ...payload, created_by: userId })
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-    const { error: stockError } = await db
-      .from("sales_inventory")
-      .insert({ product_id: row.id, organization_id: organizationId, quantity: 0 });
-    if (stockError) throw new Error(stockError.message);
-    const { error: variantError } = await db.from("sales_product_variants").insert({
-      organization_id: organizationId,
-      product_id: row.id,
-      label: "أساسي — خصائص غير محددة",
-      is_default: true,
+    const initialVariants = (data.initialVariants ?? []).map(v => ({...v,attributes:Object.fromEntries(Object.entries(v.attributes).map(([id,value])=>[id,Array.isArray(value)?[...value].sort():value]))}));
+    if (initialVariants.some(v => v.batches.length)) await requirePermission("inventory.manage");
+    const codes = new Set<string>();
+    for (const v of initialVariants) {
+      validateAttributes(v.attributes, defs ?? [], "variant");
+      for (const b of v.batches) {
+        if (codes.has(b.batchCode)) throw new Error("رقم الدفعة مكرر؛ استخدم رقمًا مستقلًا لكل دفعة");
+        codes.add(b.batchCode);
+      }
+    }
+    const { data: row, error } = await db.rpc("create_sales_product_with_stock", {
+      _organization_id: organizationId, _created_by: userId, _product: payload, _variants: initialVariants,
     });
-    if (variantError) throw new Error(variantError.message);
+    if (error) throw new Error(error.code === "23505" ? "توجد تركيبة أو دفعة مكررة؛ راجع البيانات" : error.message);
     return row;
   });
 

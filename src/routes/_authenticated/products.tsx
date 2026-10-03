@@ -1,3 +1,5 @@
+import { InitialProductStock } from "@/components/commerce/initial-product-stock";
+import { initialStockPayload, type InitialVariantDraft } from "@/modules/commerce/initial-stock";
 import { ProductPropertyManager } from "@/components/commerce/product-property-manager";
 import { usePermission } from "@/platform/rbac/use-permission";
 import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
@@ -152,6 +154,8 @@ function ProductsPage() {
   });
 
   const attributes = attributesQ.data ?? [];
+  const [initialVariants,setInitialVariants] = useState<InitialVariantDraft[]>([]);
+  const canInitialStock = usePermission("inventory.manage");
   const canManageProperties = usePermission("products.manage");
   const [propertiesOpen,setPropertiesOpen] = useState(false);
   const [inlineProperties,setInlineProperties] = useState(false);
@@ -233,6 +237,7 @@ function ProductsPage() {
 
           price,
           attributes: form.attributes,
+          initialVariants: form.id ? undefined : initialStockPayload(initialVariants),
 
           currency: form.currency.trim().toUpperCase() || "USD",
 
@@ -248,6 +253,7 @@ function ProductsPage() {
       toast.success(form.id ? "تم تحديث المنتج" : "تمت إضافة المنتج");
 
       setProductDialogOpen(false);
+      setInitialVariants([]);
 
       setForm(EMPTY_FORM);
 
@@ -267,12 +273,14 @@ function ProductsPage() {
   });
 
   function openCreateProduct() {
+    setInitialVariants([]);
     setForm({ ...EMPTY_FORM, currency: platform.default_currency });
 
     setProductDialogOpen(true);
   }
 
   function openEditProduct(product: ProductRow) {
+    setInitialVariants([]);
     setForm({
       id: product.id,
 
@@ -423,9 +431,10 @@ function ProductsPage() {
                   currency={form.currency}
                 />
                 <p className="text-xs text-muted-foreground">
-                  اختر الخصائص المناسبة لهذا المنتج. المقاسات والألوان ذات الكميات المختلفة تُضاف من «خيارات المخزون والدفعات» بعد حفظ المنتج.
+                  اختر الخصائص المناسبة لهذا المنتج. المقاسات والألوان ذات الكميات المختلفة تُحدد في قسم خيارات المنتج أدناه.
                 </p>
               </div>
+              {!form.id && <InitialProductStock rows={initialVariants} onChange={setInitialVariants} definitions={attributes as AttributeDefinition[]} currency={form.currency} canStock={canInitialStock} disabled={productMutation.isPending}/>}
               <ProductMediaEditor
                 media={{ images: form.images, videos: form.videos }}
                 onChange={(media) => setForm((old) => ({ ...old, ...media }))}

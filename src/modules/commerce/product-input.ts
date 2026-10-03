@@ -4,7 +4,10 @@ const mediaUrl = z
   .string()
   .url("رابط الوسائط غير صالح")
   .refine((v) => /^https?:\/\//i.test(v), "استخدم رابط HTTP أو HTTPS مباشرًا");
+const InitialValue = z.union([z.string().trim().max(500),z.number().finite(),z.boolean(),z.array(z.string().trim().max(100)).max(100)]);
+const InitialBatch = z.object({batchCode:z.string().trim().min(1).max(100),quantity:z.number().finite().positive().multipleOf(0.001),expiresOn:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>!Number.isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0,10)===v,"تاريخ انتهاء غير صالح").nullable()});
 export const ProductInput = z.object({
+  initialVariants: z.array(z.object({label:z.string().trim().min(1).max(200),attributes:z.record(z.string().uuid(),InitialValue),batches:z.array(InitialBatch).max(100)})).max(100).optional(),
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1, "اسم المنتج مطلوب").max(160),
   sku: z.string().trim().max(80).nullable().optional(),
