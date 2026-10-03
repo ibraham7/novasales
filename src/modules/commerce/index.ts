@@ -1,6 +1,7 @@
 export {
     listProducts,
     upsertProduct,
+    deleteProduct,
     adjustInventory,
 } from "./products.functions";
 export {

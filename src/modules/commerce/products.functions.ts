@@ -108,6 +108,22 @@ export const upsertProduct = createServerFn({ method: "POST" })
     return row;
   });
 
+export const deleteProduct = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ productId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requirePermission } = await import("@/platform/rbac/rbac.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { organizationId } = await requirePermission("products.manage");
+    const { error } = await (supabaseAdmin as any).rpc("delete_unused_sales_product", {
+      _organization_id: organizationId,
+      _product_id: data.productId,
+    });
+    if (error) throw new Error(error.code === "23503"
+      ? "لا يمكن حذف منتج مرتبط ببيانات أخرى؛ يمكنك تعطيله من تعديل المنتج"
+      : error.message);
+    return { ok: true };
+  });
+
 export const adjustInventory = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z

@@ -20,11 +20,12 @@ import { useServerFn } from "@tanstack/react-start";
 
 import { useMemo, useState } from "react";
 
-import { Boxes, DollarSign, Package, Pencil, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { Boxes, DollarSign, Package, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 
 import { toast } from "@/lib/toast";
 
-import { listProducts, upsertProduct } from "@/modules/commerce";
+import { listProducts, upsertProduct, deleteProduct } from "@/modules/commerce";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from "@/components/ui/alert-dialog";
 
 import { Button } from "@/components/ui/button";
 
@@ -146,6 +147,18 @@ function ProductsPage() {
   const fetchProducts = useServerFn(listProducts);
 
   const saveProduct = useServerFn(upsertProduct);
+  const removeProduct = useServerFn(deleteProduct);
+  const [deletingProduct, setDeletingProduct] = useState<ProductRow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: (productId: string) => removeProduct({ data: { productId } }),
+    onSuccess: () => {
+      setDeletingProduct(null);
+      toast.success("تم حذف المنتج");
+      for (const key of ["sales-products", "chat-products", "chat-order-products", "sales-products-order", "product-analytics"])
+        qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذر حذف المنتج"),
+  });
 
   const fetchAttributes = useServerFn(listProductAttributes);
   const attributesQ = useQuery({
@@ -665,6 +678,9 @@ function ProductsPage() {
                         <Boxes className="h-4 w-4 ml-1" />
                         خيارات المخزون والدفعات
                       </Button>
+                      {canManageProperties && <Button variant="destructive" size="sm" className="col-span-2" onClick={() => setDeletingProduct(product)}>
+                        <Trash2 className="h-4 w-4 ml-1" /> حذف المنتج
+                      </Button>}
                     </div>
                   </CardContent>
                 </Card>
@@ -678,6 +694,20 @@ function ProductsPage() {
         </>
       )}
 
+      <AlertDialog open={!!deletingProduct} onOpenChange={(open) => { if (!open && !deleteMutation.isPending) setDeletingProduct(null); }}>
+        <AlertDialogContent dir="rtl" className="max-w-[calc(100%-2rem)] sm:max-w-lg">
+          <AlertDialogHeader className="sm:text-right">
+            <AlertDialogTitle>حذف المنتج «{deletingProduct?.name}»؟</AlertDialogTitle>
+            <AlertDialogDescription>الحذف نهائي ولا يمكن التراجع عنه. المنتجات المرتبطة بمبيعات أو حركات مخزون، أو التي لها كمية متبقية، لا يمكن حذفها؛ يمكنك تعطيلها بدلًا من ذلك.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel disabled={deleteMutation.isPending}>إلغاء</AlertDialogCancel>
+            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deletingProduct && deleteMutation.mutate(deletingProduct.id)}>
+              {deleteMutation.isPending ? "جارٍ الحذف..." : "تأكيد الحذف"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {stockDialog && (
         <ProductStockDialog productId={stockDialog.id} onClose={() => setStockDialog(null)} />
       )}
