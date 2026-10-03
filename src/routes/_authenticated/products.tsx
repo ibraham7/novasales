@@ -177,6 +177,8 @@ function ProductsPage() {
     data: products = [],
     isLoading,
     isFetching,
+    isError: productsFailed,
+    refetch: retryProducts,
   } = useQuery({
     queryKey: ["sales-products", showInactive],
 
@@ -570,15 +572,24 @@ function ProductsPage() {
             جارٍ تحميل المنتجات...
           </CardContent>
         </Card>
+      ) : productsFailed ? (
+        <Card>
+          <CardContent className="py-12 text-center space-y-3" role="alert">
+            <p className="font-medium text-destructive">تعذر تحميل المنتجات. بياناتك المحفوظة لم تُحذف.</p>
+            <Button variant="outline" disabled={isFetching} onClick={() => retryProducts()}>
+              {isFetching ? "جارٍ إعادة المحاولة..." : "إعادة المحاولة"}
+            </Button>
+          </CardContent>
+        </Card>
       ) : filteredProducts.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
             <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 
-            <p className="font-medium">{search ? "لا توجد نتائج" : "لا توجد منتجات بعد"}</p>
+            <p className="font-medium">{products.length ? "لا توجد منتجات مطابقة للفلاتر" : "لا توجد منتجات بعد"}</p>
 
             <p className="text-sm text-muted-foreground mt-1">
-              {search ? "جرّب البحث بكلمة مختلفة." : "أضف أول منتج للبدء بإدارة المخزون."}
+              {products.length ? "امسح الفلاتر أو جرّب البحث بكلمة مختلفة." : "أضف أول منتج للبدء بإدارة المخزون."}
             </p>
           </CardContent>
         </Card>

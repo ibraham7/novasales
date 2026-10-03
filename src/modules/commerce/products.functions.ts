@@ -18,7 +18,7 @@ export const listProducts = createServerFn({ method: "GET" })
 
     let query = db
       .from("sales_products")
-      .select("*, sales_inventory(quantity), sales_product_variants(*), sales_stock_batches(*)")
+      .select("*, sales_inventory(quantity), sales_product_variants!sales_variants_product_scope_fk(*), sales_stock_batches!sales_stock_batches_product_id_fkey(*)")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false });
     if (data.activeOnly) query = query.eq("is_active", true);

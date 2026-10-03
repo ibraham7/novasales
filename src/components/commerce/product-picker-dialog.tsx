@@ -48,7 +48,7 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
 
   const [sendingProductId, setSendingProductId] = useState<string | null>(null);
 
-  const { data: products = [], isLoading } = useQuery({
+  const { data: products = [], isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["chat-products"],
 
     queryFn: () =>
@@ -150,6 +150,13 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
           {isLoading ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               جارِ تحميل المنتجات...
+            </div>
+          ) : isError ? (
+            <div className="py-12 text-center space-y-3" role="alert">
+              <p className="text-sm text-destructive">تعذر تحميل المنتجات. حاول مجددًا.</p>
+              <Button variant="outline" disabled={isFetching} onClick={() => refetch()}>
+                إعادة المحاولة
+              </Button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
