@@ -416,12 +416,13 @@ function ProductsPage() {
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
-                <Label>خصائص المنتج</Label>
-                {canManageProperties && <Button type="button" variant="outline" size="sm" onClick={()=>setInlineProperties(!inlineProperties)}>{inlineProperties ? "إغلاق إدارة الخصائص" : "إضافة خاصية أو قيم جديدة"}</Button>}
-                {inlineProperties && <div className="border rounded-lg p-3"><ProductPropertyManager onSaved={()=>setInlineProperties(false)}/></div>}
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2"><Label>خصائص المنتج</Label>
+                {canManageProperties && <Button type="button" variant="outline" size="sm" onClick={()=>setInlineProperties(!inlineProperties)}>إضافة خاصية</Button>}
+                </div>
+                <Dialog open={inlineProperties} onOpenChange={setInlineProperties}><DialogContent dir="rtl" className="sm:max-w-md max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>إضافة خاصية</DialogTitle></DialogHeader><ProductPropertyManager onSaved={()=>setInlineProperties(false)}/></DialogContent></Dialog>
                 {attributesQ.isError && <div className="text-destructive text-sm">تعذر تحميل الخصائص <Button type="button" variant="outline" onClick={()=>attributesQ.refetch()}>إعادة المحاولة</Button></div>}
-                {!attributes.length && !attributesQ.isPending && !attributesQ.isError && <p className="text-sm text-muted-foreground">لا توجد خصائص بعد. أضف خاصية وحدد قيمها من الزر أعلاه.</p>}
+                {!attributes.length && !attributesQ.isPending && !attributesQ.isError && <p className="text-sm text-muted-foreground">أضف خصائص مثل المقاس أو السعة حسب نشاطك.</p>}
                 <ProductAttributeFields
                   definitions={(attributes as AttributeDefinition[]).filter(
                     (a) => a.scope === "product",
@@ -430,9 +431,7 @@ function ProductsPage() {
                   onChange={(values) => setForm((old) => ({ ...old, attributes: values }))}
                   currency={form.currency}
                 />
-                <p className="text-xs text-muted-foreground">
-                  اختر الخصائص المناسبة لهذا المنتج. المقاسات والألوان ذات الكميات المختلفة تُحدد في قسم خيارات المنتج أدناه.
-                </p>
+
               </div>
               {!form.id && <InitialProductStock rows={initialVariants} onChange={setInitialVariants} definitions={attributes as AttributeDefinition[]} currency={form.currency} canStock={canInitialStock} disabled={productMutation.isPending}/>}
               <ProductMediaEditor
