@@ -23,6 +23,7 @@ const TABS = [
   { to: "/settings/members", icon: Users, label: "الأعضاء" },
   { to: "/settings/invitations", icon: Mail, label: "الدعوات" },
   { to: "/settings/pipelines", icon: KanbanSquare, label: "قنوات المبيعات" },
+  { to: "/settings/conversions", icon: KanbanSquare, label: "تحويلات الإعلانات" },
   { to: "/settings/custom-fields", icon: ListPlus, label: "الحقول المخصصة" },
   { to: "/settings/billing", icon: CreditCard, label: "الفوترة" },
   { to: "/settings/integrations", icon: Plug, label: "التكاملات" },

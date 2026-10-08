@@ -1,6 +1,34 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 
+async function managementContext() {
+  const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+  const access = await requireAnyPermission(["crm.pipelines.manage", "org.manage"]);
+  const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+  return { ...access, db: supabaseAdmin as any };
+}
+async function assertPipeline(db: any, organizationId: string, pipelineId: string) {
+  const { data, error } = await db
+    .from("crm_pipelines")
+    .select("id,is_default")
+    .eq("id", pipelineId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("القمع غير موجود ضمن مؤسستك");
+  return data;
+}
+async function assertStage(db: any, organizationId: string, stageId: string) {
+  const { data, error } = await db
+    .from("crm_pipeline_stages")
+    .select("id,pipeline_id")
+    .eq("id", stageId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("المرحلة غير موجودة");
+  await assertPipeline(db, organizationId, data.pipeline_id);
+  return data;
+}
 export const listPipelines = createServerFn({ method: "GET" }).handler(async () => {
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
   const db = supabaseAdmin as any;
@@ -14,7 +42,11 @@ export const listPipelines = createServerFn({ method: "GET" }).handler(async () 
   if (error) throw new Error(error.message);
   const ids = (pipes ?? []).map((p: any) => p.id);
   const { data: stages } = ids.length
-    ? await db.from("crm_pipeline_stages").select("*").in("pipeline_id", ids).order("ord", { ascending: true })
+    ? await db
+        .from("crm_pipeline_stages")
+        .select("*")
+        .in("pipeline_id", ids)
+        .order("ord", { ascending: true })
     : { data: [] };
   const byPipe = new Map<string, any[]>();
   for (const s of stages ?? []) {
@@ -46,14 +78,21 @@ export const getDefaultPipeline = createServerFn({ method: "GET" }).handler(asyn
 
 export const createPipeline = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ name: z.string().trim().min(1).max(100), description: z.string().max(500).optional(), isDefault: z.boolean().optional() }).parse(d)
+    z
+      .object({
+        name: z.string().trim().min(1).max(100),
+        description: z.string().max(500).optional(),
+        isDefault: z.boolean().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId, userId } = await getWorkspace();
+    const { db, organizationId, userId } = await managementContext();
     if (data.isDefault) {
-      await db.from("crm_pipelines").update({ is_default: false }).eq("organization_id", organizationId);
+      await db
+        .from("crm_pipelines")
+        .update({ is_default: false })
+        .eq("organization_id", organizationId);
     }
     const { data: row, error } = await db
       .from("crm_pipelines")
@@ -72,25 +111,33 @@ export const createPipeline = createServerFn({ method: "POST" })
 
 export const updatePipeline = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      pipelineId: z.string().uuid(),
-      name: z.string().trim().min(1).max(100).optional(),
-      description: z.string().max(500).nullable().optional(),
-      isDefault: z.boolean().optional(),
-    }).parse(d)
+    z
+      .object({
+        pipelineId: z.string().uuid(),
+        name: z.string().trim().min(1).max(100).optional(),
+        description: z.string().max(500).nullable().optional(),
+        isDefault: z.boolean().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { db, organizationId } = await managementContext();
+    await assertPipeline(db, organizationId, data.pipelineId);
     if (data.isDefault) {
-      await db.from("crm_pipelines").update({ is_default: false }).eq("organization_id", organizationId);
+      await db
+        .from("crm_pipelines")
+        .update({ is_default: false })
+        .eq("organization_id", organizationId);
     }
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.description !== undefined) patch.description = data.description;
     if (data.isDefault !== undefined) patch.is_default = data.isDefault;
-    const { error } = await db.from("crm_pipelines").update(patch).eq("id", data.pipelineId).eq("organization_id", organizationId);
+    const { error } = await db
+      .from("crm_pipelines")
+      .update(patch)
+      .eq("id", data.pipelineId)
+      .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -98,32 +145,50 @@ export const updatePipeline = createServerFn({ method: "POST" })
 export const deletePipeline = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ pipelineId: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
-    const { data: p } = await db.from("crm_pipelines").select("is_default").eq("id", data.pipelineId).maybeSingle();
+    const { db, organizationId } = await managementContext();
+    await assertPipeline(db, organizationId, data.pipelineId);
+    const { data: p } = await db
+      .from("crm_pipelines")
+      .select("is_default")
+      .eq("id", data.pipelineId)
+      .maybeSingle();
     if (p?.is_default) throw new Error("لا يمكن حذف القمع الافتراضي");
-    const { error } = await db.from("crm_pipelines").delete().eq("id", data.pipelineId).eq("organization_id", organizationId);
+    const { error } = await db
+      .from("crm_pipelines")
+      .delete()
+      .eq("id", data.pipelineId)
+      .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const upsertStage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      id: z.string().uuid().optional(),
-      pipelineId: z.string().uuid(),
-      name: z.string().trim().min(1).max(100),
-      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#94a3b8"),
-      ord: z.number().int().min(0).max(1000),
-      probability: z.number().int().min(0).max(100).default(0),
-      isWon: z.boolean().default(false),
-      isLost: z.boolean().default(false),
-    }).parse(d)
+    z
+      .object({
+        id: z.string().uuid().optional(),
+        pipelineId: z.string().uuid(),
+        name: z.string().trim().min(1).max(100),
+        color: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .default("#94a3b8"),
+        ord: z.number().int().min(0).max(1000),
+        probability: z.number().int().min(0).max(100).default(0),
+        isWon: z.boolean().default(false),
+        isLost: z.boolean().default(false),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
+    const { db, organizationId } = await managementContext();
+    await assertPipeline(db, organizationId, data.pipelineId);
+    if (data.id) {
+      const current = await assertStage(db, organizationId, data.id);
+      if (current.pipeline_id !== data.pipelineId)
+        throw new Error("لا يمكن نقل المرحلة إلى قمع آخر");
+    }
+    if (data.isWon && data.isLost) throw new Error("لا يمكن أن تكون المرحلة نجاحًا وخسارة معًا");
     const row = {
       pipeline_id: data.pipelineId,
       name: data.name,
@@ -138,7 +203,11 @@ export const upsertStage = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       return { ok: true, id: data.id };
     }
-    const { data: inserted, error } = await db.from("crm_pipeline_stages").insert(row).select("id").single();
+    const { data: inserted, error } = await db
+      .from("crm_pipeline_stages")
+      .insert(row)
+      .select("id")
+      .single();
     if (error) throw new Error(error.message);
     return { ok: true, id: inserted.id };
   });
@@ -146,12 +215,13 @@ export const upsertStage = createServerFn({ method: "POST" })
 export const deleteStage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ stageId: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    const { count } = await db
+    const { db, organizationId } = await managementContext();
+    await assertStage(db, organizationId, data.stageId);
+    const { count, error: countError } = await db
       .from("opp_opportunities")
       .select("*", { count: "exact", head: true })
       .eq("stage_id", data.stageId);
+    if (countError) throw new Error(countError.message);
     if ((count ?? 0) > 0) throw new Error("لا يمكن حذف مرحلة تحتوي على فرص");
     const { error } = await db.from("crm_pipeline_stages").delete().eq("id", data.stageId);
     if (error) throw new Error(error.message);
@@ -160,28 +230,60 @@ export const deleteStage = createServerFn({ method: "POST" })
 
 export const reorderStages = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      pipelineId: z.string().uuid(),
-      order: z.array(z.object({ id: z.string().uuid(), ord: z.number().int().min(0) })),
-    }).parse(d)
+    z
+      .object({
+        pipelineId: z.string().uuid(),
+        order: z.array(z.object({ id: z.string().uuid(), ord: z.number().int().min(0) })),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const db = supabaseAdmin as any;
-    await Promise.all(
-      data.order.map((r) => db.from("crm_pipeline_stages").update({ ord: r.ord }).eq("id", r.id).eq("pipeline_id", data.pipelineId))
+    const { db, organizationId } = await managementContext();
+    await assertPipeline(db, organizationId, data.pipelineId);
+    for (const r of data.order) {
+      const stage = await assertStage(db, organizationId, r.id);
+      if (stage.pipeline_id !== data.pipelineId) throw new Error("المرحلة ليست ضمن هذا القمع");
+    }
+    const results = await Promise.all(
+      data.order.map((r) =>
+        db
+          .from("crm_pipeline_stages")
+          .update({ ord: r.ord })
+          .eq("id", r.id)
+          .eq("pipeline_id", data.pipelineId),
+      ),
     );
+    for (const result of results) if (result.error) throw new Error(result.error.message);
     return { ok: true };
   });
 
 export const moveOpportunityToStage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ opportunityId: z.string().uuid(), stageId: z.string().uuid() }).parse(d)
+    z.object({ opportunityId: z.string().uuid(), stageId: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const db = supabaseAdmin as any;
-    const { organizationId, userId } = await getWorkspace();
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { canAccessOpportunityRow, applyOpportunityScope } =
+      await import("@/platform/rbac/data-scope.server");
+    const access = await requireAnyPermission([
+      "crm.opportunities.update",
+      "opportunities.manage",
+      "org.manage",
+    ]);
+    const { organizationId, userId } = access;
+    const { data: current, error: currentError } = await db
+      .from("opp_opportunities")
+      .select("id,owner_agent_id,department_id")
+      .eq("id", data.opportunityId)
+      .eq("organization_id", organizationId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (currentError) throw new Error(currentError.message);
+    if (!current || !canAccessOpportunityRow(access, current))
+      throw new Error("الفرصة غير موجودة أو غير مسموح بتعديلها");
+    await assertStage(db, organizationId, data.stageId);
     const { data: stage } = await db
       .from("crm_pipeline_stages")
       .select("id, name, probability, is_won, is_lost, pipeline_id")
@@ -205,12 +307,17 @@ export const moveOpportunityToStage = createServerFn({ method: "POST" })
       patch.outcome = null;
       patch.closed_at = null;
     }
-    const { data: opp, error } = await db
-      .from("opp_opportunities")
-      .update(patch)
-      .eq("id", data.opportunityId)
-      .select("id, contact_id, lead_id")
-      .single();
+    const updateQuery = applyOpportunityScope(
+      db
+        .from("opp_opportunities")
+        .update(patch)
+        .eq("id", data.opportunityId)
+        .eq("organization_id", organizationId)
+        .is("deleted_at", null),
+      access,
+    );
+    if (!updateQuery) throw new Error("غير مسموح بتعديل الفرصة");
+    const { data: opp, error } = await updateQuery.select("id, contact_id, lead_id").single();
     if (error) throw new Error(error.message);
 
     // Emit timeline event

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { V1_CORS, authenticate, errorResponse, json, logRequest } from "./_auth.server";
+import { attributionInput } from "@/modules/integrations/attribution-input";
 
 export const Route = createFileRoute("/api/v1/leads")({
   server: {
@@ -48,6 +49,7 @@ export const Route = createFileRoute("/api/v1/leads")({
             departmentId: z.string().uuid().optional(),
             source: z.string().max(100).optional(),
             notes: z.string().max(2000).optional(),
+            attribution: attributionInput.optional(),
           }).safeParse(body);
           if (!parsed.success) return errorResponse(400, "validation_error", parsed.error.message);
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -67,17 +69,19 @@ export const Route = createFileRoute("/api/v1/leads")({
             source: parsed.data.source ?? "api",
             status: "new",
             notes: parsed.data.notes,
+            ad_attribution: parsed.data.attribution ?? {},
           }).select("*").single();
           if (lErr) throw new Error(lErr.message);
           // Publish domain event → triggers webhooks and workflows
           try {
             const { publishEvent } = await import("@/platform/events/bus.server");
+            const { ad_attribution: _attribution, ...eventLead } = lead;
             await publishEvent({
               type: "lead.created",
               organizationId: auth.caller.organizationId,
               aggregateType: "lead",
               aggregateId: lead.id,
-              payload: { lead, contact },
+              payload: { lead: eventLead, contact },
             });
           } catch (e) { console.error("[api/v1/leads] publishEvent failed", e); }
           const res = json({ data: lead }, { status: 201 });

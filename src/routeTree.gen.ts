@@ -50,6 +50,7 @@ import { Route as AuthenticatedPipelineOppIdRouteImport } from './routes/_authen
 import { Route as AuthenticatedPipelineTrashRouteImport } from './routes/_authenticated/pipeline.trash'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
 import { Route as AuthenticatedSettingsBillingRouteImport } from './routes/_authenticated/settings.billing'
+import { Route as AuthenticatedSettingsConversionsRouteImport } from './routes/_authenticated/settings.conversions'
 import { Route as AuthenticatedSettingsCustomFieldsRouteImport } from './routes/_authenticated/settings.custom-fields'
 import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
 import { Route as AuthenticatedSettingsInvitationsRouteImport } from './routes/_authenticated/settings.invitations'
@@ -290,6 +291,12 @@ const AuthenticatedSettingsBillingRoute =
     path: '/billing',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsConversionsRoute =
+  AuthenticatedSettingsConversionsRouteImport.update({
+    id: '/conversions',
+    path: '/conversions',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsCustomFieldsRoute =
   AuthenticatedSettingsCustomFieldsRouteImport.update({
     id: '/custom-fields',
@@ -441,6 +448,7 @@ export interface FileRoutesByFullPath {
   '/pipeline/$oppId': typeof AuthenticatedPipelineOppIdRoute
   '/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
+  '/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
@@ -500,6 +508,7 @@ export interface FileRoutesByTo {
   '/pipeline/$oppId': typeof AuthenticatedPipelineOppIdRoute
   '/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
+  '/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
@@ -564,6 +573,7 @@ export interface FileRoutesById {
   '/_authenticated/pipeline/$oppId': typeof AuthenticatedPipelineOppIdRoute
   '/_authenticated/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/_authenticated/settings/billing': typeof AuthenticatedSettingsBillingRoute
+  '/_authenticated/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/_authenticated/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/_authenticated/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/_authenticated/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
@@ -628,6 +638,7 @@ export interface FileRouteTypes {
     | '/pipeline/$oppId'
     | '/pipeline/trash'
     | '/settings/billing'
+    | '/settings/conversions'
     | '/settings/custom-fields'
     | '/settings/integrations'
     | '/settings/invitations'
@@ -687,6 +698,7 @@ export interface FileRouteTypes {
     | '/pipeline/$oppId'
     | '/pipeline/trash'
     | '/settings/billing'
+    | '/settings/conversions'
     | '/settings/custom-fields'
     | '/settings/integrations'
     | '/settings/invitations'
@@ -750,6 +762,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pipeline/$oppId'
     | '/_authenticated/pipeline/trash'
     | '/_authenticated/settings/billing'
+    | '/_authenticated/settings/conversions'
     | '/_authenticated/settings/custom-fields'
     | '/_authenticated/settings/integrations'
     | '/_authenticated/settings/invitations'
@@ -1081,6 +1094,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsBillingRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/conversions': {
+      id: '/_authenticated/settings/conversions'
+      path: '/conversions'
+      fullPath: '/settings/conversions'
+      preLoaderRoute: typeof AuthenticatedSettingsConversionsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/custom-fields': {
       id: '/_authenticated/settings/custom-fields'
       path: '/custom-fields'
@@ -1330,6 +1350,7 @@ const AuthenticatedPipelineRouteWithChildren =
 
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsBillingRoute: typeof AuthenticatedSettingsBillingRoute
+  AuthenticatedSettingsConversionsRoute: typeof AuthenticatedSettingsConversionsRoute
   AuthenticatedSettingsCustomFieldsRoute: typeof AuthenticatedSettingsCustomFieldsRoute
   AuthenticatedSettingsIntegrationsRoute: typeof AuthenticatedSettingsIntegrationsRoute
   AuthenticatedSettingsInvitationsRoute: typeof AuthenticatedSettingsInvitationsRoute
@@ -1343,6 +1364,7 @@ interface AuthenticatedSettingsRouteChildren {
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsBillingRoute: AuthenticatedSettingsBillingRoute,
+  AuthenticatedSettingsConversionsRoute: AuthenticatedSettingsConversionsRoute,
   AuthenticatedSettingsCustomFieldsRoute:
     AuthenticatedSettingsCustomFieldsRoute,
   AuthenticatedSettingsIntegrationsRoute:
