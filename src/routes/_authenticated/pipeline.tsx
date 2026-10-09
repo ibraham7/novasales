@@ -209,7 +209,7 @@ function PipelinePage() {
     (permsQ.data ?? []).includes("crm.pipelines.manage") || (permsQ.data ?? []).includes("org.manage");
 
   const filtered = useMemo(() => {
-    // Defense-in-depth: the RPC already returns one row per opportunity,
+    // Defense-in-depth: the loader returns one row per opportunity,
     // but never let a duplicated id reach React keys again.
     const seen = new Set<string>();
     return (boardQ.data ?? []).filter((o: any) => {
@@ -364,7 +364,12 @@ function PipelinePage() {
         )}
       </div>
 
-      {stages.length === 0 ? (
+      {metaQ.isError || boardQ.isError ? (
+        <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center space-y-3">
+          <p>تعذر تحميل قمع المبيعات. حاول مجددًا، وإذا استمر الخطأ تواصل مع الإدارة.</p>
+          <Button variant="outline" onClick={() => { void metaQ.refetch(); void boardQ.refetch(); }}>إعادة المحاولة</Button>
+        </div>
+      ) : stages.length === 0 ? (
         pipesQ.isLoading || boardQ.isLoading ? (
           <div className="grid grid-flow-col auto-cols-[300px] gap-4 overflow-x-auto pb-2 flex-1 min-h-0">
             {[0, 1, 2, 3].map((i) => (

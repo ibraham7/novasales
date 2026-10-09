@@ -41,13 +41,14 @@ export const listPipelines = createServerFn({ method: "GET" }).handler(async () 
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   const ids = (pipes ?? []).map((p: any) => p.id);
-  const { data: stages } = ids.length
+  const { data: stages, error: stagesError } = ids.length
     ? await db
         .from("crm_pipeline_stages")
         .select("*")
         .in("pipeline_id", ids)
         .order("ord", { ascending: true })
-    : { data: [] };
+    : { data: [], error: null };
+  if (stagesError) throw new Error(stagesError.message);
   const byPipe = new Map<string, any[]>();
   for (const s of stages ?? []) {
     const arr = byPipe.get(s.pipeline_id) ?? [];
