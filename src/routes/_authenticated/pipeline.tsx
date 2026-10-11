@@ -174,11 +174,38 @@ function PipelinePage() {
           isLost: false,
         },
       }),
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      // Update the visible board immediately; the refetch below remains the source of truth.
+      qc.setQueryData(["pipeline-page-meta"], (previous: any) => {
+        if (!previous?.pipelines || !pipelineId) return previous;
+        return {
+          ...previous,
+          pipelines: previous.pipelines.map((pipe: any) =>
+            pipe.id !== pipelineId
+              ? pipe
+              : {
+                  ...pipe,
+                  stages: [
+                    ...(pipe.stages ?? []),
+                    {
+                      id: result?.id ?? crypto.randomUUID(),
+                      pipeline_id: pipelineId,
+                      name: variables.name,
+                      color: "#94a3b8",
+                      ord: ((pipe.stages ?? []).length) + 1,
+                      probability: 0,
+                      is_won: false,
+                      is_lost: false,
+                    },
+                  ],
+                },
+          ),
+        };
+      });
       toast.success("تمت إضافة المرحلة");
       setNewStageOpen(false);
       setNewStageName("");
-      qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] });
+      void qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
