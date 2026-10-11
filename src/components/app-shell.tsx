@@ -14,7 +14,6 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  MessageCircle,
   MessagesSquare,
   Megaphone,
   Package,
@@ -39,6 +38,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 import { Button } from "@/components/ui/button";
 import { AvailabilityWidget } from "@/components/availability-widget";
+import { NovaSalesLogo } from "@/components/novasales-logo";
 
 import { cn } from "@/lib/utils";
 
@@ -308,7 +308,7 @@ export function AppShell({
           }}
           className="flex items-center gap-2 text-sidebar-primary"
         >
-          <MessageCircle className="h-7 w-7" />
+          <NovaSalesLogo className="h-8 w-8 text-sidebar-primary" />
 
           <span className="text-xl font-bold">
             {platform.platform_name}
@@ -431,7 +431,7 @@ export function AppShell({
           to="/dashboard"
           className="flex items-center gap-2 font-bold"
         >
-          <MessageCircle className="h-5 w-5 text-primary" />
+          <NovaSalesLogo className="h-6 w-6 text-primary" />
 
           {platform.platform_name}
         </Link>
