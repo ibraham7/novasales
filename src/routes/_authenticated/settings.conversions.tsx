@@ -10,8 +10,12 @@ import {
 import {
   CONVERSION_LABELS,
   PRIMARY_GOALS,
+  QUALITY_LEVELS,
+  QUALITY_LEVEL_KEYS,
+  validateQualityLevels,
   type ConversionKind,
   type ConversionGoal,
+  type QualityLevel,
 } from "@/modules/integrations/conversion-model";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,9 +36,10 @@ function ConversionsPage() {
   const [goal, setGoal] = useState<ConversionGoal>("qualified_lead"),
     [enabled, setEnabled] = useState(true),
     [rules, setRules] = useState<Record<string, ConversionKind>>({}),
+    [quality, setQuality] = useState<Record<string, QualityLevel | null>>({}),
     [dirty, setDirty] = useState(false);
   const [page, setPage] = useState(1),
-    [kind, setKind] = useState<"all" | ConversionKind>("all");
+    [kind, setKind] = useState<"all" | "quality_signal" | ConversionKind>("all");
   const log = useQuery({
     queryKey: ["conversion-events", page, kind],
     queryFn: () => events({ data: { page, kind } }),
@@ -44,28 +49,49 @@ function ConversionsPage() {
       setGoal(q.data.settings.primary_goal);
       setEnabled(q.data.settings.recording_enabled);
       setRules(Object.fromEntries(q.data.rules.map((r: any) => [r.stage_id, r.classification])));
+      setQuality(
+        Object.fromEntries(q.data.rules.map((r: any) => [r.stage_id, r.quality_level ?? null])),
+      );
     }
   }, [q.data, dirty]);
+  const pipelines = q.data?.pipelines ?? [];
+  const pipelineOfStage = (stageId: string) =>
+    pipelines.find((p: any) => (p.crm_pipeline_stages ?? []).some((s: any) => s.id === stageId))
+      ?.id;
+  const ruleList = () =>
+    [...new Set([...Object.keys(rules), ...Object.keys(quality)])].map((stageId) => ({
+      stageId,
+      classification: rules[stageId] ?? ("none" as ConversionKind),
+      qualityLevel: quality[stageId] ?? null,
+    }));
+  const pickQuality = (stageId: string, level: QualityLevel | null) => {
+    // A level sits on one stage per pipeline: choosing it here moves it off the other stage.
+    const pipe = pipelineOfStage(stageId);
+    setQuality((old) =>
+      Object.fromEntries(
+        Object.entries({ ...old, [stageId]: level }).map(([id, l]) => [
+          id,
+          id !== stageId && level && l === level && pipelineOfStage(id) === pipe ? null : l,
+        ]),
+      ),
+    );
+    setDirty(true);
+  };
   const mut = useMutation({
-    mutationFn: () =>
-      save({
-        data: {
-          primaryGoal: goal,
-          recordingEnabled: enabled,
-          rules: Object.entries(rules).map(([stageId, classification]) => ({
-            stageId,
-            classification,
-          })),
-        },
-      }),
+    mutationFn: () => {
+      const list = ruleList();
+      validateQualityLevels(list, pipelineOfStage);
+      return save({ data: { primaryGoal: goal, recordingEnabled: enabled, rules: list } });
+    },
     onSuccess: () => {
       qc.setQueryData(["conversion-settings"], (old: any) => ({
         ...old,
         configured: true,
         settings: { primary_goal: goal, recording_enabled: enabled },
-        rules: Object.entries(rules).map(([stage_id, classification]) => ({
-          stage_id,
-          classification,
+        rules: ruleList().map((r) => ({
+          stage_id: r.stageId,
+          classification: r.classification,
+          quality_level: r.qualityLevel,
         })),
       }));
       setDirty(false);
@@ -74,7 +100,6 @@ function ConversionsPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
-  const pipelines = q.data?.pipelines ?? [];
   const hasGoal = pipelines.some((p: any) =>
     (p.crm_pipeline_stages ?? []).some((s: any) => rules[s.id] === goal),
   );
@@ -143,6 +168,11 @@ function ConversionsPage() {
             نقترح البدء بـ«عميل مؤهل». اختر تصنيفًا لكل مرحلة حسب نشاط مؤسستك. بيع ناجح يعني بيعًا
             فعليًا، وليس مجرد اهتمام.
           </p>
+          <p className="text-sm text-muted-foreground">
+            تقييم الجودة: اختر حتى أربع مراحل في كل قمع وأعطِ كل واحدة تقييمًا (سيء جدًا 0، متوسط 3،
+            جيد 6، ممتاز 10). يظهر التقييم فوق المرحلة في القمع، وعند نقل عميل إليها تُسجل إشارة
+            فيها رقم الجوال والتقييم وقيمة الفرصة.
+          </p>
           {!pipelines.length && <p>لا توجد أقماع بعد. أنشئ قمعًا من «قنوات المبيعات» أولًا.</p>}
           {pipelines.map((p: any) => (
             <section key={p.id} className="space-y-2">
@@ -152,7 +182,7 @@ function ConversionsPage() {
                 .map((s: any) => (
                   <div
                     key={s.id}
-                    className="grid sm:grid-cols-2 items-center gap-2 border rounded-md p-3"
+                    className="grid sm:grid-cols-3 items-center gap-2 border rounded-md p-3"
                   >
                     <span>
                       {s.name}
@@ -180,6 +210,22 @@ function ConversionsPage() {
                       {Object.entries(CONVERSION_LABELS).map(([key, label]) => (
                         <option key={key} value={key}>
                           {label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      disabled={mut.isPending}
+                      aria-label={`تقييم جودة مرحلة ${s.name}`}
+                      className={selectClass}
+                      value={quality[s.id] ?? ""}
+                      onChange={(e) =>
+                        pickQuality(s.id, (e.target.value || null) as QualityLevel | null)
+                      }
+                    >
+                      <option value="">بدون تقييم جودة</option>
+                      {QUALITY_LEVEL_KEYS.map((key) => (
+                        <option key={key} value={key}>
+                          {QUALITY_LEVELS[key].label} — {QUALITY_LEVELS[key].score}/10
                         </option>
                       ))}
                     </select>
@@ -227,6 +273,7 @@ function ConversionsPage() {
           }}
         >
           <option value="all">كل التصنيفات</option>
+          <option value="quality_signal">إشارات تقييم الجودة</option>
           {Object.entries(CONVERSION_LABELS).map(([key, label]) => (
             <option key={key} value={key}>
               {label}
@@ -271,8 +318,22 @@ function ConversionsPage() {
                         ? "بانتظار ربط المنصة"
                         : "غير مخصص للإرسال"}
                     </p>
+                    {r.quality_level && (
+                      <p className="text-xs">
+                        تقييم الجودة: {QUALITY_LEVELS[r.quality_level as QualityLevel].label} ·{" "}
+                        {r.quality_score}/10 ·{" "}
+                        {r.is_quality_signal ? "إشارة جديدة" : "دخول متكرر — لا يحتسب إشارة جديدة"}
+                        {r.value != null && (
+                          <>
+                            {" "}
+                            · القيمة: {r.value} {r.currency}
+                          </>
+                        )}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
-                      مرجع الفرصة: <span dir="ltr">{r.opportunity_id}</span>
+                      الجوال: <span dir="ltr">{r.contact_phone ?? "غير مسجل"}</span> · مرجع الفرصة:{" "}
+                      <span dir="ltr">{r.opportunity_id}</span>
                     </p>
                     {r.event_kind === "purchase" && r.value != null && (
                       <p className="text-xs">

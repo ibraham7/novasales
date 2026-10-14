@@ -49,8 +49,20 @@ export const listPipelines = createServerFn({ method: "GET" }).handler(async () 
         .order("ord", { ascending: true })
     : { data: [], error: null };
   if (stagesError) throw new Error(stagesError.message);
+  // Quality scores are optional decoration; the board must still load without them.
+  const { data: scored } = ids.length
+    ? await db
+        .from("crm_conversion_stage_rules")
+        .select("stage_id,quality_level")
+        .eq("organization_id", organizationId)
+        .not("quality_level", "is", null)
+    : { data: [] };
+  const qualityByStage = new Map<string, string>(
+    (scored ?? []).map((r: any) => [r.stage_id, r.quality_level]),
+  );
   const byPipe = new Map<string, any[]>();
-  for (const s of stages ?? []) {
+  for (const stage of stages ?? []) {
+    const s = { ...stage, quality_level: qualityByStage.get(stage.id) ?? null };
     const arr = byPipe.get(s.pipeline_id) ?? [];
     arr.push(s);
     byPipe.set(s.pipeline_id, arr);

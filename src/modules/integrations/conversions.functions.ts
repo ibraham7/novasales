@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
-import { PRIMARY_GOALS, validateConversionRules } from "./conversion-model";
+import {
+  PRIMARY_GOALS,
+  QUALITY_LEVEL_KEYS,
+  type QualityLevel,
+  validateConversionRules,
+} from "./conversion-model";
+const qualityLevel = z.enum(QUALITY_LEVEL_KEYS as [QualityLevel, ...QualityLevel[]]);
 async function context() {
   const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
   const access = await requireAnyPermission(["crm.pipelines.manage", "org.manage"]);
@@ -17,7 +23,7 @@ export const getConversionConfiguration = createServerFn({ method: "GET" }).hand
       .maybeSingle(),
     db
       .from("crm_conversion_stage_rules")
-      .select("stage_id,classification")
+      .select("stage_id,classification,quality_level")
       .eq("organization_id", organizationId),
     db
       .from("crm_pipelines")
@@ -51,6 +57,7 @@ export const saveConversionConfiguration = createServerFn({ method: "POST" })
                 "purchase",
                 "lost",
               ]),
+              qualityLevel: qualityLevel.nullable().optional(),
             }),
           )
           .max(500),
@@ -75,7 +82,16 @@ export const listConversionEvents = createServerFn({ method: "GET" })
       .object({
         page: z.number().int().min(1).default(1),
         kind: z
-          .enum(["all", "none", "new_lead", "qualified_lead", "booking", "purchase", "lost"])
+          .enum([
+            "all",
+            "quality_signal",
+            "none",
+            "new_lead",
+            "qualified_lead",
+            "booking",
+            "purchase",
+            "lost",
+          ])
           .default("all"),
       })
       .parse(data ?? {}),
@@ -85,11 +101,12 @@ export const listConversionEvents = createServerFn({ method: "GET" })
     let query = db
       .from("crm_conversion_events")
       .select(
-        "id,opportunity_id,stage_name,event_kind,primary_goal,is_first_for_goal,value,currency,delivery_state,occurred_at",
+        "id,opportunity_id,stage_name,event_kind,primary_goal,is_first_for_goal,value,currency,delivery_state,occurred_at,quality_level,quality_score,is_quality_signal,contact_phone",
         { count: "exact" },
       )
       .eq("organization_id", organizationId);
-    if (data.kind !== "all") query = query.eq("event_kind", data.kind);
+    if (data.kind === "quality_signal") query = query.not("quality_level", "is", null);
+    else if (data.kind !== "all") query = query.eq("event_kind", data.kind);
     const {
       data: rows,
       error,
@@ -100,4 +117,18 @@ export const listConversionEvents = createServerFn({ method: "GET" })
       .range((data.page - 1) * 25, data.page * 25 - 1);
     if (error) throw new Error(error.message);
     return { rows: rows ?? [], total: count ?? 0 };
+  });
+export const setStageQualityLevel = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z.object({ stageId: z.string().uuid(), qualityLevel: qualityLevel.nullable() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await context();
+    const { error } = await db.rpc("set_crm_stage_quality_level", {
+      _organization_id: organizationId,
+      _stage_id: data.stageId,
+      _level: data.qualityLevel,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

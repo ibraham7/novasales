@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
 import { getMergedChatForOpportunity } from "@/modules/messaging";
+import { setStageQualityLevel } from "@/modules/integrations/conversions.functions";
+import { QUALITY_LEVELS, QUALITY_LEVEL_KEYS, type QualityLevel } from "@/modules/integrations/conversion-model";
 
 import { useMyPermissions } from "@/platform/rbac/use-permission";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -155,6 +157,39 @@ function PipelinePage() {
     onSuccess: () => {
       toast.success("تم تحديث اسم المرحلة");
       qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const saveQuality = useServerFn(setStageQualityLevel);
+  const qualityMut = useMutation({
+    mutationFn: (v: { stage: any; level: QualityLevel | null }) =>
+      saveQuality({ data: { stageId: v.stage.id, qualityLevel: v.level } }),
+    onSuccess: (_result, v) => {
+      // A level sits on one stage per pipeline, so placing it moves it off the previous stage.
+      qc.setQueryData(["pipeline-page-meta"], (previous: any) =>
+        !previous?.pipelines
+          ? previous
+          : {
+              ...previous,
+              pipelines: previous.pipelines.map((pipe: any) =>
+                pipe.id !== v.stage.pipeline_id
+                  ? pipe
+                  : {
+                      ...pipe,
+                      stages: (pipe.stages ?? []).map((s: any) =>
+                        s.id === v.stage.id
+                          ? { ...s, quality_level: v.level }
+                          : v.level && s.quality_level === v.level
+                            ? { ...s, quality_level: null }
+                            : s,
+                      ),
+                    },
+              ),
+            },
+      );
+      toast.success(v.level ? `تم تقييم المرحلة: ${QUALITY_LEVELS[v.level].label}` : "تمت إزالة التقييم");
+      void qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -427,6 +462,7 @@ function PipelinePage() {
               onDragLeave={() => setDragOver(null)}
               onDropOpp={(id) => { setDragOver(null); moveMut.mutate({ id, stageId: s.id }); }}
               onRename={(name) => renameStageMut.mutate({ stage: s, name })}
+              onQualityChange={(level) => qualityMut.mutate({ stage: s, level })}
               onAssign={handleAssign}
             />
           ))}
@@ -452,6 +488,7 @@ function KanbanColumn({
   onDragLeave,
   onDropOpp,
   onRename,
+  onQualityChange,
   onAssign,
 }: {
   stage: any;
@@ -464,6 +501,7 @@ function KanbanColumn({
   onDragLeave: () => void;
   onDropOpp: (id: string) => void;
   onRename: (name: string) => void;
+  onQualityChange: (level: QualityLevel | null) => void;
   onAssign: (oppId: string, userId: string) => void;
 }) {
   const [visible, setVisible] = useState(PAGE);
@@ -483,6 +521,7 @@ function KanbanColumn({
         if (id) onDropOpp(id);
       }}
     >
+      <StageQualityBadge level={stage.quality_level} canEdit={canManageStages} onChange={onQualityChange} />
       <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: stage.color }} />
@@ -655,6 +694,64 @@ const KanbanCard = memo(function KanbanCard({
     </div>
   );
 });
+
+const QUALITY_BADGE_CLASS: Record<QualityLevel, string> = {
+  very_bad: "bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-900",
+  average: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-900",
+  good: "bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-900",
+  excellent: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900",
+};
+
+/* Lead-quality score shown above a stage; managers place or move it from here. */
+function StageQualityBadge({
+  level,
+  canEdit,
+  onChange,
+}: {
+  level: QualityLevel | null | undefined;
+  canEdit: boolean;
+  onChange: (level: QualityLevel | null) => void;
+}) {
+  const chip = level ? (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        QUALITY_BADGE_CLASS[level],
+      )}
+    >
+      {QUALITY_LEVELS[level].label} · {QUALITY_LEVELS[level].score}/10
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground">
+      + تقييم الجودة
+    </span>
+  );
+  if (!canEdit) return level ? <div className="mb-2 shrink-0">{chip}</div> : null;
+  return (
+    <div className="mb-2 shrink-0">
+      <DropdownMenu>
+        <DropdownMenuTrigger aria-label="تقييم جودة العملاء في هذه المرحلة" className="rounded-full">
+          {chip}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuLabel className="text-xs">تقييم جودة العملاء في هذه المرحلة</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {QUALITY_LEVEL_KEYS.map((key) => (
+            <DropdownMenuItem key={key} onSelect={() => onChange(key)}>
+              {QUALITY_LEVELS[key].label} — {QUALITY_LEVELS[key].score}/10
+            </DropdownMenuItem>
+          ))}
+          {level && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => onChange(null)}>إزالة التقييم</DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
 
 /* Inline rename of a stage directly from the kanban header. */
 function StageNameEditor({
