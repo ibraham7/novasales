@@ -27,6 +27,7 @@ import {
   Users2,
   X,
   Zap,
+  KanbanSquare,
 } from "lucide-react";
 
 import { useState } from "react";
@@ -78,6 +79,18 @@ const NAV = [
     label: "العملاء المحتملون",
     anyOf: [
       "crm.leads.view",
+    ],
+  },
+
+  {
+    to: "/pipeline",
+    icon: KanbanSquare,
+    label: "قمع المبيعات",
+    anyOf: [
+      "crm.opportunities.view",
+      "opportunities.view",
+      "opportunities.view_department",
+      "opportunities.view_own",
     ],
   },
 
