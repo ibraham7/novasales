@@ -1,4 +1,5 @@
 import { stockCatalog } from "@/modules/commerce/stock-catalog";
+import { formatDateTime } from "@/lib/utils";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -397,7 +398,7 @@ function SalesPage() {
                       </div>
 
                       <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(order.created_at).toLocaleString("ar")}
+                        {formatDateTime(order.created_at)}
                       </div>
                     </div>
 

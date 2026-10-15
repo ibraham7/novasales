@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -169,7 +170,7 @@ function UsersPage() {
                     {u.banned ? <Badge variant="destructive">محظور</Badge> : <Badge variant="secondary">نشط</Badge>}
                   </td>
                   <td className="py-2 px-2 text-muted-foreground text-xs">
-                    {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString("ar") : "—"}
+                    {u.last_sign_in_at ? formatDateTime(u.last_sign_in_at) : "—"}
                   </td>
                   <td className="py-2 px-2">
                     <TooltipProvider>

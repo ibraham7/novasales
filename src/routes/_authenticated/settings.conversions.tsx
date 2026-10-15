@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
@@ -304,7 +305,7 @@ function ConversionsPage() {
                         {r.stage_name} — {CONVERSION_LABELS[r.event_kind as ConversionKind]}
                       </strong>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(r.occurred_at).toLocaleString("ar")}
+                        {formatDateTime(r.occurred_at)}
                       </span>
                     </div>
                     <p className="text-xs">

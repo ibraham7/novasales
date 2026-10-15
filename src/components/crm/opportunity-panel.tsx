@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { formatDateTime } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
@@ -245,7 +246,7 @@ function DetailsTab({ chatId, data, onChanged }: { chatId: string; data: Data; o
         </Row>
         <Row label="التاريخ">
           <div className="text-sm text-muted-foreground">
-            {new Date(data.opportunity.opened_at).toLocaleString("ar")}
+            {formatDateTime(data.opportunity.opened_at)}
           </div>
         </Row>
       </Section>
@@ -355,7 +356,7 @@ function NotesTab({ opportunityId, onChanged }: { opportunityId: string; onChang
             <div key={n.id} className="rounded-xl border bg-card p-3">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
                 <span>{n.author_name ?? "مستخدم"}</span>
-                <span>{new Date(n.created_at).toLocaleString("ar")}</span>
+                <span>{formatDateTime(n.created_at)}</span>
               </div>
               <div className="text-sm whitespace-pre-wrap">{n.body}</div>
             </div>
@@ -387,7 +388,7 @@ function ActivityTab({ opportunityId }: { opportunityId: string }) {
           <div key={e.id} className="rounded-xl border bg-card p-3">
             <div className="flex items-center justify-between mb-1">
               <div className="text-sm font-medium">{EVENT_LABEL[e.event_type] ?? e.event_type}</div>
-              <div className="text-[11px] text-muted-foreground">{new Date(e.created_at).toLocaleString("ar")}</div>
+              <div className="text-[11px] text-muted-foreground">{formatDateTime(e.created_at)}</div>
             </div>
             {e.payload && Object.keys(e.payload).length ? (
               <div className="text-[11px] text-muted-foreground font-mono truncate">
