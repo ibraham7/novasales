@@ -12,6 +12,8 @@ import {
   removeOppTag,
   OPP_STAGES,
   STAGE_LABEL_AR,
+  getPipelinePageMeta,
+  moveOpportunityToStage,
 } from "@/modules/crm";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -45,7 +47,7 @@ export function OpportunityPanel({ chatId, data }: { chatId: string; data: Data 
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         <TabsContent value="details" className="mt-0 space-y-4">
-          <DetailsTab data={data} onChanged={invalidate} />
+          <DetailsTab chatId={chatId} data={data} onChanged={invalidate} />
         </TabsContent>
         <TabsContent value="notes" className="mt-0">
           <NotesTab opportunityId={data.opportunity.id} onChanged={invalidate} />
@@ -82,19 +84,60 @@ function Row({ icon, label, children }: { icon?: React.ReactNode; label: string;
   );
 }
 
-function DetailsTab({ data, onChanged }: { data: Data; onChanged: () => void }) {
+function DetailsTab({ chatId, data, onChanged }: { chatId: string; data: Data; onChanged: () => void }) {
+  const qc = useQueryClient();
   const upd = useServerFn(updateOpportunity);
+  const moveToStage = useServerFn(moveOpportunityToStage);
+  const fetchMeta = useServerFn(getPipelinePageMeta);
   const addTag = useServerFn(addOppTag);
   const rmTag = useServerFn(removeOppTag);
 
   const [tagInput, setTagInput] = useState("");
 
-  const update = async (patch: Record<string, unknown>) => {
+  // The organization's real pipeline stages (same cache as the pipeline board).
+  const pipelineId = data.opportunity.pipeline_id;
+  const meta = useQuery({
+    queryKey: ["pipeline-page-meta"],
+    queryFn: () => fetchMeta(),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!pipelineId,
+  });
+  const stages: { id: string; name: string; color: string | null; ord: number }[] = [
+    ...(meta.data?.pipelines?.find((p: { id: string }) => p.id === pipelineId)?.stages ?? []),
+  ].sort((a, b) => a.ord - b.ord);
+
+  // Edits show immediately and save in the background; a failed save restores the previous value.
+  const cacheKey = ["opportunity-workspace", chatId];
+  const saveOptimistically = async (cachePatch: Record<string, unknown>, save: () => Promise<unknown>) => {
+    const previous = qc.getQueryData(cacheKey);
+    qc.setQueryData(cacheKey, (old: any) =>
+      old ? { ...old, opportunity: { ...old.opportunity, ...cachePatch } } : old,
+    );
     try {
-      await upd({ data: { opportunityId: data.opportunity.id, ...patch } as any });
-      onChanged();
+      await save();
+      return true;
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "خطأ");
+      qc.setQueryData(cacheKey, previous);
+      toast.error(e instanceof Error ? e.message : "تعذر الحفظ");
+      return false;
+    }
+  };
+
+  const update = async (patch: Record<string, unknown>) => {
+    const saved = await saveOptimistically(patch, () =>
+      upd({ data: { opportunityId: data.opportunity.id, ...patch } as any }),
+    );
+    if (saved) void qc.invalidateQueries({ queryKey: ["chats-enriched"] });
+  };
+
+  const moveStage = async (stageId: string) => {
+    const saved = await saveOptimistically({ stage_id: stageId }, () =>
+      moveToStage({ data: { opportunityId: data.opportunity.id, stageId } }),
+    );
+    if (saved) {
+      void qc.invalidateQueries({ queryKey: ["pipeline-board"] });
+      void qc.invalidateQueries({ queryKey: ["chats-enriched"] });
+      void qc.invalidateQueries({ queryKey: ["opp-activity", data.opportunity.id] });
     }
   };
 
@@ -119,6 +162,27 @@ function DetailsTab({ data, onChanged }: { data: Data; onChanged: () => void }) 
 
       <Section title="الفرصة">
         <Row label="المرحلة">
+          {pipelineId ? (
+            <Select
+              value={data.opportunity.stage_id ?? undefined}
+              onValueChange={(v) => void moveStage(v)}
+              disabled={meta.isPending}
+            >
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder={meta.isPending ? "جارٍ التحميل..." : "اختر المرحلة"} />
+              </SelectTrigger>
+              <SelectContent>
+                {stages.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ background: s.color ?? "#94a3b8" }} />
+                      <span>{s.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
           <Select value={data.opportunity.stage} onValueChange={(v) => update({ stage: v })}>
             <SelectTrigger className="h-8">
               <SelectValue>
@@ -139,6 +203,7 @@ function DetailsTab({ data, onChanged }: { data: Data; onChanged: () => void }) 
               ))}
             </SelectContent>
           </Select>
+          )}
         </Row>
         <Row icon={<User2 className="h-3.5 w-3.5" />} label="المندوب">
           <div className="text-sm">{data.owner?.name ?? "غير موزّع"}</div>

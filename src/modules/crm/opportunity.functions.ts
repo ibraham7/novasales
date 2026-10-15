@@ -22,25 +22,25 @@ export const getOpportunityByChat = createServerFn({ method: "GET" })
     const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
-    const access = await requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
-
-    const { data: link } = await db
-      .from("crm_opportunity_sessions")
-      .select("opportunity_id")
-      .eq("organization_id", organizationId)
-      .eq("session_ref", data.chatId)
-      .maybeSingle();
+    // Permission and the linked opportunity are independent reads: one parallel round.
+    const [access, { data: link }] = await Promise.all([
+      requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]),
+      db
+        .from("crm_opportunity_sessions")
+        .select("opportunity_id, opp_opportunities(*)")
+        .eq("organization_id", organizationId)
+        .eq("session_ref", data.chatId)
+        .maybeSingle(),
+    ]);
     if (!link?.opportunity_id) return null;
 
-    const { data: opp } = await db
-      .from("opp_opportunities")
-      .select("*")
-      .eq("id", link.opportunity_id)
-      .maybeSingle();
-    if (!opp) return null;
+    const embedded = link.opp_opportunities;
+    const opp: any = Array.isArray(embedded) ? embedded[0] : embedded;
+    if (!opp || opp.organization_id !== organizationId) return null;
     if (!canAccessOpportunityRow(access, { owner_agent_id: opp.owner_agent_id, department_id: opp.department_id })) return null;
 
-    const [{ data: contact }, { data: owner }, { data: dept }, { data: tagMap }] = await Promise.all([
+    // Everything shown in the panel depends only on the opportunity: one more parallel round.
+    const [{ data: contact }, { data: owner }, { data: dept }, { data: tagMap }, { data: sup }, { data: cp }] = await Promise.all([
       db.from("crm_contacts").select("*").eq("id", opp.contact_id).maybeSingle(),
       opp.owner_agent_id
         ? db.from("profiles").select("id, full_name").eq("id", opp.owner_agent_id).maybeSingle()
@@ -49,31 +49,30 @@ export const getOpportunityByChat = createServerFn({ method: "GET" })
         ? db.from("org_departments").select("id, name").eq("id", opp.department_id).maybeSingle()
         : Promise.resolve({ data: null }),
       db.from("opp_tags_map").select("tag_id, opp_tags(id, name, color)").eq("opportunity_id", opp.id),
+      // Supervisor of department
+      opp.department_id
+        ? db
+            .from("org_department_members")
+            .select("user_id, display_name")
+            .eq("department_id", opp.department_id)
+            .eq("is_supervisor", true)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      db
+        .from("crm_contact_points")
+        .select("identifier, channel_type, is_primary")
+        .eq("contact_id", opp.contact_id)
+        .eq("organization_id", organizationId),
     ]);
 
-    // Supervisor of department
-    let supervisorName: string | null = null;
-    if (opp.department_id) {
-      const { data: sup } = await db
-        .from("org_department_members")
-        .select("user_id, display_name")
-        .eq("department_id", opp.department_id)
-        .eq("is_supervisor", true)
-        .limit(1)
-        .maybeSingle();
-      if (sup?.display_name) supervisorName = sup.display_name;
-      else if (sup?.user_id) {
-        const { data: p } = await db.from("profiles").select("full_name").eq("id", sup.user_id).maybeSingle();
-        supervisorName = p?.full_name ?? null;
-      }
+    let supervisorName: string | null = sup?.display_name ?? null;
+    if (!supervisorName && sup?.user_id) {
+      const { data: p } = await db.from("profiles").select("full_name").eq("id", sup.user_id).maybeSingle();
+      supervisorName = p?.full_name ?? null;
     }
 
     // Phone
-    const { data: cp } = await db
-      .from("crm_contact_points")
-      .select("identifier, channel_type, is_primary")
-      .eq("contact_id", opp.contact_id)
-      .eq("organization_id", organizationId);
     const phone =
       (cp ?? []).find((x: any) => x.channel_type === "whatsapp" && x.is_primary)?.identifier ??
       (cp ?? [])[0]?.identifier ??
