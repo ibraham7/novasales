@@ -43,8 +43,32 @@ export async function getMyPermissions(): Promise<string[]> {
   return access.permissions;
 }
 
+// Every server call checks permissions, and each check is a database round trip (~0.35 s from
+// production). Keep a user's access briefly in memory; concurrent calls share one lookup. Any role,
+// membership or department change clears it (see clearAccessAfterChanges in start.ts), so a
+// change elsewhere takes effect within ACCESS_CACHE_MS at most.
+const ACCESS_CACHE_MS = 20_000;
+const accessCache = new Map<string, { access: Promise<WorkspaceAccess>; expires: number }>();
+
+export function forgetWorkspaceAccess() {
+  accessCache.clear();
+}
+
 export async function getWorkspaceAccess(): Promise<WorkspaceAccess> {
   const { userId, organizationId } = await getWorkspace();
+  const key = `${userId}:${organizationId}`;
+  const cached = accessCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.access;
+  const access = loadWorkspaceAccess(userId, organizationId);
+  accessCache.set(key, { access, expires: Date.now() + ACCESS_CACHE_MS });
+  // A failed lookup must not be served from the cache.
+  access.catch(() => {
+    if (accessCache.get(key)?.access === access) accessCache.delete(key);
+  });
+  return access;
+}
+
+async function loadWorkspaceAccess(userId: string, organizationId: string): Promise<WorkspaceAccess> {
   const db = supabaseAdmin as any;
   const { data, error } = await db.rpc("get_workspace_access_fast", {
     _user_id: userId,

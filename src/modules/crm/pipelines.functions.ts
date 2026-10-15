@@ -33,41 +33,31 @@ export const listPipelines = createServerFn({ method: "GET" }).handler(async () 
   const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
   const db = supabaseAdmin as any;
   const { organizationId } = await getWorkspace();
-  const { data: pipes, error } = await db
-    .from("crm_pipelines")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .order("is_default", { ascending: false })
-    .order("created_at", { ascending: true });
+  // Pipelines with their stages, and the stage quality scores, in one parallel round.
+  const [{ data: pipes, error }, { data: scored }] = await Promise.all([
+    db
+      .from("crm_pipelines")
+      .select("*, crm_pipeline_stages(*)")
+      .eq("organization_id", organizationId)
+      .order("is_default", { ascending: false })
+      .order("created_at", { ascending: true }),
+    // Quality scores are optional decoration; the board must still load without them.
+    db
+      .from("crm_conversion_stage_rules")
+      .select("stage_id,quality_level")
+      .eq("organization_id", organizationId)
+      .not("quality_level", "is", null),
+  ]);
   if (error) throw new Error(error.message);
-  const ids = (pipes ?? []).map((p: any) => p.id);
-  const { data: stages, error: stagesError } = ids.length
-    ? await db
-        .from("crm_pipeline_stages")
-        .select("*")
-        .in("pipeline_id", ids)
-        .order("ord", { ascending: true })
-    : { data: [], error: null };
-  if (stagesError) throw new Error(stagesError.message);
-  // Quality scores are optional decoration; the board must still load without them.
-  const { data: scored } = ids.length
-    ? await db
-        .from("crm_conversion_stage_rules")
-        .select("stage_id,quality_level")
-        .eq("organization_id", organizationId)
-        .not("quality_level", "is", null)
-    : { data: [] };
   const qualityByStage = new Map<string, string>(
     (scored ?? []).map((r: any) => [r.stage_id, r.quality_level]),
   );
-  const byPipe = new Map<string, any[]>();
-  for (const stage of stages ?? []) {
-    const s = { ...stage, quality_level: qualityByStage.get(stage.id) ?? null };
-    const arr = byPipe.get(s.pipeline_id) ?? [];
-    arr.push(s);
-    byPipe.set(s.pipeline_id, arr);
-  }
-  return (pipes ?? []).map((p: any) => ({ ...p, stages: byPipe.get(p.id) ?? [] }));
+  return (pipes ?? []).map(({ crm_pipeline_stages: stages, ...p }: any) => ({
+    ...p,
+    stages: [...(stages ?? [])]
+      .sort((a: any, b: any) => (a.ord ?? 0) - (b.ord ?? 0))
+      .map((stage: any) => ({ ...stage, quality_level: qualityByStage.get(stage.id) ?? null })),
+  }));
 });
 
 export const getDefaultPipeline = createServerFn({ method: "GET" }).handler(async () => {

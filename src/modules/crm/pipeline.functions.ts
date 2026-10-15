@@ -15,27 +15,33 @@ async function checkedRows(query: any): Promise<any[]> {
   return data ?? [];
 }
 
-async function readByIds(db: any, table: string, select: string, ids: string[], organizationId?: string) {
-  const rows: any[] = [];
+// Reads in chunks of 100 ids; the chunks are independent, so they run together.
+async function readByIds(db: any, table: string, select: string, ids: string[], organizationId?: string, column = "id") {
   const unique = [...new Set(ids.filter(Boolean))];
-  for (let i = 0; i < unique.length; i += 100) {
-    let query = db.from(table).select(select).in("id", unique.slice(i, i + 100));
-    if (organizationId) query = query.eq("organization_id", organizationId);
-    rows.push(...await checkedRows(query));
-  }
-  return rows;
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
+  const pages = await Promise.all(
+    chunks.map((chunk) => {
+      let query = db.from(table).select(select).in(column, chunk);
+      if (organizationId) query = query.eq("organization_id", organizationId);
+      return checkedRows(query);
+    }),
+  );
+  return pages.flat();
 }
 
 export const getPipelinePageMeta = createServerFn({ method: "GET" }).handler(async () => {
-  const { supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+  const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
   const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-  const access = await requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
   const db = supabaseAdmin as any;
   const { listPipelines } = await import("./pipelines.functions");
-  const [pipelines, departments, memberships] = await Promise.all([
+  const { organizationId } = await getWorkspace();
+  // The permission check runs alongside the reads; nothing is returned unless it passes.
+  const [, pipelines, departments, memberships] = await Promise.all([
+    requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]),
     listPipelines(),
-    checkedRows(db.from("org_departments").select("id,name").eq("organization_id", access.organizationId).eq("is_active", true).order("name")),
-    checkedRows(db.from("org_memberships").select("user_id").eq("organization_id", access.organizationId).eq("is_active", true)),
+    checkedRows(db.from("org_departments").select("id,name").eq("organization_id", organizationId).eq("is_active", true).order("name")),
+    checkedRows(db.from("org_memberships").select("user_id").eq("organization_id", organizationId).eq("is_active", true)),
   ]);
   const profiles = await readByIds(db, "profiles", "id,full_name,avatar_url", memberships.map(m => m.user_id));
   return { pipelines, departments, members: profiles.map(p => ({ ...p, user_id: p.id, profile_name: p.full_name })) };
@@ -85,18 +91,18 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       if (page.length < 500) break;
     }
     if (!rows.length) return [];
-    const [contacts, owners] = await Promise.all([
+    // Contacts, owners and chat links depend only on the opportunities: one parallel round.
+    const [contacts, owners, links] = await Promise.all([
       readByIds(db, "crm_contacts", "id,full_name,display_name,avatar_url", rows.map(o => o.contact_id), organizationId),
       readByIds(db, "profiles", "id,full_name,avatar_url", rows.map(o => o.owner_agent_id)),
+      readByIds(db, "crm_opportunity_sessions", "opportunity_id,session_ref,channel", rows.map(o => o.id), organizationId, "opportunity_id"),
     ]);
-    const links: any[] = [];
-    for (let i = 0; i < rows.length; i += 100) {
-      links.push(...await checkedRows(db.from("crm_opportunity_sessions")
-        .select("opportunity_id,session_ref,channel").eq("organization_id", organizationId)
-        .in("opportunity_id", rows.slice(i, i + 100).map(o => o.id))));
-    }
-    const sessions = await readByIds(db, "msg_sessions", "id,channel_account_id,peer_identifier,unread_count,last_message_at,last_message_preview", links.map(l => l.session_ref), organizationId);
-    const accounts = await readByIds(db, "msg_channel_accounts", "id,display_name,identifier", sessions.map(s => s.channel_account_id), organizationId);
+    // Sessions carry their WhatsApp number (same organization through the session) in the same read.
+    const sessionRows = await readByIds(db, "msg_sessions", "id,channel_account_id,peer_identifier,unread_count,last_message_at,last_message_preview,msg_channel_accounts(id,display_name,identifier)", links.map(l => l.session_ref), organizationId);
+    const sessions = sessionRows.map(({ msg_channel_accounts: _account, ...session }) => session);
+    const accounts = sessionRows
+      .map((s) => (Array.isArray(s.msg_channel_accounts) ? s.msg_channel_accounts[0] : s.msg_channel_accounts))
+      .filter(Boolean);
     const contactsById = new Map(contacts.map(c => [c.id, c]));
     const ownersById = new Map(owners.map(o => [o.id, o]));
     const sessionsById = new Map(sessions.map(s => [s.id, s]));

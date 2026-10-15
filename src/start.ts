@@ -30,7 +30,46 @@ const slowServerFnLog = createMiddleware({ type: "function" }).server(async ({ n
   }
 });
 
+// Server functions that change roles, permissions, memberships or departments. After any of them
+// succeeds, cached permissions are dropped so the change applies on the next request.
+const ACCESS_CHANGING_FNS = new Set([
+  "assignUserRole",
+  "unassignUserRole",
+  "createRole",
+  "updateRole",
+  "deleteRole",
+  "setRolePermissions",
+  "activateMember",
+  "deactivateMember",
+  "removeMember",
+  "setMemberRoles",
+  "addMember",
+  "updateMember",
+  "createDepartment",
+  "updateDepartment",
+  "deleteDepartment",
+  "acceptInvitation",
+  "revokeInvitation",
+  "addUserToOrganization",
+  "removeUserFromOrganization",
+  "createUser",
+  "setUserRole",
+  "deleteOrganization",
+  "startImpersonation",
+  "stopImpersonation",
+  "switchActiveOrganization",
+]);
+
+const clearAccessAfterChanges = createMiddleware({ type: "function" }).server(async ({ next, serverFnMeta }) => {
+  const result = await next();
+  if (ACCESS_CHANGING_FNS.has(serverFnMeta?.name ?? "")) {
+    const { forgetWorkspaceAccess } = await import("@/platform/rbac/rbac.server");
+    forgetWorkspaceAccess();
+  }
+  return result;
+});
+
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth, slowServerFnLog],
+  functionMiddleware: [attachSupabaseAuth, slowServerFnLog, clearAccessAfterChanges],
   requestMiddleware: [errorMiddleware],
 }));
