@@ -1,24 +1,27 @@
 export async function shapeSessionRow(orgId: string, sess: any, db: any) {
-  const { data: acc } = await db
-    .from("msg_channel_accounts")
-    .select("id, display_name, status")
-    .eq("id", sess.channel_account_id)
-    .maybeSingle();
-  const { data: plugin } = sess.channel_account_id
-    ? await db
-        .from("plugin_whatsapp_evolution_instances")
-        .select("phone_number")
-        .eq("channel_account_id", sess.channel_account_id)
-        .maybeSingle()
-    : { data: null };
   const phone = String(sess.peer_identifier ?? "").split("@")[0];
-  const { data: cp } = await db
-    .from("crm_contact_points")
-    .select("contact_id")
-    .eq("organization_id", orgId)
-    .eq("channel_type", "whatsapp")
-    .eq("identifier", phone)
-    .maybeSingle();
+  // Account, its phone number and the contact point are independent reads.
+  const [{ data: acc }, { data: plugin }, { data: cp }] = await Promise.all([
+    db
+      .from("msg_channel_accounts")
+      .select("id, display_name, status")
+      .eq("id", sess.channel_account_id)
+      .maybeSingle(),
+    sess.channel_account_id
+      ? db
+          .from("plugin_whatsapp_evolution_instances")
+          .select("phone_number")
+          .eq("channel_account_id", sess.channel_account_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    db
+      .from("crm_contact_points")
+      .select("contact_id")
+      .eq("organization_id", orgId)
+      .eq("channel_type", "whatsapp")
+      .eq("identifier", phone)
+      .maybeSingle(),
+  ]);
   let contact: any = null;
   let contactId: string | null = null;
   if (cp?.contact_id) {

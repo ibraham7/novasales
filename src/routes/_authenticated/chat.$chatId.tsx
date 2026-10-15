@@ -14,7 +14,9 @@ import {
 } from "@tanstack/react-start";
 
 import {
+  Fragment,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -64,8 +66,8 @@ import {
 } from "@/modules/crm";
 
 import {
-  supabase,
-} from "@/integrations/supabase/client";
+  useChatSignals,
+} from "@/components/chat/use-chat-signals";
 
 import {
   Button,
@@ -244,105 +246,51 @@ function ChatView() {
         }),
     });
 
-  useEffect(() => {
-    const channel =
-      supabase
-        .channel(
-          `chat-${chatId}`,
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table:
-              "msg_messages",
-            filter:
-              `session_id=eq.${chatId}`,
-          },
-          () => {
-            qc.invalidateQueries({
-              queryKey: [
-                "chat",
-                chatId,
-              ],
-            });
-
-            qc.invalidateQueries({
-              queryKey: [
-                "chats-enriched",
-              ],
-            });
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event:
-              "UPDATE",
-            schema:
-              "public",
-            table:
-              "msg_sessions",
-            filter:
-              `id=eq.${chatId}`,
-          },
-          () => {
-            qc.invalidateQueries({
-              queryKey: [
-                "chat",
-                chatId,
-              ],
-            });
-          },
-        )
-        .subscribe();
-
-    return () => {
-      supabase.removeChannel(
-        channel,
-      );
-    };
-  }, [
-    chatId,
-    qc,
-  ]);
+  // Live updates for this conversation; the list refreshes itself from the same signal.
+  useChatSignals((signal) => {
+    if (signal.session_id === chatId) {
+      void qc.invalidateQueries({
+        queryKey: ["chat", chatId],
+      });
+    }
+  });
 
   const [
     text,
     setText,
   ] = useState("");
 
+  // Sent messages show immediately; the server copy replaces them once the send is confirmed.
+  const [pending, setPending] =
+    useState<(MessageRow & { replyToMessageId?: string })[]>([]);
+
+  useEffect(() => setPending([]), [chatId]);
+
   const sendMut =
     useMutation({
-      mutationFn: () =>
+      mutationFn: (message: { id: string; content: string; replyToMessageId?: string }) =>
         send({
           data: {
             chatId,
-            text,
-            replyToMessageId: replyMessage?.id,
+            text: message.content,
+            replyToMessageId: message.replyToMessageId,
           },
         }),
 
-      onSuccess: () => {
-        setText("");
-        setReplyMessage(null);
-
-        qc.invalidateQueries({
-          queryKey: [
-            "chat",
-            chatId,
-          ],
+      onSuccess: async (_result, message) => {
+        await qc.invalidateQueries({
+          queryKey: ["chat", chatId],
         });
-
-        qc.invalidateQueries({
-          queryKey: [
-            "chats-enriched",
-          ],
+        setPending((current) => current.filter((m) => m.id !== message.id));
+        void qc.invalidateQueries({
+          queryKey: ["chats-enriched"],
         });
       },
 
-      onError: (error) => {
+      onError: (error, message) => {
+        setPending((current) =>
+          current.map((m) => (m.id === message.id ? { ...m, status: "failed" } : m)),
+        );
         toast.error(
           error instanceof Error
             ? error.message
@@ -351,6 +299,37 @@ function ChatView() {
       },
     });
 
+  function sendText() {
+    const content = text.trim();
+    if (!content) return;
+    const message = {
+      id: `pending-${crypto.randomUUID()}`,
+      from_me: true,
+      content,
+      status: "sending",
+      created_at: new Date().toISOString(),
+      message_type: "text",
+      media_url: null,
+      replyToMessageId: replyMessage?.id,
+    };
+    setText("");
+    setReplyMessage(null);
+    setPending((current) => [...current, message]);
+    sendMut.mutate(message);
+  }
+
+  function retrySend(id: string) {
+    const message = pending.find((m) => m.id === id);
+    if (!message || !message.content) return;
+    setPending((current) => current.map((m) => (m.id === id ? { ...m, status: "sending" } : m)));
+    sendMut.mutate({ id, content: message.content, replyToMessageId: message.replyToMessageId });
+  }
+
+  const messages: MessageRow[] = useMemo(
+    () => [...(data?.messages ?? []), ...pending],
+    [data?.messages, pending],
+  );
+
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top:
@@ -358,13 +337,28 @@ function ChatView() {
           .scrollHeight,
     });
   }, [
-    data?.messages?.length,
+    messages.length,
   ]);
 
   if (!data) {
+    // Show what the chat list already knows right away; messages fill in when they arrive.
+    const listed = (qc.getQueriesData({ queryKey: ["chats-enriched"] }) as [unknown, any[] | undefined][])
+      .flatMap(([, rows]) => rows ?? [])
+      .find((row) => row?.id === chatId);
     return (
-      <div className="fixed inset-0 z-40 lg:static lg:min-h-[calc(100vh)] flex items-center justify-center bg-background text-muted-foreground">
-        جارٍ التحميل...
+      <div className="fixed inset-0 z-40 lg:static flex flex-col h-full bg-background" aria-busy="true">
+        <div className="h-14 border-b bg-card px-4 flex items-center gap-3 shrink-0">
+          <div className="h-9 w-9 rounded-full bg-muted shrink-0" />
+          <div className="min-w-0">
+            <div className="font-semibold text-sm truncate">{listed?.title ?? "جارٍ التحميل..."}</div>
+            {listed?.phone && <div className="text-xs text-muted-foreground" dir="ltr">{listed.phone}</div>}
+          </div>
+        </div>
+        <div className="flex-1 p-4 space-y-3">
+          {["w-2/5", "w-1/2 ms-auto", "w-1/3", "w-2/5 ms-auto"].map((width) => (
+            <div key={width} className={cn("h-10 rounded-2xl bg-muted animate-pulse", width)} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -667,22 +661,28 @@ function ChatView() {
         {/* Messages */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto px-2 sm:px-4 py-3 sm:py-4 space-y-2 overscroll-contain"
+          className="flex-1 overflow-y-auto px-2 sm:px-6 py-3 space-y-1 overscroll-contain bg-chat-wallpaper"
         >
-          {data.messages
+          {messages
             .length === 0 ? (
             <div className="text-center text-muted-foreground text-sm py-12">
               لا توجد رسائل بعد
             </div>
           ) : (
-            data.messages.map(
+            messages.map(
               (
                 message: MessageRow,
+                index: number,
               ) => (
+                <Fragment key={message.id}>
+                {dayKey(message.created_at) !== dayKey(messages[index - 1]?.created_at) && (
+                  <div className="flex justify-center py-2">
+                    <span className="rounded-lg bg-chat-in px-3 py-1 text-[11px] text-chat-meta shadow-sm">
+                      {dayLabel(message.created_at)}
+                    </span>
+                  </div>
+                )}
                 <div
-                  key={
-                    message.id
-                  }
                   role="button"
                   tabIndex={0}
                   aria-label={`اختيار رسالة: ${message.content || "مرفق"}`}
@@ -690,7 +690,7 @@ function ChatView() {
                   onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedMessage(message); } }}
                   onClick={() => setSelectedMessage(message)}
                   className={cn(
-                    "flex cursor-pointer rounded-lg",
+                    "flex cursor-pointer rounded-lg px-1",
                     selectedMessage?.id === message.id && "ring-2 ring-primary",
                     message.from_me
                       ? "justify-start"
@@ -699,11 +699,11 @@ function ChatView() {
                 >
                   <div
                     className={cn(
-                      "max-w-[88%] sm:max-w-[78%] lg:max-w-[70%]",
-                      "rounded-2xl px-3 sm:px-3.5 py-2 text-sm shadow-sm overflow-hidden",
+                      "max-w-[85%] sm:max-w-[70%] lg:max-w-[62%]",
+                      "rounded-lg px-2.5 pt-1.5 pb-1 text-[14px] leading-relaxed shadow-sm overflow-hidden",
                       message.from_me
-                        ? "bg-primary text-primary-foreground rounded-br-md"
-                        : "bg-card border rounded-bl-md",
+                        ? "bg-chat-out text-chat-out-foreground rounded-tr-none"
+                        : "bg-chat-in text-foreground rounded-tl-none",
                     )}
                   >
                     {message.message_type ===
@@ -726,13 +726,7 @@ function ChatView() {
                       </div>
                     )}
 
-                    <div
-                      className={cn(
-                        "text-[10px] mt-1 flex items-center gap-1 opacity-80",
-                        !message.from_me &&
-                        "text-muted-foreground",
-                      )}
-                    >
+                    <div className="text-[10px] mt-0.5 flex items-center justify-end gap-1 text-chat-meta">
                       <span>
                         {new Date(
                           message.created_at,
@@ -749,6 +743,9 @@ function ChatView() {
 
                       {message.from_me &&
                         (message.status ===
+                          "sending" ? (
+                          <Clock className="h-3 w-3" aria-label="جارٍ الإرسال" />
+                        ) : message.status ===
                           "read" ? (
                           <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
                         ) : message.status ===
@@ -760,13 +757,27 @@ function ChatView() {
 
                       {message.status ===
                         "failed" && (
-                          <span>
-                            • فشل
-                          </span>
+                          message.id.startsWith("pending-") ? (
+                            <button
+                              type="button"
+                              className="underline font-semibold"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                retrySend(message.id);
+                              }}
+                            >
+                              • فشل — إعادة المحاولة
+                            </button>
+                          ) : (
+                            <span>
+                              • فشل
+                            </span>
+                          )
                         )}
                     </div>
                   </div>
                 </div>
+                </Fragment>
               ),
             )
           )}
@@ -862,11 +873,7 @@ function ChatView() {
             onSubmit={(event) => {
               event.preventDefault();
 
-              if (
-                text.trim()
-              ) {
-                sendMut.mutate();
-              }
+              sendText();
             }}
             className="p-2 sm:p-3 flex gap-2 items-end"
           >
@@ -890,11 +897,7 @@ function ChatView() {
                 ) {
                   event.preventDefault();
 
-                  if (
-                    text.trim()
-                  ) {
-                    sendMut.mutate();
-                  }
+                  sendText();
                 }
               }}
               rows={1}
@@ -907,8 +910,7 @@ function ChatView() {
               type="submit"
               size="icon"
               disabled={
-                !text.trim() ||
-                sendMut.isPending
+                !text.trim()
               }
               className="h-10 w-10 rounded-full shrink-0"
             >
@@ -1125,4 +1127,18 @@ function slaState(
   }
 
   return "متأخر";
+}
+
+function dayKey(iso: string | undefined) {
+  return iso ? new Date(iso).toDateString() : "";
+}
+
+function dayLabel(iso: string) {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "اليوم";
+  if (date.toDateString() === yesterday.toDateString()) return "أمس";
+  return date.toLocaleDateString("ar", { day: "numeric", month: "long", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric" });
 }
