@@ -41,6 +41,10 @@ export async function shapeSessionRow(orgId: string, sess: any, db: any) {
       };
     }
   }
+  // No saved contact name yet: fall back to the name the customer uses on WhatsApp.
+  if (sess.push_name && !contact?.name) {
+    contact = { ...(contact ?? { phone, avatar_url: null }), name: sess.push_name };
+  }
   return {
     id: sess.id,
     remote_jid: sess.peer_identifier,

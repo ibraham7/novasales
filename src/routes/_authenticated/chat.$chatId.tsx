@@ -26,7 +26,6 @@ import type {
 } from "react";
 
 import {
-  ArrowLeftRight,
   ArrowRight,
   Building2,
   Check,
@@ -35,7 +34,6 @@ import {
   FileText,
   Forward,
   Info,
-  MoreHorizontal,
   Paperclip,
   Reply,
   Send,
@@ -44,7 +42,6 @@ import {
   User2,
   UserPlus,
   X,
-  XCircle,
   Zap,
 } from "lucide-react";
 
@@ -68,6 +65,8 @@ import {
 import {
   useChatSignals,
 } from "@/components/chat/use-chat-signals";
+
+import { ChatHeaderActions } from "@/components/chat/chat-header-actions";
 
 import {
   Button,
@@ -482,48 +481,11 @@ function ChatView() {
             </div>
 
             {/* Desktop actions */}
-            <div className="hidden xl:flex items-center gap-1 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={!opp}
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-
-                Assign
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={!opp}
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-
-                Transfer
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={!opp}
-              >
-                <XCircle className="h-3.5 w-3.5" />
-
-                Close
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </div>
+            <ChatHeaderActions
+              chatId={chatId}
+              opportunity={opp?.opportunity ?? null}
+              phone={phone}
+            />
 
             {/* Mobile info */}
             {opp && (
