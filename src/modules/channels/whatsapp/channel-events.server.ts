@@ -222,7 +222,25 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
     } else if (!fromMe) {
       const patch: Record<string, unknown> = { last_activity_at: new Date().toISOString() };
       if (payloadPic) patch.avatar_url = payloadPic;
-      await db.from("crm_contacts").update(patch).eq("id", cp.contact_id);
+      await Promise.all([
+        db.from("crm_contacts").update(patch).eq("id", cp.contact_id),
+        // Contacts first seen through our own message have no name; take the customer's
+        // WhatsApp name, but never overwrite a name the team entered.
+        pushName
+          ? db
+              .from("crm_contacts")
+              .update({ display_name: pushName })
+              .eq("id", cp.contact_id)
+              .is("display_name", null)
+          : null,
+        pushName
+          ? db
+              .from("crm_contacts")
+              .update({ full_name: pushName })
+              .eq("id", cp.contact_id)
+              .is("full_name", null)
+          : null,
+      ]);
     }
   })();
 

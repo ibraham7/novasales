@@ -85,6 +85,9 @@ export const getOpportunityByChat = createServerFn({ method: "GET" })
       opportunity: {
         id: opp.id,
         stage: opp.stage as OppStage,
+        pipeline_id: opp.pipeline_id ?? null,
+        stage_id: opp.stage_id ?? null,
+        owner_agent_id: opp.owner_agent_id ?? null,
         source: opp.source ?? null,
         product_interest: opp.product_interest ?? null,
         priority: opp.priority ?? 0,
