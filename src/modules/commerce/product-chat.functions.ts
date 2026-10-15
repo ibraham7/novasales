@@ -38,16 +38,28 @@ function guessImageMime(url: string) {
   return "image/jpeg";
 }
 
-function fileNameFromUrl(url: string) {
-  try {
-    const pathname = new URL(url).pathname;
+const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
 
-    return (
-      pathname.split("/").filter(Boolean).pop() ||
-      "product-image.jpg"
-    );
-  } catch {
-    return "product-image.jpg";
+/** Fetches a product image for sending as a file; null when it is unreachable, not an image or too large. */
+async function downloadProductImage(url: string) {
+  if (!/^https?:\/\//i.test(url)) return null;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: "follow" });
+    if (!response.ok) return null;
+    const declared = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    const mimetype = declared.startsWith("image/") ? declared : guessImageMime(url);
+    if (declared && !declared.startsWith("image/")) return null;
+    const bytes = await response.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > MAX_PRODUCT_IMAGE_BYTES) return null;
+    const extension = mimetype === "image/png" ? "png" : mimetype === "image/webp" ? "webp" : mimetype === "image/gif" ? "gif" : "jpg";
+    return {
+      base64: Buffer.from(bytes).toString("base64"),
+      mimetype,
+      fileName: `product.${extension}`,
+    };
+  } catch (error) {
+    console.warn("[product-chat] image download failed", error instanceof Error ? error.message : error);
+    return null;
   }
 }
 
@@ -251,70 +263,28 @@ export const sendProductToChatFn = createServerFn({
 
     try {
       if (imageUrl) {
-        try {
-          try {
-            const response: any =
-              await ops.opSendMedia(
-                session.channel_account_id,
-                number,
-                {
-                  mediatype: "image",
-                  media: imageUrl,
-                  mimetype:
-                    guessImageMime(imageUrl),
-                  fileName:
-                    fileNameFromUrl(imageUrl),
-                  caption,
-                },
-              );
+        // Download the image here and send the file itself: the WhatsApp server accepts a
+        // link it later fails to fetch (e.g. search-engine thumbnails) and the customer gets nothing.
+        const image = await downloadProductImage(imageUrl);
+        if (image) {
+          const response: any =
+            await ops.opSendMedia(
+              session.channel_account_id,
+              number,
+              {
+                mediatype: "image",
+                media: image.base64,
+                mimetype: image.mimetype,
+                fileName: image.fileName,
+                caption,
+              },
+            );
 
-            externalId =
-              ops.sentExternalId(response);
+          externalId =
+            ops.sentExternalId(response);
 
-            mediaSent = true;
-          } catch {
-            const imageResponse =
-              await fetch(imageUrl);
-
-            if (!imageResponse.ok) {
-              throw new Error(
-                `تعذر تحميل صورة المنتج (${imageResponse.status})`,
-              );
-            }
-
-            const arrayBuffer =
-              await imageResponse.arrayBuffer();
-
-            const base64 = Buffer.from(
-              arrayBuffer,
-            ).toString("base64");
-
-            const response: any =
-              await ops.opSendMedia(
-                session.channel_account_id,
-                number,
-                {
-                  mediatype: "image",
-                  media: base64,
-                  mimetype:
-                    imageResponse.headers.get(
-                      "content-type",
-                    ) ||
-                    guessImageMime(
-                      imageUrl,
-                    ),
-                  fileName:
-                    fileNameFromUrl(imageUrl),
-                  caption,
-                },
-              );
-
-            externalId =
-              ops.sentExternalId(response);
-
-            mediaSent = true;
-          }
-        } catch {
+          mediaSent = true;
+        } else {
           const response: any =
             await ops.opSendText(
               session.channel_account_id,
