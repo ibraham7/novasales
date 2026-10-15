@@ -355,6 +355,7 @@ export const sendMessageFn = createServerFn({ method: "POST" })
     let externalId: string | null = null;
     let status = "sent";
     let sendError: string | null = null;
+    const providerStarted = performance.now();
     try {
       const res = (await ops.opSendText(
         sess.channel_account_id,
@@ -363,6 +364,8 @@ export const sendMessageFn = createServerFn({ method: "POST" })
         quotedRef ?? undefined,
       )) as Record<string, unknown>;
       externalId = ops.sentExternalId(res);
+      // Numbers only: how long the WhatsApp server took to accept the message.
+      console.log(`[SEND_TIMING] whatsapp=${Math.round(performance.now() - providerStarted)}ms`);
       await risk.recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id });
     } catch (e) {
       status = "failed";
