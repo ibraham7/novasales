@@ -102,21 +102,9 @@ export const getChatWithMessages = createServerFn({ method: "GET" })
     const sess = sessRes?.data;
     const link = linkRes?.data;
     if (!sess) return null;
-    if (link?.opportunity_id) {
-      const { data: opp } = await db
-        .from("opp_opportunities")
-        .select("owner_agent_id, department_id")
-        .eq("id", link.opportunity_id)
-        .eq("organization_id", organizationId)
-        .maybeSingle();
-      if (!opp || !canAccessOpportunityRow(access, opp)) return null;
-    } else if (getOpportunityVisibility(access) !== "all") {
-      return null;
-    }
-    const chat = await shapeSessionRow(organizationId, sess, db);
+    if (!link?.opportunity_id && getOpportunityVisibility(access) !== "all") return null;
 
     const rawMessages = [...(msgsRes?.data ?? [])].reverse();
-
     const mediaPaths = Array.from(
       new Set(
         rawMessages
@@ -129,10 +117,23 @@ export const getChatWithMessages = createServerFn({ method: "GET" })
       ),
     ) as string[];
 
-    const signedRes =
+    // The access check, chat header and media links are independent: one parallel round.
+    const [opp, chat, signedRes] = await Promise.all([
+      link?.opportunity_id
+        ? db
+            .from("opp_opportunities")
+            .select("owner_agent_id, department_id")
+            .eq("id", link.opportunity_id)
+            .eq("organization_id", organizationId)
+            .maybeSingle()
+            .then((result: any) => result.data)
+        : Promise.resolve(null),
+      shapeSessionRow(organizationId, sess, db),
       mediaPaths.length > 0
-        ? await db.storage.from("crm-files").createSignedUrls(mediaPaths, 3600)
-        : { data: [] };
+        ? db.storage.from("crm-files").createSignedUrls(mediaPaths, 3600)
+        : Promise.resolve({ data: [] }),
+    ]);
+    if (link?.opportunity_id && (!opp || !canAccessOpportunityRow(access, opp))) return null;
 
     const signedMap = new Map<string, string>();
 

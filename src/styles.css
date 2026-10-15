@@ -54,6 +54,11 @@
   --color-stage-negotiation: var(--stage-negotiation);
   --color-stage-won: var(--stage-won);
   --color-stage-lost: var(--stage-lost);
+  --color-chat-wallpaper: var(--chat-wallpaper);
+  --color-chat-out: var(--chat-out);
+  --color-chat-out-foreground: var(--chat-out-foreground);
+  --color-chat-in: var(--chat-in);
+  --color-chat-meta: var(--chat-meta);
 }
 
 :root {
@@ -99,6 +104,11 @@
   --stage-negotiation: oklch(0.72 0.16 55);
   --stage-won: oklch(0.68 0.16 155);
   --stage-lost: oklch(0.62 0.22 27);
+  --chat-wallpaper: oklch(0.94 0.012 85);
+  --chat-out: oklch(0.95 0.06 140);
+  --chat-out-foreground: oklch(0.22 0.02 230);
+  --chat-in: oklch(1 0 0);
+  --chat-meta: oklch(0.55 0.02 230);
 }
 
 .dark {
@@ -143,6 +153,11 @@
   --stage-negotiation: oklch(0.78 0.16 55);
   --stage-won: oklch(0.72 0.16 155);
   --stage-lost: oklch(0.68 0.22 27);
+  --chat-wallpaper: oklch(0.17 0.02 230);
+  --chat-out: oklch(0.42 0.08 170);
+  --chat-out-foreground: oklch(0.95 0.008 180);
+  --chat-in: oklch(0.25 0.025 230);
+  --chat-meta: oklch(0.72 0.02 220);
 }
 
 @layer base {

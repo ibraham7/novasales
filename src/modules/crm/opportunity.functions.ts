@@ -366,6 +366,90 @@ export const removeOppTag = createServerFn({ method: "POST" })
   });
 
 // Enriched chat rows for the chat list.
+type ChatListRow = {
+  id: string;
+  peer_identifier: string | null;
+  channel_account_id: string | null;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+  unread_count: number;
+  opportunity_id: string | null;
+  contact_id: string | null;
+  stage: string | null;
+  source: string | null;
+  priority: number;
+  department_id: string | null;
+  owner_agent_id: string | null;
+  contact_name: string | null;
+  department_name: string | null;
+  owner_name: string | null;
+};
+
+/** Sessions joined with their opportunity, contact, department and owner — one round trip via SQL. */
+async function loadChatListRows(db: any, organizationId: string, limit: number): Promise<ChatListRow[]> {
+  const { data, error } = await db.rpc("list_chat_rows", { _organization_id: organizationId, _limit: limit });
+  if (!error) return data ?? [];
+  // Fallback while the database function is not deployed: the same rows from sequential reads.
+  const { data: sessions } = await db
+    .from("msg_sessions")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  const rows = sessions ?? [];
+  if (!rows.length) return [];
+  const { data: links } = await db
+    .from("crm_opportunity_sessions")
+    .select("opportunity_id, session_ref")
+    .eq("organization_id", organizationId)
+    .in("session_ref", rows.map((s: any) => s.id));
+  const linkMap = new Map((links ?? []).map((l: any) => [l.session_ref, l.opportunity_id]));
+  const oppIds = Array.from(new Set((links ?? []).map((l: any) => l.opportunity_id)));
+  const { data: opps } = oppIds.length
+    ? await db
+        .from("opp_opportunities")
+        .select("id, contact_id, stage, source, priority, department_id, owner_agent_id")
+        .in("id", oppIds)
+    : { data: [] };
+  const oppMap = new Map((opps ?? []).map((o: any) => [o.id, o]));
+  const ids = (key: string) => Array.from(new Set((opps ?? []).map((o: any) => o[key]).filter(Boolean)));
+  const [{ data: contacts }, { data: depts }, { data: owners }] = await Promise.all([
+    ids("contact_id").length
+      ? db.from("crm_contacts").select("id, display_name, full_name").in("id", ids("contact_id"))
+      : { data: [] },
+    ids("department_id").length
+      ? db.from("org_departments").select("id, name").in("id", ids("department_id"))
+      : { data: [] },
+    ids("owner_agent_id").length
+      ? db.from("profiles").select("id, full_name").in("id", ids("owner_agent_id"))
+      : { data: [] },
+  ]);
+  const cMap = new Map((contacts ?? []).map((c: any) => [c.id, c.display_name ?? c.full_name]));
+  const dMap = new Map((depts ?? []).map((d: any) => [d.id, d.name]));
+  const oMap = new Map((owners ?? []).map((o: any) => [o.id, o.full_name]));
+  return rows.map((s: any) => {
+    const opp: any = oppMap.get(linkMap.get(s.id) as string);
+    return {
+      id: s.id,
+      peer_identifier: s.peer_identifier,
+      channel_account_id: s.channel_account_id,
+      last_message_preview: s.last_message_preview,
+      last_message_at: s.last_message_at,
+      unread_count: s.unread_count ?? 0,
+      opportunity_id: opp?.id ?? null,
+      contact_id: opp?.contact_id ?? null,
+      stage: opp?.stage ?? null,
+      source: opp?.source ?? null,
+      priority: opp?.priority ?? 0,
+      department_id: opp?.department_id ?? null,
+      owner_agent_id: opp?.owner_agent_id ?? null,
+      contact_name: (cMap.get(opp?.contact_id) as string) ?? null,
+      department_name: (dMap.get(opp?.department_id) as string) ?? null,
+      owner_name: (oMap.get(opp?.owner_agent_id) as string) ?? null,
+    };
+  });
+}
+
 export const listChatsEnriched = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ all: z.boolean().optional() }).parse(d ?? {}))
   .handler(async ({ data }) => {
@@ -374,170 +458,59 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
     const { canAccessOpportunityRow, getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
-    const access = await requireAnyPermission(["messaging.send", "crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
 
-    const { data: sessions } = await db
-      .from("msg_sessions")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .limit(data.all ? 3000 : 200);
-
-    const rows = sessions ?? [];
-    if (!rows.length) return [];
-
-    const sessionIds = rows.map((s: any) => s.id);
-    // في وضع البحث الشامل نجلب الروابط/الفرص للمنظمة كاملة بدل تمرير آلاف المعرفات في الرابط.
-    const linksQuery = db.from("crm_opportunity_sessions").select("opportunity_id, session_ref").eq("organization_id", organizationId);
-    const { data: links } = data.all ? await linksQuery.limit(5000) : await linksQuery.in("session_ref", sessionIds);
-    const linkMap = new Map((links ?? []).map((l: any) => [l.session_ref, l.opportunity_id]));
-    const oppIds = Array.from(new Set((links ?? []).map((l: any) => l.opportunity_id)));
-
-    const oppSelect = "id, contact_id, stage, source, priority, department_id, owner_agent_id, outcome";
-    const { data: opps } = data.all
-      ? await db.from("opp_opportunities").select(oppSelect).eq("organization_id", organizationId).is("deleted_at", null).limit(5000)
-      : oppIds.length
-        ? await db.from("opp_opportunities").select(oppSelect).in("id", oppIds)
-        : { data: [] };
-
-    const oppMap = new Map((opps ?? []).map((o: any) => [o.id, o]));
-
-    const contactIds = Array.from(new Set((opps ?? []).map((o: any) => o.contact_id).filter(Boolean)));
-    const deptIds = Array.from(new Set((opps ?? []).map((o: any) => o.department_id).filter(Boolean)));
-    const ownerIds = Array.from(new Set((opps ?? []).map((o: any) => o.owner_agent_id).filter(Boolean)));
-
-    const [{ data: contacts }, { data: depts }, { data: owners }] = await Promise.all([
-      data.all
-        ? db.from("crm_contacts").select("id, display_name, full_name").eq("organization_id", organizationId).limit(5000)
-        : contactIds.length
-          ? db.from("crm_contacts").select("id, display_name, full_name").in("id", contactIds)
-          : Promise.resolve({ data: [] }),
-      deptIds.length ? db.from("org_departments").select("id, name").in("id", deptIds) : Promise.resolve({ data: [] }),
-      ownerIds.length ? db.from("profiles").select("id, full_name").in("id", ownerIds) : Promise.resolve({ data: [] }),
+    // Permissions, the joined rows and the number-to-department links are independent: one parallel round.
+    const [access, rows, accountLinks]: [
+      Awaited<ReturnType<typeof requireAnyPermission>>,
+      ChatListRow[],
+      { account_id: string; department_id: string }[],
+    ] = await Promise.all([
+      requireAnyPermission(["messaging.send", "crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]),
+      loadChatListRows(db, organizationId, data.all ? 3000 : 200),
+      db
+        .from("msg_channel_account_departments")
+        .select("account_id, department_id")
+        .eq("organization_id", organizationId)
+        .then((result: any) => {
+          if (result.error) throw new Error(result.error.message);
+          return (result.data ?? []) as { account_id: string; department_id: string }[];
+        }),
     ]);
 
-    const cMap = new Map((contacts ?? []).map((c: any) => [c.id, c]));
-    const dMap = new Map((depts ?? []).map((d: any) => [d.id, d.name]));
-    const oMap = new Map((owners ?? []).map((o: any) => [o.id, o.full_name]));
-
     // نطاق الرؤية: الرقم (حساب القناة) المرتبط بأقسام المستخدم.
-    const seesAll =
-      getOpportunityVisibility(access) === "all";
+    const seesAll = getOpportunityVisibility(access) === "all";
+    const allowedAccounts = new Set(
+      seesAll
+        ? []
+        : accountLinks
+            .filter((link) => access.departmentIds.includes(link.department_id))
+            .map((link) => link.account_id),
+    );
 
-    let allowedAccounts = new Set<string>();
-
-    if (
-      !seesAll &&
-      access.departmentIds.length > 0
-    ) {
-      const { data: accLinks, error: accLinksError } =
-        await db
-          .from("msg_channel_account_departments")
-          .select("account_id")
-          .in(
-            "department_id",
-            access.departmentIds,
-          );
-
-      if (accLinksError) {
-        throw new Error(accLinksError.message);
-      }
-
-      allowedAccounts = new Set(
-        (accLinks ?? []).map(
-          (row: any) => row.account_id,
-        ),
-      );
-    }
-    return rows.flatMap((s: any) => {
-      const oppId = linkMap.get(s.id);
-
-      const opp: any = oppId
-        ? oppMap.get(oppId)
+    return rows.flatMap((s) => {
+      const opp = s.opportunity_id
+        ? { owner_agent_id: s.owner_agent_id, department_id: s.department_id }
         : null;
+      const accountAllowed = seesAll || (!!s.channel_account_id && allowedAccounts.has(s.channel_account_id));
+      if (!accountAllowed && opp && !canAccessOpportunityRow(access, opp)) return [];
+      if (!accountAllowed && !opp) return [];
 
-      const accountAllowed =
-        seesAll ||
-        (
-          !!s.channel_account_id &&
-          allowedAccounts.has(
-            s.channel_account_id,
-          )
-        );
-
-      if (
-        !accountAllowed &&
-        opp &&
-        !canAccessOpportunityRow(
-          access,
-          opp,
-        )
-      ) {
-        return [];
-      }
-
-      if (!accountAllowed && !opp) {
-        return [];
-      }
-
-      const c: any = opp
-        ? cMap.get(opp.contact_id)
-        : null;
-
-      const phone = String(
-        s.peer_identifier ?? "",
-      ).split("@")[0];
-
+      const phone = String(s.peer_identifier ?? "").split("@")[0];
       return [
         {
           id: s.id,
-
-          title:
-            c?.display_name ??
-            c?.full_name ??
-            phone,
-
+          title: s.contact_name ?? phone,
           phone,
-
-          last_message_text:
-            s.last_message_preview,
-
-          last_message_at:
-            s.last_message_at,
-
-          unread_count:
-            s.unread_count ?? 0,
-
-          stage:
-            (opp?.stage as
-              | OppStage
-              | undefined) ?? null,
-
-          source:
-            opp?.source ?? null,
-
-          priority:
-            opp?.priority ?? 0,
-
-          department_name:
-            opp?.department_id
-              ? dMap.get(
-                opp.department_id,
-              ) ?? null
-              : null,
-
-          owner_name:
-            opp?.owner_agent_id
-              ? oMap.get(
-                opp.owner_agent_id,
-              ) ?? null
-              : null,
-
-          owner_id:
-            opp?.owner_agent_id ?? null,
-
-          is_assigned:
-            !!opp?.owner_agent_id,
+          last_message_text: s.last_message_preview,
+          last_message_at: s.last_message_at,
+          unread_count: s.unread_count ?? 0,
+          stage: (s.stage as OppStage | null) ?? null,
+          source: s.source ?? null,
+          priority: s.priority ?? 0,
+          department_name: s.department_name ?? null,
+          owner_name: s.owner_name ?? null,
+          owner_id: s.owner_agent_id ?? null,
+          is_assigned: !!s.owner_agent_id,
         },
       ];
     });

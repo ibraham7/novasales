@@ -15,8 +15,8 @@ import {
 } from "@tanstack/react-start";
 
 import {
-  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -31,8 +31,12 @@ import {
 } from "@/modules/crm";
 
 import {
-  supabase,
-} from "@/integrations/supabase/client";
+  getChatWithMessages,
+} from "@/modules/messaging";
+
+import {
+  useChatSignals,
+} from "@/components/chat/use-chat-signals";
 
 import {
   Input,
@@ -105,6 +109,19 @@ function ChatLayout() {
       listChatsEnriched,
     );
 
+  const fetchChat =
+    useServerFn(
+      getChatWithMessages,
+    );
+
+  // Start loading a conversation as soon as the pointer reaches it, before the click lands.
+  const prefetchChat = (chatId: string) =>
+    void qc.prefetchQuery({
+      queryKey: ["chat", chatId],
+      queryFn: () => fetchChat({ data: { chatId } }),
+      staleTime: 10_000,
+    });
+
   const location =
     useLocation();
 
@@ -147,72 +164,19 @@ function ChatLayout() {
           previous,
     });
 
-  useEffect(() => {
-    const channel =
-      supabase
-        .channel(
-          "chats-list",
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema:
-              "public",
-            table:
-              "msg_sessions",
-          },
-          () => {
-            qc.invalidateQueries({
-              queryKey: [
-                "chats-enriched",
-              ],
-            });
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event:
-              "INSERT",
-            schema:
-              "public",
-            table:
-              "msg_messages",
-          },
-          () => {
-            qc.invalidateQueries({
-              queryKey: [
-                "chats-enriched",
-              ],
-            });
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema:
-              "public",
-            table:
-              "opp_opportunities",
-          },
-          () => {
-            qc.invalidateQueries({
-              queryKey: [
-                "chats-enriched",
-              ],
-            });
-          },
-        )
-        .subscribe();
+  // Live updates: the database signals chat activity; refetch the list once per burst of signals.
+  const refreshTimer =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    return () => {
-      supabase.removeChannel(
-        channel,
-      );
-    };
-  }, [qc]);
+  useChatSignals(() => {
+    if (refreshTimer.current) return;
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      void qc.invalidateQueries({
+        queryKey: ["chats-enriched"],
+      });
+    }, 300);
+  });
 
   const filtered =
     useMemo(() => {
@@ -300,17 +264,17 @@ function ChatLayout() {
       <aside
         className={cn(
           "bg-card flex-col border-l min-w-0",
-          "w-full lg:w-[340px] xl:w-[360px] lg:shrink-0",
+          "w-full lg:w-[320px] xl:w-[340px] lg:shrink-0",
           inConversation
             ? "hidden lg:flex"
             : "flex",
         )}
       >
         {/* Header */}
-        <div className="px-3 sm:px-4 pt-4 pb-3 border-b space-y-3 shrink-0">
+        <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="font-bold text-xl">
+              <h1 className="font-bold text-lg">
                 المحادثات
               </h1>
 
@@ -349,7 +313,7 @@ function ChatLayout() {
                 )
               }
               placeholder="ابحث عن اسم، رقم أو رسالة..."
-              className="h-10 pr-9 rounded-xl bg-muted/40"
+              className="h-9 pr-9 rounded-lg bg-muted/60 border-0"
             />
           </div>
 
@@ -389,7 +353,7 @@ function ChatLayout() {
                       )
                     }
                     className={cn(
-                      "h-8 px-3 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
+                      "h-7 px-3 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
                       active
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground hover:bg-accent",
@@ -477,19 +441,21 @@ function ChatLayout() {
                       chatId:
                         chat.id,
                     }}
+                    onMouseEnter={() => prefetchChat(chat.id)}
+                    onTouchStart={() => prefetchChat(chat.id)}
                     className={cn(
-                      "block border-b transition-colors",
+                      "block transition-colors",
                       active
                         ? "bg-accent/70"
                         : "hover:bg-accent/40",
                     )}
                   >
-                    <div className="px-3 py-3 flex gap-3">
+                    <div className="px-3 py-2 flex gap-3 items-center">
                       {/* Avatar */}
                       <div className="relative shrink-0">
                         <div
                           className={cn(
-                            "h-12 w-12 rounded-full flex items-center justify-center font-bold",
+                            "h-11 w-11 rounded-full flex items-center justify-center font-bold",
                             unread >
                               0
                               ? "bg-primary/15 text-primary"
@@ -512,7 +478,7 @@ function ChatLayout() {
                       </div>
 
                       {/* Center */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 border-b border-border/60 pb-2 -mb-2">
                         <div className="flex items-start gap-2">
                           <div
                             className={cn(
@@ -578,35 +544,12 @@ function ChatLayout() {
                             )}
                         </div>
 
-                        {(chat.source ||
-                          chat.department_name ||
-                          chat.owner_name) && (
-                            <div className="flex items-center gap-1 mt-1.5 overflow-hidden">
-                              {chat.source && (
-                                <MiniChip>
-                                  {
-                                    chat.source
-                                  }
-                                </MiniChip>
-                              )}
-
-                              {chat.department_name && (
-                                <MiniChip>
-                                  {
-                                    chat.department_name
-                                  }
-                                </MiniChip>
-                              )}
-
-                              {chat.owner_name && (
-                                <MiniChip tone="primary">
-                                  {
-                                    chat.owner_name
-                                  }
-                                </MiniChip>
-                              )}
-                            </div>
-                          )}
+                        {chat.owner_name && (
+                          <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                            {chat.owner_name}
+                            {chat.department_name ? ` · ${chat.department_name}` : ""}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </Link>
@@ -629,37 +572,6 @@ function ChatLayout() {
         <Outlet />
       </div>
     </div>
-  );
-}
-
-function MiniChip({
-  children,
-  tone = "muted",
-}: {
-  children:
-  React.ReactNode;
-  tone?:
-  | "muted"
-  | "primary"
-  | "warning";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 max-w-[110px] truncate",
-        tone ===
-        "primary" &&
-        "bg-primary/10 text-primary",
-        tone ===
-        "warning" &&
-        "bg-[var(--color-stage-negotiation)]/15 text-[var(--color-stage-negotiation)]",
-        tone ===
-        "muted" &&
-        "bg-muted text-muted-foreground",
-      )}
-    >
-      {children}
-    </span>
   );
 }
 

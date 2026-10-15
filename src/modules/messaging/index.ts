@@ -16,3 +16,4 @@ export {
 } from "./chats.functions";
 
 export { syncOpportunityHistory } from "./sync.functions";
+export { getChatRealtimeTopic } from "./realtime.functions";
