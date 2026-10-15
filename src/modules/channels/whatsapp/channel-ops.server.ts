@@ -58,6 +58,12 @@ async function withProvider<T>(
   }
 }
 
+/** WhatsApp message id from a provider send result (providers return `{ externalId }`). */
+export function sentExternalId(res: unknown): string | null {
+  const r = res as { externalId?: string; key?: { id?: string }; id?: string } | null | undefined;
+  return r?.externalId ?? r?.key?.id ?? r?.id ?? null;
+}
+
 export async function opSendText(
   accountId: string,
   to: string,
