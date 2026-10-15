@@ -85,21 +85,13 @@ export const sendProductToChatFn = createServerFn({
     const { organizationId, userId } =
       await getWorkspace();
 
-    const access = await requireAnyPermission([
-      "messaging.send",
-    ]);
-
-    if (
-      !access.isSuperAdmin &&
-      !access.permissions.includes("products.view")
-    ) {
-      throw new Error(
-        "لا تملك صلاحية عرض المنتجات",
-      );
-    }
-
-    const [productRes, sessionRes, linkRes] =
+    // Permission and the three reads are independent: one parallel round.
+    const [access, productRes, sessionRes, linkRes] =
       await Promise.all([
+        requireAnyPermission([
+          "messaging.send",
+        ]),
+
         db
           .from("sales_products")
           .select(`
@@ -134,7 +126,9 @@ export const sendProductToChatFn = createServerFn({
 
         db
           .from("crm_opportunity_sessions")
-          .select("opportunity_id")
+          .select(
+            "opportunity_id, opp_opportunities(id, contact_id, owner_agent_id, department_id, organization_id)",
+          )
           .eq(
             "organization_id",
             organizationId,
@@ -142,6 +136,15 @@ export const sendProductToChatFn = createServerFn({
           .eq("session_ref", data.chatId)
           .maybeSingle(),
       ]);
+
+    if (
+      !access.isSuperAdmin &&
+      !access.permissions.includes("products.view")
+    ) {
+      throw new Error(
+        "لا تملك صلاحية عرض المنتجات",
+      );
+    }
 
     const product = productRes?.data;
     const session = sessionRes?.data;
@@ -168,20 +171,12 @@ export const sendProductToChatFn = createServerFn({
     let opportunity: any = null;
 
     if (chatLink?.opportunity_id) {
-      const { data: opp } = await db
-        .from("opp_opportunities")
-        .select(`
-          id,
-          contact_id,
-          owner_agent_id,
-          department_id
-        `)
-        .eq("id", chatLink.opportunity_id)
-        .eq(
-          "organization_id",
-          organizationId,
-        )
-        .maybeSingle();
+      const embedded = chatLink.opp_opportunities;
+      const linked = Array.isArray(embedded) ? embedded[0] : embedded;
+      const opp =
+        linked?.organization_id === organizationId
+          ? linked
+          : null;
 
       opportunity = opp;
 
@@ -205,36 +200,45 @@ export const sendProductToChatFn = createServerFn({
       );
     }
 
-    const { resolveAccountProvider } =
-      await import(
-        "@/modules/channels/whatsapp/registry.server"
-      );
+    const [{ resolveAccountProvider }, ops, risk] =
+      await Promise.all([
+        import(
+          "@/modules/channels/whatsapp/registry.server"
+        ),
+        import(
+          "@/modules/channels/whatsapp/channel-ops.server"
+        ),
+        import("@/modules/risk/risk.server"),
+      ]);
 
-    const ops = await import(
-      "@/modules/channels/whatsapp/channel-ops.server"
-    );
+    const imageUrl =
+      Array.isArray(product.images) &&
+      product.images.length
+        ? String(product.images[0])
+        : null;
 
-    const risk = await import(
-      "@/modules/risk/risk.server"
-    );
-
-    const providerRef =
-      await resolveAccountProvider(
-        session.channel_account_id,
-      );
+    // Permission is confirmed above: fetch the image while the engine and risk checks run.
+    const [providerRef, guard, image] =
+      await Promise.all([
+        resolveAccountProvider(
+          session.channel_account_id,
+        ),
+        risk.riskGuard({
+          orgId: organizationId,
+          accountId: session.channel_account_id,
+          source: "manual",
+          peer: session.peer_identifier,
+        }),
+        imageUrl
+          ? downloadProductImage(imageUrl)
+          : Promise.resolve(null),
+      ]);
 
     if (!providerRef.provider.isConfigured()) {
       throw new Error(
         `محرّك ${providerRef.provider.label} غير مُهيأ.`,
       );
     }
-
-    const guard = await risk.riskGuard({
-      orgId: organizationId,
-      accountId: session.channel_account_id,
-      source: "manual",
-      peer: session.peer_identifier,
-    });
 
     if (!guard.allowed) {
       throw new Error(
@@ -250,22 +254,17 @@ export const sendProductToChatFn = createServerFn({
     const caption =
       formatProductCaption(product);
 
-    const imageUrl =
-      Array.isArray(product.images) &&
-      product.images.length
-        ? String(product.images[0])
-        : null;
-
     let externalId: string | null = null;
     let mediaSent = false;
     let usedTextFallback = false;
     let sendError: string | null = null;
+    let outboundRecorded: Promise<unknown> =
+      Promise.resolve();
 
     try {
       if (imageUrl) {
         // Download the image here and send the file itself: the WhatsApp server accepts a
         // link it later fails to fetch (e.g. search-engine thumbnails) and the customer gets nothing.
-        const image = await downloadProductImage(imageUrl);
         if (image) {
           const response: any =
             await ops.opSendMedia(
@@ -309,11 +308,19 @@ export const sendProductToChatFn = createServerFn({
           ops.sentExternalId(response);
       }
 
-      await risk.recordOutbound({
-        orgId: organizationId,
-        accountId:
-          session.channel_account_id,
-      });
+      // Counting must never turn a product WhatsApp already accepted into a failure.
+      outboundRecorded = risk
+        .recordOutbound({
+          orgId: organizationId,
+          accountId:
+            session.channel_account_id,
+        })
+        .catch((e) =>
+          console.error(
+            "[product-chat] recordOutbound failed",
+            e,
+          ),
+        );
     } catch (error) {
       sendError =
         error instanceof Error
@@ -336,8 +343,9 @@ export const sendProductToChatFn = createServerFn({
       ? "failed"
       : "sent";
 
-    const { data: message, error: messageError } =
-      await db
+    // Message row, chat preview, interaction and risk counters are independent writes.
+    const messageInsert =
+      db
         .from("msg_messages")
         .insert({
           organization_id:
@@ -375,13 +383,7 @@ export const sendProductToChatFn = createServerFn({
         .select("id, created_at")
         .single();
 
-    if (messageError) {
-      throw new Error(
-        messageError.message,
-      );
-    }
-
-    await db
+    const previewUpdate = db
       .from("msg_sessions")
       .update({
         last_message_preview:
@@ -398,8 +400,9 @@ export const sendProductToChatFn = createServerFn({
         organizationId,
       );
 
-    if (!sendError) {
-      await db
+    const interactionInsert = sendError
+      ? Promise.resolve()
+      : db
         .from(
           "sales_product_interactions",
         )
@@ -422,6 +425,19 @@ export const sendProductToChatFn = createServerFn({
 
           interaction_type: "sent",
         });
+
+    const [{ data: message, error: messageError }] =
+      await Promise.all([
+        messageInsert,
+        previewUpdate,
+        interactionInsert,
+        outboundRecorded,
+      ]);
+
+    if (messageError) {
+      throw new Error(
+        messageError.message,
+      );
     }
 
     if (sendError) {

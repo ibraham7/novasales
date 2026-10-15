@@ -52,7 +52,24 @@ export type AccountProviderRef = {
 };
 
 /** يرجع المزوّد + مرجع الجلسة لحساب قناة معيّن. */
+// A number's engine changes only through a session move, which clears this cache. Every send,
+// download and webhook resolves it, so keep it in memory briefly instead of two reads each time.
+const PROVIDER_CACHE_MS = 60_000;
+const providerCache = new Map<string, { ref: AccountProviderRef; expires: number }>();
+
+export function forgetAccountProvider(accountId: string) {
+  providerCache.delete(accountId);
+}
+
 export async function resolveAccountProvider(accountId: string): Promise<AccountProviderRef> {
+  const cached = providerCache.get(accountId);
+  if (cached && cached.expires > Date.now()) return cached.ref;
+  const ref = await loadAccountProvider(accountId);
+  providerCache.set(accountId, { ref, expires: Date.now() + PROVIDER_CACHE_MS });
+  return ref;
+}
+
+async function loadAccountProvider(accountId: string): Promise<AccountProviderRef> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data: acc } = await db

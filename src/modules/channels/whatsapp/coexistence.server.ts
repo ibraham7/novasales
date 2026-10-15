@@ -203,6 +203,8 @@ async function performCoexistenceLink(
   if (accountId) {
     const { error } = await db.from("msg_channel_accounts").update(accountPayload).eq("id", accountId);
     if (error) throw new Error(error.message);
+    const { forgetAccountProvider } = await import("./registry.server");
+    forgetAccountProvider(accountId);
   } else {
     const { data: acc, error } = await db
       .from("msg_channel_accounts")
