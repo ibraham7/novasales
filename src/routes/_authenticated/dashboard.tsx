@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
@@ -535,7 +536,7 @@ function Dashboard() {
               <div key={r.id} className="text-sm border-b pb-2 last:border-b-0">
                 <div className="font-medium truncate">{r.title}</div>
                 <div className="text-xs text-muted-foreground">
-                  {new Date(r.occurred_at).toLocaleString("ar")}
+                  {formatDateTime(r.occurred_at)}
                 </div>
               </div>
             ))}

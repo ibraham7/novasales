@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "@/lib/toast";
@@ -84,7 +85,7 @@ function TrashPage() {
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm">{o.contact_name}</div>
                 <div className="text-[11px] text-muted-foreground truncate">
-                  حُذفت {new Date(o.deleted_at).toLocaleString("ar")} {o.deleted_by_name ? `· بواسطة ${o.deleted_by_name}` : ""}
+                  حُذفت {formatDateTime(o.deleted_at)} {o.deleted_by_name ? `· بواسطة ${o.deleted_by_name}` : ""}
                 </div>
               </div>
               {o.source && <Badge variant="outline" className="text-[10px]">{o.source}</Badge>}

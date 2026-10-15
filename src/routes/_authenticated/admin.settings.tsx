@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { getAllSettings, updateSetting } from "@/modules/superadmin";
@@ -48,6 +49,6 @@ function SettingsPage() {
       </CardContent></Card>
     </fieldset>
     <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={!dirty || mutation.isPending}>{mutation.isPending ? "جارٍ الحفظ…" : "حفظ الإعدادات"}</Button><Button type="button" variant="outline" disabled={!dirty || mutation.isPending} onClick={() => setDraft(null)}>إلغاء التعديلات</Button><span className="text-xs text-muted-foreground" aria-live="polite">{dirty ? "توجد تعديلات غير محفوظة" : "الإعدادات محفوظة"}</span></div>
-    {q.data.updated_at && <p className="text-xs text-muted-foreground">آخر تحديث: {new Date(q.data.updated_at).toLocaleString("ar")}</p>}
+    {q.data.updated_at && <p className="text-xs text-muted-foreground">آخر تحديث: {formatDateTime(q.data.updated_at)}</p>}
   </form>;
 }

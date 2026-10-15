@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
@@ -48,7 +49,7 @@ const REASON_LABEL: Record<string, string> = {
 
 function fmt(d?: string | null) {
   if (!d) return "—";
-  return new Date(d).toLocaleString("ar", { dateStyle: "short", timeStyle: "short" });
+  return formatDateTime(d);
 }
 
 function delayLabel(min: number | null) {

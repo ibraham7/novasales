@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
@@ -109,7 +110,7 @@ function InboxPage() {
                 </div>
               </div>
               <div className="text-xs text-muted-foreground">
-                {o.last_message_at ? new Date(o.last_message_at).toLocaleString("ar") : ""}
+                {o.last_message_at ? formatDateTime(o.last_message_at) : ""}
               </div>
               <Button size="sm" onClick={() => setAssignFor(o)}>
                 <ArrowLeftRight className="h-4 w-4 ml-1" /> تحويل لمندوب

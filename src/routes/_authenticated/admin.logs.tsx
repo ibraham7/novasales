@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { formatDateTime } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { listAuditLog, listImpersonationSessions } from "@/modules/superadmin";
@@ -34,7 +35,7 @@ function LogsPage() {
                     {row.target_type}: {row.target_id ?? "—"}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {new Date(row.created_at).toLocaleString("ar")}
+                    {formatDateTime(row.created_at)}
                   </div>
                 </div>
               ))}
@@ -59,8 +60,8 @@ function LogsPage() {
                       <td className="py-2 text-xs">{s.admin_user_id?.slice(0, 8)}</td>
                       <td className="text-xs">{s.target_user_id?.slice(0, 8)}</td>
                       <td>{s.reason ?? "—"}</td>
-                      <td className="text-xs text-muted-foreground">{new Date(s.started_at).toLocaleString("ar")}</td>
-                      <td className="text-xs">{s.ended_at ? new Date(s.ended_at).toLocaleString("ar") : <Badge>نشطة</Badge>}</td>
+                      <td className="text-xs text-muted-foreground">{formatDateTime(s.started_at)}</td>
+                      <td className="text-xs">{s.ended_at ? formatDateTime(s.ended_at) : <Badge>نشطة</Badge>}</td>
                     </tr>
                   ))}
                 </tbody>
