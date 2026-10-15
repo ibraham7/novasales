@@ -66,33 +66,39 @@ async function loadRows(filters: z.infer<typeof listSchema>) {
     if (filters.status) q = q.eq("status", filters.status);
     return q;
   });
-  const ids = [...new Set<string>(leads.map((l) => l.contact_id))],
-    contacts: any[] = [],
-    points: any[] = [];
-  for (let i = 0; i < ids.length; i += 100) {
-    const batch = ids.slice(i, i + 100);
-    const results = await Promise.all([
-      readLeadRows(() =>
-        db
-          .from("crm_contacts")
-          .select("id,display_name,full_name")
-          .eq("organization_id", access.organizationId)
-          .in("id", batch)
-          .order("id"),
+  const ids = [...new Set<string>(leads.map((l) => l.contact_id))];
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 100) batches.push(ids.slice(i, i + 100));
+  const { loadFieldDefs, filterVisibleFields } = await import("./custom-fields.server");
+  // Every batch and the field definitions are independent: one parallel round.
+  const [batchResults, fieldDefs] = await Promise.all([
+    Promise.all(
+      batches.map((batch) =>
+        Promise.all([
+          readLeadRows(() =>
+            db
+              .from("crm_contacts")
+              .select("id,display_name,full_name")
+              .eq("organization_id", access.organizationId)
+              .in("id", batch)
+              .order("id"),
+          ),
+          readLeadRows(() =>
+            db
+              .from("crm_contact_points")
+              .select("id,contact_id,identifier,channel_type,is_primary")
+              .eq("organization_id", access.organizationId)
+              .in("contact_id", batch)
+              .order("is_primary", { ascending: false })
+              .order("id"),
+          ),
+        ]),
       ),
-      readLeadRows(() =>
-        db
-          .from("crm_contact_points")
-          .select("id,contact_id,identifier,channel_type,is_primary")
-          .eq("organization_id", access.organizationId)
-          .in("contact_id", batch)
-          .order("is_primary", { ascending: false })
-          .order("id"),
-      ),
-    ]);
-    contacts.push(...results[0]);
-    points.push(...results[1]);
-  }
+    ),
+    loadFieldDefs(access.organizationId, "lead"),
+  ]);
+  const contacts = batchResults.flatMap((results) => results[0]);
+  const points = batchResults.flatMap((results) => results[1]);
   const map = new Map(contacts.map((c) => [c.id, c]));
   const byContact = new Map<string, any[]>();
   for (const p of points) {
@@ -100,11 +106,7 @@ async function loadRows(filters: z.infer<typeof listSchema>) {
     list.push(p);
     byContact.set(p.contact_id, list);
   }
-  const { loadFieldDefs, filterVisibleFields } = await import("./custom-fields.server");
-  const defs = filterVisibleFields(
-    await loadFieldDefs(access.organizationId, "lead"),
-    role(access),
-  );
+  const defs = filterVisibleFields(fieldDefs, role(access));
   const keys = new Set(defs.map((d) => d.key));
   return leads
     .map((l) => {
@@ -141,37 +143,42 @@ export const getLeadOptions = createServerFn({ method: "GET" }).handler(async ()
   const { access, db } = await context("crm.leads.view");
   const { getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
   const scope = getOpportunityVisibility(access);
-  const departments = await readLeadRows(() => {
-    let q = db
-      .from("org_departments")
-      .select("id,name")
-      .eq("organization_id", access.organizationId)
-      .order("id");
-    if (scope !== "all")
-      q = q.in(
-        "id",
-        access.departmentIds.length
-          ? access.departmentIds
-          : ["00000000-0000-0000-0000-000000000000"],
-      );
-    return q;
-  });
-  const memberships = await readLeadRows(() =>
-    db
-      .from("org_memberships")
-      .select("id,user_id")
-      .eq("organization_id", access.organizationId)
-      .eq("is_active", true)
-      .order("id"),
-  );
-  const departmentMembers = await readLeadRows(() =>
-    db
-      .from("org_department_members")
-      .select("id,user_id,department_id")
-      .eq("organization_id", access.organizationId)
-      .eq("is_active", true)
-      .order("id"),
-  );
+  const { loadFieldDefs, filterVisibleFields } = await import("./custom-fields.server");
+  // Departments, members, department members and field definitions are independent reads.
+  const [departments, memberships, departmentMembers, fieldDefs] = await Promise.all([
+    readLeadRows(() => {
+      let q = db
+        .from("org_departments")
+        .select("id,name")
+        .eq("organization_id", access.organizationId)
+        .order("id");
+      if (scope !== "all")
+        q = q.in(
+          "id",
+          access.departmentIds.length
+            ? access.departmentIds
+            : ["00000000-0000-0000-0000-000000000000"],
+        );
+      return q;
+    }),
+    readLeadRows(() =>
+      db
+        .from("org_memberships")
+        .select("id,user_id")
+        .eq("organization_id", access.organizationId)
+        .eq("is_active", true)
+        .order("id"),
+    ),
+    readLeadRows(() =>
+      db
+        .from("org_department_members")
+        .select("id,user_id,department_id")
+        .eq("organization_id", access.organizationId)
+        .eq("is_active", true)
+        .order("id"),
+    ),
+    loadFieldDefs(access.organizationId, "lead"),
+  ]);
   const allowedIds = memberships
     .map((m) => m.user_id)
     .filter(
@@ -183,28 +190,25 @@ export const getLeadOptions = createServerFn({ method: "GET" }).handler(async ()
             (m) => m.user_id === id && access.departmentIds.includes(m.department_id),
           )),
     );
-  const users: any[] = [];
-  for (let i = 0; i < allowedIds.length; i += 100)
-    users.push(
-      ...(await readLeadRows(() =>
-        db
-          .from("profiles")
-          .select("id,full_name")
-          .in("id", allowedIds.slice(i, i + 100))
-          .order("id"),
-      )),
-    );
-  const { loadFieldDefs, filterVisibleFields } = await import("./custom-fields.server");
+  const userBatches: string[][] = [];
+  for (let i = 0; i < allowedIds.length; i += 100) userBatches.push(allowedIds.slice(i, i + 100));
+  const users: any[] = (
+    await Promise.all(
+      userBatches.map((batch) =>
+        readLeadRows(() => db.from("profiles").select("id,full_name").in("id", batch).order("id")),
+      ),
+    )
+  ).flat();
   return {
     departments,
     users,
     departmentMembers: departmentMembers.filter(
       (m) => allowedIds.includes(m.user_id) && departments.some((d) => d.id === m.department_id),
     ),
-    fields: filterVisibleFields(
-      await loadFieldDefs(access.organizationId, "lead"),
-      role(access),
-    ).map((def) => ({ ...def, default_value: def.default_value as any })),
+    fields: filterVisibleFields(fieldDefs, role(access)).map((def) => ({
+      ...def,
+      default_value: def.default_value as any,
+    })),
     permissions: access.permissions,
     isSuperAdmin: access.isSuperAdmin,
     userId: access.userId,

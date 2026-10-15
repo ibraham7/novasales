@@ -28,12 +28,17 @@ function setup(scope = 'all', failTable) {
   };
   const db = { from(table) {
     let rows = [...(tables[table] ?? [])];
-    const q = { select() { return q; }, order() { return q; },
+    let embedAccount = false;
+    const q = { select(columns = '') { embedAccount = columns.includes('msg_channel_accounts('); return q; }, order() { return q; },
       eq(k, v) { rows = rows.filter(r => r[k] === v); return q; },
       is(k, v) { rows = rows.filter(r => r[k] === v); return q; },
       in(k, v) { rows = rows.filter(r => v.includes(r[k])); return q; },
       range(a, b) { rows = rows.slice(a, b + 1); return q; },
-      then(resolve, reject) { return Promise.resolve(table === failTable ? { error: { message: 'database unavailable' } } : { data: rows }).then(resolve, reject); },
+      then(resolve, reject) {
+        // PostgREST embeds the related account by the channel_account_id foreign key.
+        const data = embedAccount ? rows.map(r => ({ ...r, msg_channel_accounts: tables.msg_channel_accounts.find(a => a.id === r.channel_account_id) ?? null })) : rows;
+        return Promise.resolve(table === failTable ? { error: { message: 'database unavailable' } } : { data }).then(resolve, reject);
+      },
     }; return q;
   } };
   const createServerFn = () => { let validate = d => d; const builder = { inputValidator(v) { validate = v; return builder; }, handler(fn) { return args => fn({ data: validate(args?.data ?? {}) }); } }; return builder; };
@@ -52,6 +57,7 @@ test('board includes unlinked leads, excludes foreign and deleted opportunities,
   assert.equal(rows[0].contact_name, 'Customer');
   assert.equal(rows[0].unread_count, 2);
   assert.equal(rows[0].last_message, 'Hello');
+  assert.equal(rows[0].account_label, 'WhatsApp');
   assert.equal(rows[1].contact_name, 'Other');
 });
 test('own scope cannot be widened by requested owner', async () => {
