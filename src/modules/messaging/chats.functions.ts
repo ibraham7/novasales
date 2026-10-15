@@ -254,9 +254,10 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       requireAnyPermission(
         data.isInternal ? ["internal_comms.write", "messaging.send"] : ["messaging.send"],
       ),
+      // The linked opportunity comes embedded so the permission check needs no extra round trip.
       db
         .from("crm_opportunity_sessions")
-        .select("opportunity_id")
+        .select("opportunity_id, opp_opportunities(owner_agent_id, department_id, organization_id)")
         .eq("organization_id", organizationId)
         .eq("session_ref", data.chatId)
         .maybeSingle(),
@@ -273,31 +274,18 @@ export const sendMessageFn = createServerFn({ method: "POST" })
     const sess = sessionRes?.data;
 
     if (chatLink?.opportunity_id) {
-      const { data: opp } = await db
-        .from("opp_opportunities")
-        .select("owner_agent_id, department_id")
-        .eq("id", chatLink.opportunity_id)
-        .eq("organization_id", organizationId)
-        .maybeSingle();
-      if (!opp || !canAccessOpportunityRow(access, opp))
+      const embedded = chatLink.opp_opportunities;
+      const opp = Array.isArray(embedded) ? embedded[0] : embedded;
+      if (!opp || opp.organization_id !== organizationId || !canAccessOpportunityRow(access, opp))
         throw new Error("لا تملك صلاحية إرسال رسالة في هذه المحادثة");
     } else if (getOpportunityVisibility(access) !== "all") {
       throw new Error("لا تملك صلاحية إرسال رسالة في هذه المحادثة");
     }
 
     // Resolve reply target (if any) for both internal and outbound.
-    let replySnapshot: any = null;
-    let quotedRef: any = null;
-    if (data.replyToMessageId) {
-      const q = await buildQuotedFromMessageId(
-        db,
-        organizationId,
-        data.replyToMessageId,
-        sess?.peer_identifier ?? "",
-      );
-      replySnapshot = q.snapshot;
-      quotedRef = q.quoted;
-    }
+    const quotePromise = data.replyToMessageId
+      ? buildQuotedFromMessageId(db, organizationId, data.replyToMessageId, sess?.peer_identifier ?? "")
+      : Promise.resolve({ quoted: null as any, snapshot: null as any });
 
     // Internal (team-only) notes: never call Evolution, never touch preview.
     if (data.isInternal) {
@@ -313,7 +301,7 @@ export const sendMessageFn = createServerFn({ method: "POST" })
           is_internal: true,
           sent_by_user_id: userId,
           reply_to_message_id: data.replyToMessageId ?? null,
-          reply_to_snapshot: replySnapshot,
+          reply_to_snapshot: (await quotePromise).snapshot,
         })
         .select()
         .single();
@@ -334,27 +322,35 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       : sess.msg_channel_accounts;
     if (!acc) throw new Error("جلسة الواتساب غير مرتبطة");
 
-    const ops = await import("@/modules/channels/whatsapp/channel-ops.server");
-    const { resolveAccountProvider } = await import("@/modules/channels/whatsapp/registry.server");
-    const providerRef = await resolveAccountProvider(sess.channel_account_id);
+    const [ops, { resolveAccountProvider }, risk] = await Promise.all([
+      import("@/modules/channels/whatsapp/channel-ops.server"),
+      import("@/modules/channels/whatsapp/registry.server"),
+      import("@/modules/risk/risk.server"),
+    ]);
+    // Independent reads before sending; the risk guard runs only once permission is confirmed above.
+    const [providerRef, guard, quote] = await Promise.all([
+      resolveAccountProvider(sess.channel_account_id),
+      // Risk layer: protect the number from behaviour that gets it restricted.
+      risk.riskGuard({
+        orgId: organizationId,
+        accountId: sess.channel_account_id,
+        source: "manual",
+        peer: sess.peer_identifier,
+      }),
+      quotePromise,
+    ]);
     if (!providerRef.provider.isConfigured())
       throw new Error(`محرّك ${providerRef.provider.label} غير مُهيأ.`);
-
-    // Risk layer: protect the number from behaviour that gets it restricted.
-    const risk = await import("@/modules/risk/risk.server");
-    const guard = await risk.riskGuard({
-      orgId: organizationId,
-      accountId: sess.channel_account_id,
-      source: "manual",
-      peer: sess.peer_identifier,
-    });
     if (!guard.allowed)
       throw new Error(guard.message ?? "تم إيقاف الإرسال من هذا الرقم مؤقتاً لحمايته.");
+    const replySnapshot = quote.snapshot;
+    const quotedRef = quote.quoted;
 
     const number = String(sess.peer_identifier).split("@")[0];
     let externalId: string | null = null;
     let status = "sent";
     let sendError: string | null = null;
+    let outboundRecorded: Promise<unknown> = Promise.resolve();
     const providerStarted = performance.now();
     try {
       const res = (await ops.opSendText(
@@ -366,7 +362,10 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       externalId = ops.sentExternalId(res);
       // Numbers only: how long the WhatsApp server took to accept the message.
       console.log(`[SEND_TIMING] whatsapp=${Math.round(performance.now() - providerStarted)}ms`);
-      await risk.recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id });
+      // Counting must never turn a message WhatsApp already accepted into a failure.
+      outboundRecorded = risk
+        .recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id })
+        .catch((e) => console.error("[sendMessageFn] recordOutbound failed", e));
     } catch (e) {
       status = "failed";
       sendError = e instanceof Error ? e.message : "فشل الإرسال";
@@ -378,7 +377,8 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       });
     }
 
-    const { data: msg } = await db
+    // The message row, chat preview, risk counters and stage step are independent writes.
+    const messageInsert = db
       .from("msg_messages")
       .insert({
         organization_id: organizationId,
@@ -442,7 +442,7 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       }
     })().catch((e) => console.error("[sendMessageFn] stage advance failed", e));
 
-    await Promise.all([previewUpdate, stageAdvance]);
+    const [{ data: msg }] = await Promise.all([messageInsert, previewUpdate, stageAdvance, outboundRecorded]);
 
     if (sendError) throw new Error(sendError);
     return {

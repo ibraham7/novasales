@@ -38,10 +38,15 @@ export async function handleProviderWebhook(providerId: string, payload: unknown
     externalRef: accountRef,
     providerId,
   };
-  await db
+  // Bookkeeping only; it must not hold up storing the message.
+  const stamped = db
     .from("msg_channel_accounts")
     .update({ last_webhook_at: new Date().toISOString() })
-    .eq("id", ctx.accountId);
+    .eq("id", ctx.accountId)
+    .then(
+      () => undefined,
+      () => undefined,
+    );
 
   for (const event of events) {
     try {
@@ -50,6 +55,7 @@ export async function handleProviderWebhook(providerId: string, payload: unknown
       console.error("[WA_WEBHOOK] handler error", event.kind, e);
     }
   }
+  await stamped;
 }
 
 async function handleOne(db: Db, ctx: AccountCtx, event: NormalizedEvent) {
@@ -170,49 +176,55 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
   const { orgId, accountId } = ctx;
   const { fromMe, externalId, peer, identifier: phone, pushName, profilePicUrl: payloadPic } = msg;
 
-  // 1) العميل + نقطة التواصل
-  const { data: cp } = await db
-    .from("crm_contact_points")
-    .select("contact_id")
-    .eq("organization_id", orgId)
-    .eq("channel_type", "whatsapp")
-    .eq("identifier", phone)
-    .maybeSingle();
-  if (!cp?.contact_id) {
-    const safeName = !fromMe && pushName ? pushName : null;
-    const safeAvatar = !fromMe ? (payloadPic ?? null) : null;
-    const { data: c } = await db
-      .from("crm_contacts")
-      .insert({
-        organization_id: orgId,
-        display_name: safeName,
-        full_name: safeName,
-        avatar_url: safeAvatar,
-        lifecycle_stage: "lead",
-        last_activity_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-    if (c) {
-      await db.from("crm_contact_points").insert({
-        organization_id: orgId,
-        contact_id: c.id,
-        channel_type: "whatsapp",
-        identifier: phone,
-        is_primary: true,
-        verified: true,
-      });
-      if (!safeAvatar) {
-        const { opGetProfilePicture } = await import("./channel-ops.server");
-        const url = await opGetProfilePicture(accountId, phone);
-        if (url) await db.from("crm_contacts").update({ avatar_url: url }).eq("id", c.id);
+  // 1) العميل + نقطة التواصل — runs alongside the session and duplicate lookups below.
+  let fetchProfilePicture: (() => Promise<void>) | null = null;
+  const contactStep = (async () => {
+    const { data: cp } = await db
+      .from("crm_contact_points")
+      .select("contact_id")
+      .eq("organization_id", orgId)
+      .eq("channel_type", "whatsapp")
+      .eq("identifier", phone)
+      .maybeSingle();
+    if (!cp?.contact_id) {
+      const safeName = !fromMe && pushName ? pushName : null;
+      const safeAvatar = !fromMe ? (payloadPic ?? null) : null;
+      const { data: c } = await db
+        .from("crm_contacts")
+        .insert({
+          organization_id: orgId,
+          display_name: safeName,
+          full_name: safeName,
+          avatar_url: safeAvatar,
+          lifecycle_stage: "lead",
+          last_activity_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (c) {
+        await db.from("crm_contact_points").insert({
+          organization_id: orgId,
+          contact_id: c.id,
+          channel_type: "whatsapp",
+          identifier: phone,
+          is_primary: true,
+          verified: true,
+        });
+        if (!safeAvatar) {
+          // A call to WhatsApp: done after the message is stored.
+          fetchProfilePicture = async () => {
+            const { opGetProfilePicture } = await import("./channel-ops.server");
+            const url = await opGetProfilePicture(accountId, phone);
+            if (url) await db.from("crm_contacts").update({ avatar_url: url }).eq("id", c.id);
+          };
+        }
       }
+    } else if (!fromMe) {
+      const patch: Record<string, unknown> = { last_activity_at: new Date().toISOString() };
+      if (payloadPic) patch.avatar_url = payloadPic;
+      await db.from("crm_contacts").update(patch).eq("id", cp.contact_id);
     }
-  } else if (!fromMe) {
-    const patch: Record<string, unknown> = { last_activity_at: new Date().toISOString() };
-    if (payloadPic) patch.avatar_url = payloadPic;
-    await db.from("crm_contacts").update(patch).eq("id", cp.contact_id);
-  }
+  })();
 
   // 2) الجلسة
   const previewText =
@@ -227,44 +239,64 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
             ? `📎 ${msg.mediaFileName ?? "ملف"}`
             : "");
 
-  const { data: existingSess } = await db
-    .from("msg_sessions")
-    .select("id, unread_count")
-    .eq("organization_id", orgId)
-    .eq("channel_account_id", accountId)
-    .eq("peer_identifier", peer)
-    .maybeSingle();
-
-  let sessionId: string;
-  if (existingSess?.id) {
-    sessionId = existingSess.id;
-    const patch: Record<string, unknown> = {
-      last_message_preview: previewText.slice(0, 500),
-      last_message_at: new Date().toISOString(),
-    };
-    if (!fromMe && pushName) patch.push_name = pushName;
-    if (!fromMe && payloadPic) patch.profile_pic_url = payloadPic;
-    if (!fromMe) patch.unread_count = (existingSess.unread_count ?? 0) + 1;
-    await db.from("msg_sessions").update(patch).eq("id", sessionId);
-  } else {
-    const { data: s, error: sErr } = await db
+  const sessionStep = (async (): Promise<string | null> => {
+    const { data: existingSess } = await db
       .from("msg_sessions")
-      .insert({
-        organization_id: orgId,
-        channel_account_id: accountId,
-        external_thread_id: peer,
-        peer_identifier: peer,
-        push_name: !fromMe && pushName ? pushName : null,
-        profile_pic_url: !fromMe ? (payloadPic ?? null) : null,
+      .select("id, unread_count")
+      .eq("organization_id", orgId)
+      .eq("channel_account_id", accountId)
+      .eq("peer_identifier", peer)
+      .maybeSingle();
+
+    let sessionId: string;
+    if (existingSess?.id) {
+      sessionId = existingSess.id;
+      const patch: Record<string, unknown> = {
         last_message_preview: previewText.slice(0, 500),
         last_message_at: new Date().toISOString(),
-        unread_count: fromMe ? 0 : 1,
-      })
-      .select()
-      .single();
-    if (sErr) console.error("[WA_WEBHOOK] session insert err", sErr);
-    if (!s) return;
-    sessionId = s.id;
+      };
+      if (!fromMe && pushName) patch.push_name = pushName;
+      if (!fromMe && payloadPic) patch.profile_pic_url = payloadPic;
+      if (!fromMe) patch.unread_count = (existingSess.unread_count ?? 0) + 1;
+      await db.from("msg_sessions").update(patch).eq("id", sessionId);
+    } else {
+      const { data: s, error: sErr } = await db
+        .from("msg_sessions")
+        .insert({
+          organization_id: orgId,
+          channel_account_id: accountId,
+          external_thread_id: peer,
+          peer_identifier: peer,
+          push_name: !fromMe && pushName ? pushName : null,
+          profile_pic_url: !fromMe ? (payloadPic ?? null) : null,
+          last_message_preview: previewText.slice(0, 500),
+          last_message_at: new Date().toISOString(),
+          unread_count: fromMe ? 0 : 1,
+        })
+        .select()
+        .single();
+      if (sErr) console.error("[WA_WEBHOOK] session insert err", sErr);
+      if (!s) return null;
+      sessionId = s.id;
+    }
+    return sessionId;
+  })();
+
+  // Echo of one of our own outgoing messages?
+  const duplicateStep = externalId
+    ? db.from("msg_messages").select("id").eq("external_id", externalId).limit(1)
+    : Promise.resolve({ data: null });
+
+  const [, resolvedSessionId, { data: dupe }] = await Promise.all([
+    contactStep,
+    sessionStep,
+    duplicateStep,
+  ]);
+  if (!resolvedSessionId) return;
+  const sessionId = resolvedSessionId;
+  if (dupe && dupe.length > 0) {
+    if (fetchProfilePicture) await (fetchProfilePicture as () => Promise<void>)().catch(() => {});
+    return;
   }
 
   // 3) الوسائط → تنزيل من المزوّد ورفع للتخزين
@@ -304,15 +336,7 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
     }
   }
 
-  // 4) الرسالة (مع منع التكرار: صدى رسائلنا الصادرة)
-  if (externalId) {
-    const { data: dupe } = await db
-      .from("msg_messages")
-      .select("id")
-      .eq("external_id", externalId)
-      .limit(1);
-    if (dupe && dupe.length > 0) return;
-  }
+  // 4) الرسالة (التكرار — صدى رسائلنا الصادرة — تم فحصه أعلاه)
   const { error: msgErr } = await db.from("msg_messages").insert({
     organization_id: orgId,
     session_id: sessionId,
@@ -351,6 +375,12 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
   });
 
   await ensureOpportunity(db, ctx, { phone, sessionId, fromMe });
+
+  if (fetchProfilePicture) {
+    await (fetchProfilePicture as () => Promise<void>)().catch((e) =>
+      console.warn("[WA_WEBHOOK] profile picture fetch failed", e),
+    );
+  }
 }
 
 /**

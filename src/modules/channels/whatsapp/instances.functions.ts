@@ -366,6 +366,8 @@ export const moveSessionProviderFn = createServerFn({ method: "POST" })
       })
       .eq("id", acc.id)
       .eq("organization_id", organizationId);
+    const { forgetAccountProvider } = await import("./registry.server");
+    forgetAccountProvider(acc.id);
     if (error) {
       // Rollback: لا نترك جلسة يتيمة على المحرّك الجديد.
       await target.deleteInstance(created.externalRef).catch(() => {});
