@@ -269,7 +269,7 @@ export const sendProductToChatFn = createServerFn({
               );
 
             externalId =
-              response?.key?.id ?? null;
+              ops.sentExternalId(response);
 
             mediaSent = true;
           } catch {
@@ -310,7 +310,7 @@ export const sendProductToChatFn = createServerFn({
               );
 
             externalId =
-              response?.key?.id ?? null;
+              ops.sentExternalId(response);
 
             mediaSent = true;
           }
@@ -323,7 +323,7 @@ export const sendProductToChatFn = createServerFn({
             );
 
           externalId =
-            response?.key?.id ?? null;
+            ops.sentExternalId(response);
 
           usedTextFallback = true;
         }
@@ -336,7 +336,7 @@ export const sendProductToChatFn = createServerFn({
           );
 
         externalId =
-          response?.key?.id ?? null;
+          ops.sentExternalId(response);
       }
 
       await risk.recordOutbound({

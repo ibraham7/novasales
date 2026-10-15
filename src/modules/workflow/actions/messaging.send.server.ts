@@ -1,6 +1,6 @@
 import { registerAction, type ActionHandler } from "./registry.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { opSendText } from "@/modules/channels/whatsapp/channel-ops.server";
+import { opSendText, sentExternalId } from "@/modules/channels/whatsapp/channel-ops.server";
 import { resolveAccountProvider } from "@/modules/channels/whatsapp/registry.server";
 
 const db = supabaseAdmin as any;
@@ -95,7 +95,7 @@ const messagingSend: ActionHandler = async (config, ctx) => {
     if (ref.provider.isConfigured()) {
       const r: any = await opSendText(accountId, phone, body);
       sent = true;
-      externalId = r?.key?.id ?? null;
+      externalId = sentExternalId(r);
       await risk.recordOutbound({
         orgId: ctx.organizationId,
         accountId,

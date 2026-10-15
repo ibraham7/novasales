@@ -362,7 +362,7 @@ export const sendMessageFn = createServerFn({ method: "POST" })
         data.text,
         quotedRef ?? undefined,
       )) as Record<string, unknown>;
-      externalId = ((res?.key as { id?: string } | undefined)?.id ?? null) as string | null;
+      externalId = ops.sentExternalId(res);
       await risk.recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id });
     } catch (e) {
       status = "failed";
@@ -994,7 +994,7 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
           audioArg,
           quotedRef ?? undefined,
         );
-        return res?.key?.id ?? null;
+        return ops.sentExternalId(res);
       }
       const mediaArg = useBase64 ? data.base64 : mediaUrlForEvo;
       if (!mediaArg) throw new Error("تعذّر تحضير الملف للإرسال");
@@ -1006,7 +1006,7 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
         caption: data.caption,
         quoted: quotedRef ?? undefined,
       });
-      return res?.key?.id ?? null;
+      return ops.sentExternalId(res);
     }
 
     const risk = await import("@/modules/risk/risk.server");
@@ -1529,13 +1529,13 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
             string,
             unknown
           >;
-          externalId = ((res?.key as { id?: string } | undefined)?.id ?? null) as string | null;
+          externalId = ops.sentExternalId(res);
         } else if (kind === "audio") {
           const res = (await ops.opSendAudioNote(accountId, number, mediaUrl)) as Record<
             string,
             unknown
           >;
-          externalId = ((res?.key as { id?: string } | undefined)?.id ?? null) as string | null;
+          externalId = ops.sentExternalId(res);
         } else {
           const res = (await ops.opSendMedia(accountId, number, {
             mediatype: kind === "image" ? "image" : kind === "video" ? "video" : "document",
@@ -1544,7 +1544,7 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
             fileName: (msg.media_meta as any)?.file_name,
             caption: msg.content ?? undefined,
           })) as Record<string, unknown>;
-          externalId = ((res?.key as { id?: string } | undefined)?.id ?? null) as string | null;
+          externalId = ops.sentExternalId(res);
         }
 
         await risk.recordOutbound({ orgId: organizationId, accountId });
