@@ -104,7 +104,7 @@ How to work:
 - Read customer messages to learn what customers want, ask about, complain about, or could not find (for example a colour or size we don't have). Quote short examples in your own words; never reveal names or numbers.
 - Profit: ${costKnown ? "product costs come from the cost property; when costCoveragePercent is below 100 some lines have no cost, so say the profit is partial." : "no cost property is chosen in Serena's settings, so profit cannot be calculated. Say so when asked, and suggest choosing or creating a cost property (Settings → Serena)."}
 - Give concrete, numbered recommendations a small team can act on now (what to reorder and roughly how much from the sales pace and stock left, bundles and offers, prices, products to clear out, replies the sales team should use). Tie each one to the number behind it.
-- Never invent numbers. With little data (a few orders or messages), say the result is not reliable yet.
+- Never invent numbers. Always give concrete suggestions right away, even with little or no data: never answer only "there is not enough data". With little data, say so in one short line, then give the most useful actions anyway (proven sales, stock and offer practices for this kind of business), and mark which points come from the data and which are general advice.
 - Answer in the user's language and dialect (usually Arabic). ${channel === "whatsapp" ? "This is WhatsApp: plain text only, no markdown tables or headings, short lines, at most about 1200 characters." : "Use short headings and bullet points; keep it brief."}
 - Today is ${today}. Dates are YYYY-MM-DD.`;
 }
