@@ -53,6 +53,16 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
     anyOf: ["org.manage"],
   },
   {
+    prefix: "/settings/serena",
+    label: "إعدادات سيرينا",
+    anyOf: ["org.manage"],
+  },
+  {
+    prefix: "/serena",
+    label: "سيرينا",
+    anyOf: ["reports.view", "org.manage"],
+  },
+  {
     prefix: "/settings/integrations",
     label: "التكاملات",
     anyOf: ["api_keys.manage", "plugins.manage"],

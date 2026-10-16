@@ -26,6 +26,7 @@ import { Route as AuthenticatedPerformanceRouteImport } from './routes/_authenti
 import { Route as AuthenticatedPipelineRouteImport } from './routes/_authenticated/pipeline'
 import { Route as AuthenticatedProductsRouteImport } from './routes/_authenticated/products'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedSerenaRouteImport } from './routes/_authenticated/serena'
 import { Route as AuthenticatedSalesRouteImport } from './routes/_authenticated/sales'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTeamsRouteImport } from './routes/_authenticated/teams'
@@ -56,6 +57,7 @@ import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/
 import { Route as AuthenticatedSettingsInvitationsRouteImport } from './routes/_authenticated/settings.invitations'
 import { Route as AuthenticatedSettingsMembersRouteImport } from './routes/_authenticated/settings.members'
 import { Route as AuthenticatedSettingsOrganizationRouteImport } from './routes/_authenticated/settings.organization'
+import { Route as AuthenticatedSettingsSerenaRouteImport } from './routes/_authenticated/settings.serena'
 import { Route as AuthenticatedSettingsPipelinesRouteImport } from './routes/_authenticated/settings.pipelines'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings.profile'
 import { Route as AuthenticatedSettingsRolesRouteImport } from './routes/_authenticated/settings.roles'
@@ -155,6 +157,11 @@ const AuthenticatedProductsRoute = AuthenticatedProductsRouteImport.update({
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSerenaRoute = AuthenticatedSerenaRouteImport.update({
+  id: '/serena',
+  path: '/serena',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSalesRoute = AuthenticatedSalesRouteImport.update({
@@ -327,6 +334,12 @@ const AuthenticatedSettingsOrganizationRoute =
     path: '/organization',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsSerenaRoute =
+  AuthenticatedSettingsSerenaRouteImport.update({
+    id: '/serena',
+    path: '/serena',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsPipelinesRoute =
   AuthenticatedSettingsPipelinesRouteImport.update({
     id: '/pipelines',
@@ -427,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/pipeline': typeof AuthenticatedPipelineRouteWithChildren
   '/products': typeof AuthenticatedProductsRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/serena': typeof AuthenticatedSerenaRoute
   '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/teams': typeof AuthenticatedTeamsRoute
@@ -454,6 +468,7 @@ export interface FileRoutesByFullPath {
   '/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
   '/settings/members': typeof AuthenticatedSettingsMembersRoute
   '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
+  '/settings/serena': typeof AuthenticatedSettingsSerenaRoute
   '/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/settings/roles': typeof AuthenticatedSettingsRolesRoute
@@ -488,6 +503,7 @@ export interface FileRoutesByTo {
   '/pipeline': typeof AuthenticatedPipelineRouteWithChildren
   '/products': typeof AuthenticatedProductsRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/serena': typeof AuthenticatedSerenaRoute
   '/sales': typeof AuthenticatedSalesRoute
   '/teams': typeof AuthenticatedTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -514,6 +530,7 @@ export interface FileRoutesByTo {
   '/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
   '/settings/members': typeof AuthenticatedSettingsMembersRoute
   '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
+  '/settings/serena': typeof AuthenticatedSettingsSerenaRoute
   '/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/settings/roles': typeof AuthenticatedSettingsRolesRoute
@@ -552,6 +569,7 @@ export interface FileRoutesById {
   '/_authenticated/pipeline': typeof AuthenticatedPipelineRouteWithChildren
   '/_authenticated/products': typeof AuthenticatedProductsRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
+  '/_authenticated/serena': typeof AuthenticatedSerenaRoute
   '/_authenticated/sales': typeof AuthenticatedSalesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/teams': typeof AuthenticatedTeamsRoute
@@ -579,6 +597,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
   '/_authenticated/settings/members': typeof AuthenticatedSettingsMembersRoute
   '/_authenticated/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
+  '/_authenticated/settings/serena': typeof AuthenticatedSettingsSerenaRoute
   '/_authenticated/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/settings/roles': typeof AuthenticatedSettingsRolesRoute
@@ -617,6 +636,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/products'
     | '/reports'
+    | '/serena'
     | '/sales'
     | '/settings'
     | '/teams'
@@ -644,6 +664,7 @@ export interface FileRouteTypes {
     | '/settings/invitations'
     | '/settings/members'
     | '/settings/organization'
+    | '/settings/serena'
     | '/settings/pipelines'
     | '/settings/profile'
     | '/settings/roles'
@@ -678,6 +699,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/products'
     | '/reports'
+    | '/serena'
     | '/sales'
     | '/teams'
     | '/invite/$token'
@@ -704,6 +726,7 @@ export interface FileRouteTypes {
     | '/settings/invitations'
     | '/settings/members'
     | '/settings/organization'
+    | '/settings/serena'
     | '/settings/pipelines'
     | '/settings/profile'
     | '/settings/roles'
@@ -741,6 +764,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pipeline'
     | '/_authenticated/products'
     | '/_authenticated/reports'
+    | '/_authenticated/serena'
     | '/_authenticated/sales'
     | '/_authenticated/settings'
     | '/_authenticated/teams'
@@ -768,6 +792,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/invitations'
     | '/_authenticated/settings/members'
     | '/_authenticated/settings/organization'
+    | '/_authenticated/settings/serena'
     | '/_authenticated/settings/pipelines'
     | '/_authenticated/settings/profile'
     | '/_authenticated/settings/roles'
@@ -924,6 +949,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/serena': {
+      id: '/_authenticated/serena'
+      path: '/serena'
+      fullPath: '/serena'
+      preLoaderRoute: typeof AuthenticatedSerenaRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sales': {
@@ -1134,6 +1166,13 @@ declare module '@tanstack/react-router' {
       path: '/organization'
       fullPath: '/settings/organization'
       preLoaderRoute: typeof AuthenticatedSettingsOrganizationRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/serena': {
+      id: '/_authenticated/settings/serena'
+      path: '/serena'
+      fullPath: '/settings/serena'
+      preLoaderRoute: typeof AuthenticatedSettingsSerenaRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/settings/pipelines': {
@@ -1356,6 +1395,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsInvitationsRoute: typeof AuthenticatedSettingsInvitationsRoute
   AuthenticatedSettingsMembersRoute: typeof AuthenticatedSettingsMembersRoute
   AuthenticatedSettingsOrganizationRoute: typeof AuthenticatedSettingsOrganizationRoute
+  AuthenticatedSettingsSerenaRoute: typeof AuthenticatedSettingsSerenaRoute
   AuthenticatedSettingsPipelinesRoute: typeof AuthenticatedSettingsPipelinesRoute
   AuthenticatedSettingsProfileRoute: typeof AuthenticatedSettingsProfileRoute
   AuthenticatedSettingsRolesRoute: typeof AuthenticatedSettingsRolesRoute
@@ -1373,6 +1413,8 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsMembersRoute: AuthenticatedSettingsMembersRoute,
   AuthenticatedSettingsOrganizationRoute:
     AuthenticatedSettingsOrganizationRoute,
+  AuthenticatedSettingsSerenaRoute:
+    AuthenticatedSettingsSerenaRoute,
   AuthenticatedSettingsPipelinesRoute: AuthenticatedSettingsPipelinesRoute,
   AuthenticatedSettingsProfileRoute: AuthenticatedSettingsProfileRoute,
   AuthenticatedSettingsRolesRoute: AuthenticatedSettingsRolesRoute,
@@ -1399,6 +1441,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPipelineRoute: typeof AuthenticatedPipelineRouteWithChildren
   AuthenticatedProductsRoute: typeof AuthenticatedProductsRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedSerenaRoute: typeof AuthenticatedSerenaRoute
   AuthenticatedSalesRoute: typeof AuthenticatedSalesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedTeamsRoute: typeof AuthenticatedTeamsRoute
@@ -1420,6 +1463,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPipelineRoute: AuthenticatedPipelineRouteWithChildren,
   AuthenticatedProductsRoute: AuthenticatedProductsRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
+  AuthenticatedSerenaRoute: AuthenticatedSerenaRoute,
   AuthenticatedSalesRoute: AuthenticatedSalesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedTeamsRoute: AuthenticatedTeamsRoute,

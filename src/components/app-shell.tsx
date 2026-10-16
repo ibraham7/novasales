@@ -21,6 +21,7 @@ import {
   Shield,
   ShoppingCart,
   Smartphone,
+  Sparkles,
   Trophy,
   UserRoundCheck,
   Users,
@@ -40,6 +41,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { NovaSalesLogo } from "@/components/novasales-logo";
+import { SerenaLauncher } from "@/components/serena/serena-launcher";
 
 import { cn } from "@/lib/utils";
 
@@ -52,6 +54,16 @@ const NAV = [
     to: "/dashboard",
     icon: LayoutDashboard,
     label: "لوحة التحكم",
+    anyOf: [
+      "reports.view",
+      "org.manage",
+    ],
+  },
+
+  {
+    to: "/serena",
+    icon: Sparkles,
+    label: "سيرينا",
     anyOf: [
       "reports.view",
       "org.manage",
@@ -484,6 +496,10 @@ export function AppShell({
       >
         {children}
       </main>
+
+      {accessReady && !isSuperAdmin && !location.pathname.startsWith("/serena") && hasAnyPermission(perms, ["reports.view", "org.manage"]) ? (
+        <SerenaLauncher />
+      ) : null}
     </div>
   );
 }

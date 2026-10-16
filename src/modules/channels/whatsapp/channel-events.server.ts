@@ -176,6 +176,16 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
   const { orgId, accountId } = ctx;
   const { fromMe, externalId, peer, identifier: phone, pushName, profilePicUrl: payloadPic } = msg;
 
+  // 0) سيرينا: رسالة من رقم مسموح له بمحادثة المساعدة الذكية لا تدخل كعميل في CRM
+  if (!fromMe && !peer.endsWith("@g.us")) {
+    try {
+      const { handleSerenaWhatsApp } = await import("@/modules/serena/serena-whatsapp.server");
+      if (await handleSerenaWhatsApp({ organizationId: orgId, accountId, phone, text: msg.text, externalId })) return;
+    } catch (e) {
+      console.error("[WA_WEBHOOK] serena error", e);
+    }
+  }
+
   // 1) العميل + نقطة التواصل — runs alongside the session and duplicate lookups below.
   let fetchProfilePicture: (() => Promise<void>) | null = null;
   const contactStep = (async () => {
