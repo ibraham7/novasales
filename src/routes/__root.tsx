@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { ConfirmHost } from "@/components/ui/confirm-dialog";
 import { ConnectionStatus } from "@/components/connection-status";
 import { setupQueryPersistence } from "@/lib/query-persist";
 
@@ -131,6 +132,7 @@ function RootComponent() {
       <Outlet />
       <ConnectionStatus />
       <Toaster position="top-center" richColors />
+      <ConfirmHost />
     </QueryClientProvider>
   );
 }
