@@ -3,7 +3,6 @@ import { Plus, Settings2, X } from "lucide-react";
 import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
 import {
   MAX_OPTION_GROUPS,
-  READY_PROPERTIES,
   activeGroups,
   combinations,
   comboKey,
@@ -32,8 +31,6 @@ const OTHER_TYPES: [Kind, string][] = [
 ];
 const isList = (kind: Kind) => kind === "select" || kind === "multiselect";
 
-/** Suggested to an organization that has no saved properties yet; nothing is saved until used. */
-const STARTER_PROPERTIES = READY_PROPERTIES.slice(0, 5);
 
 function displayValue(value: AttributeValue) {
   if (Array.isArray(value)) return value.join("، ");
@@ -234,12 +231,10 @@ function PropertyDialog({
   const nameSuggestions = definitions.filter((d) => !takenNames.includes(d.name.trim()) && (allowStock || d.scope === "product"));
 
   const editing = !!(initialGroup || initialSpec);
-  // Saved properties, or starter suggestions while none are saved, as one-tap buttons.
+  // The organization's saved properties as one-tap buttons.
   const ready = editing
     ? []
-    : definitions.length
-      ? nameSuggestions.map((d) => ({ name: d.name, values: isList(d.kind) ? d.options : [], stock: d.scope === "variant" }))
-      : STARTER_PROPERTIES.filter((p) => !takenNames.includes(p.name) && (allowStock || !p.stock));
+    : nameSuggestions.map((d) => ({ name: d.name, values: isList(d.kind) ? d.options : [], stock: d.scope === "variant" }));
   const pickReady = (item: { name: string; values: string[]; stock: boolean }) => {
     setName(item.name);
     setValues(item.values);
