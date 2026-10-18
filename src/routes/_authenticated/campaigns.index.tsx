@@ -88,6 +88,10 @@ function CampaignsPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  // Search ignores letter case and surrounding spaces.
+  const term = search.trim().toLocaleLowerCase();
+  const matches = (c: any) => String(c.name).toLocaleLowerCase().includes(term) && (!status || c.status === status);
+
   const busy = launchMut.isPending || ctlMut.isPending || delMut.isPending || processMut.isPending;
   return (
     <div className="p-3 sm:p-6 lg:p-8 space-y-6 min-w-0" dir="rtl">
@@ -149,12 +153,10 @@ function CampaignsPage() {
       )}
       {!q.isPending &&
         !q.isError &&
-        !(q.data?.campaigns ?? []).some(
-          (c: any) => c.name.includes(search) && (!status || c.status === status),
-        ) && <Card className="p-8 text-center">لا توجد حملات مطابقة. أنشئ حملة جديدة للبدء.</Card>}
+        !(q.data?.campaigns ?? []).some(matches) && <Card className="p-8 text-center">لا توجد حملات مطابقة. أنشئ حملة جديدة للبدء.</Card>}
       <div className="grid gap-3">
         {(q.data?.campaigns ?? [])
-          .filter((c: any) => c.name.includes(search) && (!status || c.status === status))
+          .filter(matches)
           .map((c: any) => {
             const s = c.stats ?? {};
             return (
