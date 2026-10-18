@@ -237,7 +237,7 @@ export function ProductStockDialog({
               placeholder="مثال: أسود / M أو ذاكرة 16GB"
             />
             <ProductAttributeFields
-              definitions={(attributes as Attribute[]).filter((a) => a.scope === "variant")}
+              definitions={(attributes as Attribute[]).filter((a) => a.scope === "variant" && !a.is_archived)}
               values={values}
               onChange={setValues}
               currency={product?.currency}

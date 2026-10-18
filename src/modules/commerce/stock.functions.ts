@@ -73,23 +73,97 @@ export const saveProductAttribute = createServerFn({ method: "POST" })
           "يمكن تعديل الاسم وإضافة خيارات؛ لتغيير النوع أو حذف خيارات أنشئ خاصية جديدة",
         );
     }
-    const row = {
+    const row: Record<string, unknown> = {
       name: data.name,
       kind: data.kind,
       options,
       scope: data.scope,
       is_price_floor: data.isPriceFloor,
     };
-    const q = data.id
+    let targetId = data.id;
+    if (!targetId) {
+      // A hidden property with the same name and type is shown again instead of clashing with it.
+      const { data: same } = await db
+        .from("sales_product_attributes")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("name", data.name)
+        .maybeSingle();
+      if (same?.is_archived && same.kind === data.kind && same.scope === data.scope) {
+        targetId = same.id;
+        row.options = [...new Set([...(same.options as string[]), ...options])];
+        row.is_price_floor = same.is_price_floor;
+      }
+    }
+    // Using a hidden property again shows it again.
+    if (targetId) row.is_archived = false;
+    const q = targetId
       ? db
           .from("sales_product_attributes")
           .update(row)
-          .eq("id", data.id)
+          .eq("id", targetId)
           .eq("organization_id", organizationId)
       : db.from("sales_product_attributes").insert({ ...row, organization_id: organizationId });
-    const { data: result, error } = await q.select("*").single();
+    let { data: result, error } = await q.select("*").single();
+    if (error?.code === "PGRST204" && "is_archived" in row) {
+      // The hide column is not in the database yet; save without it.
+      delete row.is_archived;
+      ({ data: result, error } = await db
+        .from("sales_product_attributes")
+        .update(row)
+        .eq("id", targetId)
+        .eq("organization_id", organizationId)
+        .select("*")
+        .single());
+    }
     if (error) throw new Error(error.code === "23505" ? "توجد خاصية بهذا الاسم؛ اخترها للتعديل أو استخدم اسمًا آخر" : "تعذر حفظ الخاصية؛ أعد المحاولة");
     return result;
+  });
+
+/** How many products hold a value for the property, on the product itself or on one of its stock rows. */
+async function attributeUsage(db: any, organizationId: string, id: string) {
+  const [products, variants] = await Promise.all([
+    db.from("sales_products").select("id").eq("organization_id", organizationId).not(`attributes->"${id}"`, "is", null).limit(5000),
+    db
+      .from("sales_product_variants")
+      .select("product_id")
+      .eq("organization_id", organizationId)
+      .not(`attributes->"${id}"`, "is", null)
+      .limit(5000),
+  ]);
+  if (products.error || variants.error) throw new Error("تعذر التحقق من استخدام الخاصية؛ أعد المحاولة");
+  return new Set([...products.data.map((r: any) => r.id), ...variants.data.map((r: any) => r.product_id)]).size;
+}
+
+/** Deletes a property no product uses; otherwise reports how many products use it so it can be hidden instead. */
+export const deleteProductAttribute = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db, organizationId } = await context("products.manage");
+    const usedBy = await attributeUsage(db, organizationId, data.id);
+    if (usedBy) return { deleted: false, usedBy };
+    const { error } = await db
+      .from("sales_product_attributes")
+      .delete()
+      .eq("id", data.id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error("تعذر حذف الخاصية؛ أعد المحاولة");
+    return { deleted: true, usedBy: 0 };
+  });
+
+/** Hides a property from the lists and quick picks, or shows it again. Products keep their values. */
+export const setProductAttributeHidden = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid(), hidden: z.boolean() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db, organizationId } = await context("products.manage");
+    const { error } = await db
+      .from("sales_product_attributes")
+      .update({ is_archived: data.hidden })
+      .eq("id", data.id)
+      .eq("organization_id", organizationId);
+    if (error)
+      throw new Error(error.code === "PGRST204" ? "ميزة الإخفاء تحتاج تحديث قاعدة البيانات أولًا" : "تعذر حفظ التغيير؛ أعد المحاولة");
+    return { ok: true };
   });
 
 export const createProductVariant = createServerFn({ method: "POST" })
