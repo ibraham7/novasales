@@ -76,3 +76,31 @@ test("multi-choice options store the chosen value as a list", () => {
   const variants = toInitialVariants({ groups: [{ key: "g", name: "اللون", values: ["أحمر"] }], stock: {} }, new Map([["g", "color"]]), [multi]);
   assert.deepEqual(variants[0].attributes, { color: ["أحمر"] });
 });
+
+import { specSaves, specValue, type SpecDraft } from "../src/modules/commerce/product-options.ts";
+const spec = (patch: Partial<SpecDraft>): SpecDraft => ({ key: "s", name: "", kind: "select", values: [], scalar: "", isPriceFloor: false, ...patch });
+
+test("a new list specification is a single or multiple choice depending on how many values it has", () => {
+  assert.deepEqual(specSaves([spec({ name: "بلد الصنع", values: ["تركيا"] })], [])[0], { groupKey: "s", name: "بلد الصنع", kind: "select", scope: "product", isPriceFloor: false, options: ["تركيا"] });
+  assert.equal(specSaves([spec({ name: "الخامة", values: ["قطن", "بوليستر"] })], [])[0].kind, "multiselect");
+  const cost = specSaves([spec({ name: "التكلفة", kind: "money", scalar: "12", isPriceFloor: true })], [])[0];
+  assert.deepEqual([cost.kind, cost.isPriceFloor, cost.options], ["money", true, []]);
+});
+
+test("existing specifications are reused with their type, and clashes are rejected", () => {
+  const saves = specSaves([spec({ name: "الخامة", values: ["كتان"] })], [material, { ...material, id: "m2", name: "الخامة2" }].map((d) => d.id === "material" ? { ...d, kind: "multiselect" as const, options: ["قطن"] } : d));
+  assert.deepEqual([saves[0].id, saves[0].options], ["material", ["قطن", "كتان"]]);
+  assert.throws(() => specSaves([spec({ name: "اللون", values: ["أحمر"] })], [color]), /خيار له كمية/);
+  assert.throws(() => specSaves([spec({ name: "س", values: ["1", "2"] })], [{ ...material, name: "س", kind: "select", options: [] }]), /قيمة واحدة/);
+  assert.throws(() => specSaves([spec({ name: "اللون", values: ["x"] })], [], ["اللون"]), /مكرر/);
+  assert.throws(() => specSaves([spec({ name: "الوزن", kind: "number" })], []), /أدخل قيمة/);
+});
+
+test("specification values take the shape of their property type", () => {
+  const def = (kind: AttributeDefinition["kind"]): AttributeDefinition => ({ ...material, kind });
+  assert.equal(specValue(spec({ values: ["قطن"] }), def("select")), "قطن");
+  assert.deepEqual(specValue(spec({ values: ["قطن", "كتان"] }), def("multiselect")), ["قطن", "كتان"]);
+  assert.equal(specValue(spec({ scalar: "2.5" }), def("number")), 2.5);
+  assert.equal(specValue(spec({ scalar: "true" }), def("boolean")), true);
+  assert.equal(specValue(spec({ scalar: " سنة " }), def("text")), "سنة");
+});

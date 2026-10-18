@@ -132,3 +132,66 @@ export function toInitialVariants(
   }
   return variants;
 }
+
+/**
+ * A product specification added from the product dialog (الخامة: قطن). List values are stored as a
+ * single or multiple choice property; other types (رقم، تاريخ، مبلغ…) carry one value in `scalar`.
+ */
+export type SpecDraft = {
+  key: string;
+  name: string;
+  kind: AttributeDefinition["kind"];
+  values: string[];
+  scalar: string;
+  isPriceFloor: boolean;
+};
+
+const isList = (kind: AttributeDefinition["kind"]) => kind === "select" || kind === "multiselect";
+
+/** Checks the specifications and lists the product properties to create, extend or reuse. */
+export function specSaves(specs: SpecDraft[], definitions: AttributeDefinition[], optionNames: string[] = []): AttributeSave[] {
+  const names = specs.map((s) => normalize(s.name));
+  if (names.some((n) => !n)) throw new Error("اكتب اسم الخاصية");
+  if (new Set(names).size !== names.length || names.some((n) => optionNames.includes(n)))
+    throw new Error("اسم الخاصية مكرر؛ استخدم كل اسم مرة واحدة");
+  return specs.map((spec) => {
+    const name = normalize(spec.name);
+    const values = [...new Set(spec.values.map(normalize).filter(Boolean))];
+    const existing = definitions.find((d) => normalize(d.name) === name);
+    const kind = existing?.kind ?? (isList(spec.kind) ? (values.length > 1 ? "multiselect" : "select") : spec.kind);
+    if (isList(kind) && !values.length) throw new Error(`أضف قيمة للخاصية «${name}»`);
+    if (!isList(kind) && kind !== "boolean" && !spec.scalar.trim()) throw new Error(`أدخل قيمة للخاصية «${name}»`);
+    if (!existing)
+      return {
+        groupKey: spec.key,
+        name,
+        kind,
+        scope: "product",
+        isPriceFloor: kind === "money" && spec.isPriceFloor,
+        options: isList(kind) ? values : [],
+      };
+    if (existing.scope !== "product")
+      throw new Error(`«${name}» خيار له كمية؛ فعّل «لكل قيمة كمية مستقلة» عند إضافته`);
+    if (existing.kind === "select" && values.length > 1)
+      throw new Error(`«${name}» تقبل قيمة واحدة فقط`);
+    return {
+      groupKey: spec.key,
+      id: existing.id,
+      name: existing.name,
+      kind: existing.kind,
+      scope: existing.scope,
+      isPriceFloor: existing.is_price_floor,
+      options: isList(existing.kind) ? [...new Set([...existing.options, ...values])] : existing.options,
+    };
+  });
+}
+
+/** The value stored on the product for a specification, in the shape its property type expects. */
+export function specValue(spec: SpecDraft, definition: AttributeDefinition): AttributeValue {
+  const values = [...new Set(spec.values.map(normalize).filter(Boolean))];
+  if (definition.kind === "multiselect") return values;
+  if (definition.kind === "select") return values[0];
+  if (definition.kind === "number" || definition.kind === "money") return Number(spec.scalar);
+  if (definition.kind === "boolean") return spec.scalar === "true";
+  return spec.scalar.trim();
+}
