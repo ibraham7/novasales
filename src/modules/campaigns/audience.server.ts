@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { allRows, checked } from "./access.server";
+import { looksLikeLid } from "./audience-file";
 const db = supabaseAdmin as any;
 export interface AudienceFilter {
   lifecycle_stage?: string;
@@ -13,10 +14,29 @@ export interface AudienceRecipient {
   phone: string;
   display_name: string | null;
 }
+/**
+ * WhatsApp sometimes identifies a person by an internal id (LID, «136391484780684@lid») instead of a
+ * phone number. Such ids cannot receive a campaign message, so they are left out. They are known from
+ * chats stored with «@lid», and a 14–15 digit number starting with 1 is never a real phone number.
+ */
+async function lidIdentifiers(org: string) {
+  const sessions = await allRows(() =>
+    db.from("msg_sessions").select("peer_identifier").eq("organization_id", org).ilike("peer_identifier", "%@lid").order("id"),
+  );
+  return new Set(sessions.map((s) => String(s.peer_identifier).split("@")[0]));
+}
+
 export async function resolveAudience(
   org: string,
   filter: AudienceFilter,
 ): Promise<AudienceRecipient[]> {
+  return (await resolveAudienceWithSkipped(org, filter)).recipients;
+}
+
+export async function resolveAudienceWithSkipped(
+  org: string,
+  filter: AudienceFilter,
+): Promise<{ recipients: AudienceRecipient[]; unknownNumbers: number }> {
   const query = (ids?: string[]) => () => {
     let q = db
       .from("crm_contacts")
@@ -61,6 +81,8 @@ export async function resolveAudience(
       .order("id"),
   );
   const byId = new Map(contacts.map((c) => [c.id, c]));
+  const lids = await lidIdentifiers(org);
+  const unknown = new Set<string>();
   const phones = new Set<string>(),
     seen = new Set<string>();
   const out: AudienceRecipient[] = [];
@@ -68,6 +90,10 @@ export async function resolveAudience(
     const phone = String(p.identifier ?? "")
       .split("@")[0]
       .replace(/\D/g, "");
+    if (allowed.has(p.contact_id) && !seen.has(p.contact_id) && (lids.has(phone) || looksLikeLid(phone))) {
+      unknown.add(p.contact_id);
+      continue;
+    }
     if (
       !allowed.has(p.contact_id) ||
       seen.has(p.contact_id) ||
@@ -84,11 +110,13 @@ export async function resolveAudience(
       display_name: c?.display_name ?? c?.full_name ?? null,
     });
   }
-  return out;
+  // A contact skipped for an unknown id but reachable on a real number is not counted as skipped.
+  for (const r of out) unknown.delete(r.contact_id);
+  return { recipients: out, unknownNumbers: unknown.size };
 }
 export async function previewAudience(org: string, filter: AudienceFilter) {
-  const rows = await resolveAudience(org, filter);
-  return { count: rows.length, sample: rows.slice(0, 10) };
+  const { recipients, unknownNumbers } = await resolveAudienceWithSkipped(org, filter);
+  return { count: recipients.length, sample: recipients.slice(0, 10), unknownNumbers };
 }
 export function estimateSendTime(count: number, perMinute: number) {
   const minutes = Math.ceil(count / Math.max(1, perMinute));
@@ -180,7 +208,11 @@ export async function searchAudienceContacts(org: string, search: string) {
       .in("contact_id", contacts.map((c) => c.id))
       .order("is_primary", { ascending: false }),
   );
+  const lids = await lidIdentifiers(org);
   return contacts
-    .map((c) => ({ id: c.id, name: c.display_name ?? c.full_name ?? null, phone: points.find((p) => p.contact_id === c.id)?.identifier?.split("@")[0] ?? null }))
+    .map((c) => {
+      const phone = points.find((p) => p.contact_id === c.id)?.identifier?.split("@")[0] ?? null;
+      return { id: c.id, name: c.display_name ?? c.full_name ?? null, phone, unknown: !!phone && (lids.has(phone) || looksLikeLid(phone)) };
+    })
     .filter((c) => c.phone);
 }

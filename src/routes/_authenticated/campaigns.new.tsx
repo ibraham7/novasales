@@ -224,6 +224,11 @@ function NewPage() {
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" /> الوقت المتوقع: <b>{previewMut.data.eta.label}</b>
                 </div>
+                {previewMut.data.unknownNumbers > 0 && (
+                  <div className="text-xs text-amber-600">
+                    {previewMut.data.unknownNumbers} جهة اتصال بدون رقم معروف (واتساب يخفي رقمها) لن تُرسل لها الحملة.
+                  </div>
+                )}
                 {previewMut.data.sample.length > 0 && (
                   <div className="text-xs text-muted-foreground pt-1">
                     أمثلة:{" "}

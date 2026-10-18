@@ -177,22 +177,36 @@ function ContactsAudience({ selected, onChange }: { selected: string[]; onChange
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
   const [names, setNames] = useState<Record<string, string>>({});
+  // The results close after a choice and open again when searching.
+  const [open, setOpen] = useState(selected.length === 0);
   useEffect(() => {
     const timer = setTimeout(() => setTerm(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
   const q = useQuery({ queryKey: ["campaign-contacts", term], queryFn: () => searchFn({ data: { search: term } }) });
   const results = q.data ?? [];
+  const reachable = results.filter((c) => !c.unknown);
   const toggle = (c: { id: string; name: string | null; phone: string | null }) => {
     setNames((old) => ({ ...old, [c.id]: c.name || c.phone || "" }));
-    onChange(selected.includes(c.id) ? selected.filter((id) => id !== c.id) : [...selected, c.id]);
+    const adding = !selected.includes(c.id);
+    onChange(adding ? [...selected, c.id] : selected.filter((id) => id !== c.id));
+    if (adding) setOpen(false);
   };
 
   return (
     <div className="space-y-2 rounded-lg border p-3">
       <div className="relative">
         <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input className="pr-8" placeholder="ابحث بالاسم أو الرقم" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input
+          className="pr-8"
+          placeholder="ابحث بالاسم أو الرقم"
+          value={search}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+        />
       </div>
       {selected.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -211,31 +225,51 @@ function ContactsAudience({ selected, onChange }: { selected: string[]; onChange
           {selected.length > 12 && <span className="text-xs text-muted-foreground">+{selected.length - 12}</span>}
         </div>
       )}
-      <div className="max-h-64 divide-y overflow-y-auto rounded-md border">
-        {q.isLoading && <p className="p-3 text-xs text-muted-foreground">جارٍ البحث...</p>}
-        {q.isError && <p className="p-3 text-xs text-destructive">تعذر تحميل جهات الاتصال</p>}
-        {!q.isLoading && !results.length && <p className="p-3 text-xs text-muted-foreground">لا توجد نتائج</p>}
-        {results.map((c) => (
-          <label key={c.id} className="flex cursor-pointer items-center gap-2 p-2 text-sm hover:bg-accent">
-            <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggle(c)} />
-            <span className="flex-1 truncate">{c.name || "بدون اسم"}</span>
-            <span className="text-xs text-muted-foreground" dir="ltr">
-              {c.phone}
-            </span>
-          </label>
-        ))}
-      </div>
-      {results.length > 0 && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setNames((old) => ({ ...old, ...Object.fromEntries(results.map((c) => [c.id, c.name || c.phone || ""])) }));
-            onChange([...new Set([...selected, ...results.map((c) => c.id)])]);
-          }}
-        >
-          تحديد كل النتائج ({results.length})
+      {open ? (
+        <>
+          <div className="max-h-64 divide-y overflow-y-auto rounded-md border">
+            {q.isLoading && <p className="p-3 text-xs text-muted-foreground">جارٍ البحث...</p>}
+            {q.isError && <p className="p-3 text-xs text-destructive">تعذر تحميل جهات الاتصال</p>}
+            {!q.isLoading && !results.length && <p className="p-3 text-xs text-muted-foreground">لا توجد نتائج</p>}
+            {results.map((c) => (
+              <label
+                key={c.id}
+                className={`flex items-center gap-2 p-2 text-sm ${c.unknown ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-accent"}`}
+                title={c.unknown ? "واتساب لا يعرض رقم هذا الشخص؛ لا يمكن إرسال حملة له" : undefined}
+              >
+                <input type="checkbox" disabled={c.unknown} checked={selected.includes(c.id)} onChange={() => toggle(c)} />
+                <span className="flex-1 truncate">{c.name || "بدون اسم"}</span>
+                <span className="text-xs text-muted-foreground" dir={c.unknown ? undefined : "ltr"}>
+                  {c.unknown ? "رقم غير معروف" : c.phone}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {reachable.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setNames((old) => ({ ...old, ...Object.fromEntries(reachable.map((c) => [c.id, c.name || c.phone || ""])) }));
+                  onChange([...new Set([...selected, ...reachable.map((c) => c.id)])]);
+                  setOpen(false);
+                }}
+              >
+                تحديد كل النتائج ({reachable.length})
+              </Button>
+            )}
+            {selected.length > 0 && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+                إخفاء القائمة
+              </Button>
+            )}
+          </div>
+        </>
+      ) : (
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+          إضافة جهات اتصال أخرى
         </Button>
       )}
     </div>

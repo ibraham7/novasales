@@ -54,7 +54,7 @@ export const previewCampaignAudience = createServerFn({ method: "POST" })
     const { previewAudience, estimateSendTime } = await import("./audience.server");
     const preview = await previewAudience(organizationId, data.audience_filter as any);
     const eta = estimateSendTime(preview.count, data.throttle_per_minute);
-    return { count: preview.count, sample: preview.sample, eta };
+    return { count: preview.count, sample: preview.sample, eta, unknownNumbers: preview.unknownNumbers };
   });
 
 /** Imports cleaned numbers from an Excel/CSV file as contacts and returns their ids for the campaign. */
