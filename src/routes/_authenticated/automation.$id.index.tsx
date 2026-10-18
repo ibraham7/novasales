@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { getWorkflow, saveWorkflow, listActionsCatalog } from "@/modules/workflow";
 
-export const Route = createFileRoute("/_authenticated/automation/$id")({
+export const Route = createFileRoute("/_authenticated/automation/$id/")({
   head: () => ({ meta: [{ title: "تعديل الأتمتة - NovaSales" }] }),
   component: EditPage,
 });

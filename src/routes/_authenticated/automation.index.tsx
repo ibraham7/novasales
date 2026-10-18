@@ -34,7 +34,7 @@ import {
   processWorkflowJobs,
 } from "@/modules/workflow";
 
-export const Route = createFileRoute("/_authenticated/automation")({
+export const Route = createFileRoute("/_authenticated/automation/")({
   head: () => ({
     meta: [
       { title: "الأتمتة - NovaSales" },

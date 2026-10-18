@@ -16,7 +16,7 @@ import {
   processCampaignJobs,
 } from "@/modules/campaigns";
 
-export const Route = createFileRoute("/_authenticated/campaigns")({
+export const Route = createFileRoute("/_authenticated/campaigns/")({
   head: () => ({
     meta: [
       { title: "الحملات - NovaSales" },
