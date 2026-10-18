@@ -1,13 +1,11 @@
-import { ProductOptionsBuilder } from "@/components/commerce/product-options-builder";
+import { ProductPropertiesSection } from "@/components/commerce/product-properties-section";
 import { initialStockPayload } from "@/modules/commerce/initial-stock";
-import { EMPTY_OPTIONS, attributeSaves, toInitialVariants, type OptionsDraft } from "@/modules/commerce/product-options";
-import { ProductPropertyManager } from "@/components/commerce/product-property-manager";
+import { EMPTY_OPTIONS, activeGroups, attributeSaves, specSaves, specValue, toInitialVariants, type OptionsDraft, type SpecDraft } from "@/modules/commerce/product-options";
 import { usePermission } from "@/platform/rbac/use-permission";
 import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
-import { ProductAttributeFields } from "@/components/commerce/product-attribute-fields";
 import { ProductFilters } from "@/components/commerce/product-filters";
 import { EMPTY_PRODUCT_FILTERS, filterProducts } from "@/modules/commerce/product-filters";
-import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
+import { validateAttributes, type AttributeDefinition, type AttributeValue } from "@/modules/commerce/product-attributes";
 import { ProductMediaEditor, ProductGallery } from "@/components/commerce/product-media";
 import { ProductStockSummary } from "@/components/commerce/product-stock-summary";
 import { listProductAttributes, saveProductAttribute } from "@/modules/commerce/stock.functions";
@@ -169,11 +167,10 @@ function ProductsPage() {
 
   const attributes = attributesQ.data ?? [];
   const [optionsDraft, setOptionsDraft] = useState<OptionsDraft>(EMPTY_OPTIONS);
+  const [specs, setSpecs] = useState<SpecDraft[]>([]);
   const saveAttribute = useServerFn(saveProductAttribute);
   const canInitialStock = usePermission("inventory.manage");
   const canManageProperties = usePermission("products.manage");
-  const [propertiesOpen,setPropertiesOpen] = useState(false);
-  const [specManagerOpen, setSpecManagerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(EMPTY_PRODUCT_FILTERS);
 
@@ -242,25 +239,31 @@ function ProductsPage() {
         throw new Error("السعر غير صالح");
       }
 
-      // New product: save its options (اللون، المقاس…) as properties first, then build the variants.
-      let initialVariants: ReturnType<typeof initialStockPayload> | undefined;
-      if (!form.id) {
-        const definitions = attributes as AttributeDefinition[];
-        const saves = attributeSaves(optionsDraft, definitions);
-        const ids = new Map<string, string>();
-        const saved: AttributeDefinition[] = [];
-        for (const { groupKey, ...save } of saves) {
-          const current = definitions.find((d) => d.id === save.id);
-          const unchanged = current && current.options.length === save.options.length;
-          const row = unchanged ? current : ((await saveAttribute({ data: save })) as AttributeDefinition);
-          ids.set(groupKey, row.id);
-          saved.push(row);
-        }
-        if (saves.length) void qc.invalidateQueries({ queryKey: ["product-attributes"] });
-        initialVariants = initialStockPayload(
-          toInitialVariants(optionsDraft, ids, [...definitions.filter((d) => !saved.some((s) => s.id === d.id)), ...saved]),
-        );
+      // Save the properties added in the dialog first: stock options (اللون، المقاس) become variants of a
+      // new product; specifications (الخامة: قطن) become values on the product.
+      const definitions = attributes as AttributeDefinition[];
+      const optionSaves = form.id ? [] : attributeSaves(optionsDraft, definitions);
+      const specPlan = specSaves(specs, definitions, activeGroups(optionsDraft.groups).map((g) => g.name));
+      const ids = new Map<string, string>();
+      const saved: AttributeDefinition[] = [];
+      for (const { groupKey, ...save } of [...optionSaves, ...specPlan]) {
+        const current = definitions.find((d) => d.id === save.id);
+        const unchanged = current && current.options.length === save.options.length;
+        const row = unchanged ? current : ((await saveAttribute({ data: save })) as AttributeDefinition);
+        ids.set(groupKey, row.id);
+        saved.push(row);
       }
+      if (saved.some((row) => !definitions.includes(row))) void qc.invalidateQueries({ queryKey: ["product-attributes"] });
+      const allDefinitions = [...definitions.filter((d) => !saved.some((s) => s.id === d.id)), ...saved];
+      const productAttributes = { ...form.attributes };
+      for (const spec of specs) {
+        const definition = allDefinitions.find((d) => d.id === ids.get(spec.key))!;
+        productAttributes[definition.id] = specValue(spec, definition);
+      }
+      validateAttributes(productAttributes, allDefinitions, "product");
+      const initialVariants = form.id
+        ? undefined
+        : initialStockPayload(toInitialVariants(optionsDraft, ids, allDefinitions));
 
       return saveProduct({
         data: {
@@ -273,7 +276,7 @@ function ProductsPage() {
           description: form.description.trim() || null,
 
           price,
-          attributes: form.attributes,
+          attributes: productAttributes,
           initialVariants,
 
           currency: form.currency.trim().toUpperCase() || "USD",
@@ -291,6 +294,7 @@ function ProductsPage() {
 
       setProductDialogOpen(false);
       setOptionsDraft(EMPTY_OPTIONS);
+      setSpecs([]);
 
       setForm(EMPTY_FORM);
 
@@ -311,6 +315,7 @@ function ProductsPage() {
 
   function openCreateProduct() {
     setOptionsDraft(EMPTY_OPTIONS);
+      setSpecs([]);
     setForm({ ...EMPTY_FORM, currency: platform.default_currency });
 
     setProductDialogOpen(true);
@@ -318,6 +323,7 @@ function ProductsPage() {
 
   function openEditProduct(product: ProductRow) {
     setOptionsDraft(EMPTY_OPTIONS);
+      setSpecs([]);
     setForm({
       id: product.id,
 
@@ -352,7 +358,6 @@ function ProductsPage() {
           </p>
         </div>
 
-        {canManageProperties && <div className="flex flex-col gap-2"><Button type="button" variant="outline" onClick={()=>setPropertiesOpen(true)}>الخيارات والمواصفات</Button><Dialog open={propertiesOpen} onOpenChange={setPropertiesOpen}><DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>الخيارات والمواصفات</DialogTitle></DialogHeader><ProductPropertyManager/></DialogContent></Dialog></div>}
         <Dialog
           open={productDialogOpen}
           onOpenChange={(open) => {
@@ -453,47 +458,19 @@ function ProductsPage() {
                   ))}
                 </select>
               </div>
-              {!form.id && (
-                <ProductOptionsBuilder
-                  draft={optionsDraft}
-                  onChange={setOptionsDraft}
-                  definitions={attributes as AttributeDefinition[]}
-                  currency={form.currency}
-                  canStock={canInitialStock}
-                  disabled={productMutation.isPending}
-                />
-              )}
-              <details className="group rounded-lg border" open={Object.keys(form.attributes).length > 0}>
-                <summary className="cursor-pointer list-none p-3 text-sm font-medium flex items-center justify-between">
-                  <span>
-                    مواصفات إضافية <span className="font-normal text-muted-foreground">— اختياري (مثل الخامة أو الضمان)</span>
-                  </span>
-                  <span className="text-xs text-muted-foreground group-open:hidden">عرض</span>
-                </summary>
-                <div className="space-y-3 border-t p-3">
-                  {attributesQ.isError && <div className="text-destructive text-sm">تعذر تحميل المواصفات <Button type="button" variant="outline" onClick={()=>attributesQ.refetch()}>إعادة المحاولة</Button></div>}
-                  {!(attributes as AttributeDefinition[]).some((a) => a.scope === "product") && !attributesQ.isPending && !attributesQ.isError && (
-                    <p className="text-sm text-muted-foreground">لا توجد مواصفات معرّفة بعد.</p>
-                  )}
-                  <ProductAttributeFields
-                    definitions={(attributes as AttributeDefinition[]).filter((a) => a.scope === "product")}
-                    values={form.attributes}
-                    onChange={(values) => setForm((old) => ({ ...old, attributes: values }))}
-                    currency={form.currency}
-                  />
-                  {canManageProperties && (
-                    <Button type="button" variant="link" size="sm" className="px-0 h-auto" onClick={() => setSpecManagerOpen(true)}>
-                      + تعريف مواصفة جديدة
-                    </Button>
-                  )}
-                  <Dialog open={specManagerOpen} onOpenChange={setSpecManagerOpen}>
-                    <DialogContent dir="rtl" className="sm:max-w-md max-h-[85vh] overflow-y-auto">
-                      <DialogHeader><DialogTitle>مواصفة جديدة</DialogTitle></DialogHeader>
-                      <ProductPropertyManager onSaved={() => setSpecManagerOpen(false)} />
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </details>
+              <ProductPropertiesSection
+                isNew={!form.id}
+                options={optionsDraft}
+                onOptionsChange={setOptionsDraft}
+                specs={specs}
+                onSpecsChange={setSpecs}
+                attributes={form.attributes}
+                onAttributesChange={(values) => setForm((old) => ({ ...old, attributes: values }))}
+                definitions={attributes as AttributeDefinition[]}
+                currency={form.currency}
+                canStock={canInitialStock}
+                disabled={productMutation.isPending}
+              />
               <ProductMediaEditor
                 media={{ images: form.images, videos: form.videos }}
                 onChange={(media) => setForm((old) => ({ ...old, ...media }))}
