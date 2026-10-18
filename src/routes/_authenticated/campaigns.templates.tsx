@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
+import { askConfirm } from "@/components/ui/confirm-dialog";
 import { ArrowRight, Plus, Trash2, History } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -192,8 +193,17 @@ function TemplatesPage() {
                 size="sm"
                 variant="ghost"
                 disabled={!q.data?.canManage || delMut.isPending}
-                onClick={() => {
-                  if (confirm("حذف؟")) delMut.mutate(t.id);
+                aria-label="حذف القالب"
+                onClick={async () => {
+                  if (
+                    await askConfirm({
+                      title: `حذف قالب «${t.name}»؟`,
+                      description: "يُحذف القالب نهائيًا. لا يمكن حذف قالب تستخدمه حملة.",
+                      confirmLabel: "حذف",
+                      destructive: true,
+                    })
+                  )
+                    delMut.mutate(t.id);
                 }}
               >
                 <Trash2 className="h-3 w-3" />

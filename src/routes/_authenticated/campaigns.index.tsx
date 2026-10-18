@@ -4,6 +4,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "@/lib/toast";
+import { askConfirm } from "@/components/ui/confirm-dialog";
 import { Megaphone, Plus, Play, Pause, XCircle, Trash2, FileText } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -225,7 +226,19 @@ function CampaignsPage() {
                       size="sm"
                       variant="ghost"
                       disabled={busy || !q.data?.canSend}
-                      onClick={() => ctlMut.mutate({ id: c.id, action: "cancel" })}
+                      aria-label="إلغاء الحملة"
+                      title="إلغاء الحملة"
+                      onClick={async () => {
+                        if (
+                          await askConfirm({
+                            title: `إلغاء حملة «${c.name}»؟`,
+                            description: "يتوقف الإرسال نهائيًا ولا يمكن استئنافها. الرسائل المرسلة تبقى كما هي.",
+                            confirmLabel: "إلغاء الحملة",
+                            destructive: true,
+                          })
+                        )
+                          ctlMut.mutate({ id: c.id, action: "cancel" });
+                      }}
                     >
                       <XCircle className="h-3 w-3" />
                     </Button>
@@ -235,8 +248,17 @@ function CampaignsPage() {
                     size="sm"
                     variant="ghost"
                     disabled={busy || !q.data?.canManage}
-                    onClick={() => {
-                      if (confirm("حذف؟")) delMut.mutate(c.id);
+                    aria-label="حذف الحملة"
+                    onClick={async () => {
+                      if (
+                        await askConfirm({
+                          title: `حذف حملة «${c.name}»؟`,
+                          description: "تُحذف الحملة وسجل مستلميها نهائيًا.",
+                          confirmLabel: "حذف",
+                          destructive: true,
+                        })
+                      )
+                        delMut.mutate(c.id);
                     }}
                   >
                     <Trash2 className="h-3 w-3" />
