@@ -8,7 +8,7 @@ const AudienceSchema = z
     department_id: z.string().uuid().optional(),
     tag_ids: z.array(z.string().uuid()).optional(),
     lead_status: z.string().optional(),
-    contact_ids: z.array(z.string().uuid()).optional(),
+    contact_ids: z.array(z.string().uuid()).max(10000).optional(),
   })
   .partial();
 
@@ -55,6 +55,34 @@ export const previewCampaignAudience = createServerFn({ method: "POST" })
     const preview = await previewAudience(organizationId, data.audience_filter as any);
     const eta = estimateSendTime(preview.count, data.throttle_per_minute);
     return { count: preview.count, sample: preview.sample, eta };
+  });
+
+/** Imports cleaned numbers from an Excel/CSV file as contacts and returns their ids for the campaign. */
+export const importCampaignAudience = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        rows: z
+          .array(z.object({ phone: z.string().regex(/^[1-9]\d{7,14}$/), name: z.string().trim().max(120).nullable() }))
+          .min(1, "الملف لا يحتوي أرقامًا صالحة")
+          .max(5000, "الحد الأقصى 5000 رقم في الملف الواحد"),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { organizationId } = await campaignAccess("manage");
+    const { importAudienceContacts } = await import("./audience.server");
+    const unique = [...new Map(data.rows.map((r) => [r.phone, r])).values()];
+    return importAudienceContacts(organizationId, unique);
+  });
+
+/** Contacts with a WhatsApp number, searched by name or number, to choose campaign recipients. */
+export const searchCampaignContacts = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => z.object({ search: z.string().max(100).default("") }).parse(d ?? {}))
+  .handler(async ({ data }) => {
+    const { organizationId } = await campaignAccess("manage");
+    const { searchAudienceContacts } = await import("./audience.server");
+    return searchAudienceContacts(organizationId, data.search);
   });
 
 export const saveCampaign = createServerFn({ method: "POST" })

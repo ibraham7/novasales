@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { saveCampaign, previewCampaignAudience, listTemplates } from "@/modules/campaigns";
+import { CampaignAudiencePicker, type AudienceChoice } from "@/components/campaigns/audience-picker";
 import { listInstances } from "@/modules/channels";
 
 export const Route = createFileRoute("/_authenticated/campaigns/new")({
@@ -37,11 +38,13 @@ function NewPage() {
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [lifecycle, setLifecycle] = useState<string>("lead");
+  const [audience, setAudience] = useState<AudienceChoice>({ mode: "file", contactIds: [], lifecycle: "lead" });
   const [throttle, setThrottle] = useState(20);
   const [scheduledAt, setScheduledAt] = useState<string>("");
 
-  const audience_filter: any = { lifecycle_stage: lifecycle };
+  const audience_filter: any =
+    audience.mode === "stage" ? { lifecycle_stage: audience.lifecycle } : { contact_ids: audience.contactIds };
+  const audienceReady = audience.mode === "stage" || audience.contactIds.length > 0;
   const previewMut = useMutation({
     mutationFn: () => preview({ data: { audience_filter, throttle_per_minute: throttle } }),
     onError: (e: any) => toast.error(e.message),
@@ -185,34 +188,31 @@ function NewPage() {
         {step === 3 && (
           <>
             <h2 className="text-lg font-semibold">3. الجمهور والإيقاع</h2>
-            <div>
-              <Label>مرحلة العميل</Label>
-              <Select value={lifecycle} onValueChange={setLifecycle}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="lead">Lead</SelectItem>
-                  <SelectItem value="qualified">مؤهل</SelectItem>
-                  <SelectItem value="customer">عميل</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <CampaignAudiencePicker
+              value={audience}
+              onChange={(next) => {
+                setAudience(next);
+                previewMut.reset();
+              }}
+            />
             <div>
               <Label>عدد الرسائل في الدقيقة</Label>
               <Input
                 type="number"
                 value={throttle}
-                onChange={(e) => setThrottle(Math.max(1, Number(e.target.value)))}
+                onChange={(e) => setThrottle(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))}
                 min={1}
                 max={1000}
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                الرسائل تُوزَّع على الدقيقة بفاصل عشوائي. ننصح بـ 10 إلى 20 في الدقيقة، وأقل للأرقام الجديدة.
+              </p>
             </div>
             <Button
               validate
               variant="outline"
               onClick={() => previewMut.mutate()}
-              disabled={previewMut.isPending}
+              disabled={previewMut.isPending || !audienceReady}
             >
               <Users className="h-4 w-4 ml-1" /> معاينة الجمهور
             </Button>
@@ -240,7 +240,7 @@ function NewPage() {
               <Button variant="outline" onClick={() => setStep(2)}>
                 السابق
               </Button>
-              <Button validate onClick={() => setStep(4)}>
+              <Button validate disabled={!audienceReady} onClick={() => setStep(4)}>
                 التالي
               </Button>
             </div>
