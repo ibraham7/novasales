@@ -46,6 +46,8 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    if (typeof process !== "undefined" && process.env?.CAMPAIGN_AUTO_TICK === "1")
+      void import("./modules/campaigns/auto-tick.server").then((m) => m.startCampaignTicker());
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

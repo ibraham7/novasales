@@ -2,7 +2,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resolveAudience } from "./audience.server";
 import { checked } from "./access.server";
 import { ensureActionsRegistered, getAction } from "@/modules/workflow/actions/registry.server";
+import { campaignPacing, retryDelayMinutes } from "./pacing";
 const db = supabaseAdmin as any;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function tickCampaigns(organizationId?: string): Promise<{ processed: number }> {
   const now = new Date().toISOString();
   let due = db
@@ -73,15 +75,38 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
       const { pickBestAccountForOutreach } = await import("@/modules/risk/risk.server");
       const account = await pickBestAccountForOutreach(org, [c.channel_account_id]);
       if (!account) continue;
+      // Messages are spread over the minute with a random gap, never sent in one burst.
+      const pacing = campaignPacing(c.throttle_per_minute);
       const batch = await checked<any[]>(
         db.rpc("cmp_claim_recipients", {
           p_id: c.id,
           p_org: org,
           p_token: token,
-          p_limit: c.throttle_per_minute,
+          p_limit: pacing.batch,
         }),
       );
-      for (const r of batch) {
+      const started = Date.now();
+      const requeue = (ids: string[]) =>
+        ids.length
+          ? checked(
+              db
+                .from("cmp_recipients")
+                .update({ status: "queued", claimed_at: null })
+                .in("id", ids)
+                .eq("organization_id", org)
+                .eq("status", "sending"),
+            )
+          : Promise.resolve();
+      let waiting: { reason: string; minutes: number } | null = null;
+      let sentHere = 0;
+      for (const [index, r] of batch.entries()) {
+        if (index > 0) {
+          if (Date.now() - started > pacing.budgetMs) {
+            await requeue(batch.slice(index).map((x) => x.id));
+            break;
+          }
+          await sleep(pacing.gapMs());
+        }
         const current = await checked<any>(
           db
             .from("cmp_campaigns")
@@ -129,6 +154,14 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
         } catch {
           result = { ok: false, error: "تعذر الإرسال؛ تحقق من اتصال واتساب" };
         }
+        // A protection limit of the number (per hour, per day, new chats, new number): the message
+        // waits for a later run instead of failing, together with the rest of this batch.
+        const delay = result.ok ? null : retryDelayMinutes(result.error);
+        if (delay !== null) {
+          await requeue(batch.slice(index).map((x) => x.id));
+          waiting = { reason: String(result.error), minutes: delay };
+          break;
+        }
         await checked(
           db
             .from("cmp_recipients")
@@ -149,8 +182,30 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
             .eq("organization_id", org)
             .eq("status", "sending"),
         );
-        if (result.ok) processed++;
+        if (result.ok) {
+          processed++;
+          sentHere++;
+        }
       }
+      if (waiting) {
+        const circuit = waiting.reason === "circuit_breaker";
+        await checked(
+          db
+            .from("cmp_campaigns")
+            .update({
+              ...(circuit ? { status: "paused" } : {}),
+              next_batch_at: new Date(Date.now() + waiting.minutes * 60000).toISOString(),
+              error: circuit
+                ? "أوقف النظام الإرسال من هذا الرقم مؤقتًا لحمايته من الحظر؛ استأنف الحملة لاحقًا"
+                : `الحملة بانتظار حدود حماية الرقم (${waiting.reason})؛ ستكمل تلقائيًا بعد ${waiting.minutes} دقيقة`,
+            })
+            .eq("id", c.id)
+            .eq("organization_id", org),
+        );
+        continue;
+      }
+      if (sentHere && c.error)
+        await checked(db.from("cmp_campaigns").update({ error: null }).eq("id", c.id).eq("organization_id", org));
       const pending = await checked<any[]>(
         db
           .from("cmp_recipients")
