@@ -146,7 +146,8 @@ export function normalizeEvolutionWebhook(payload: unknown): NormalizedWebhook {
   if (event === "MESSAGES_UPDATE" || event === "MESSAGE_UPDATE") {
     const items = Array.isArray(data) ? data : [data];
     for (const item of items) {
-      const id = item?.key?.id;
+      // Evolution v2 sends the WhatsApp message id as `keyId`; v1 as `key.id`.
+      const id = item?.keyId ?? item?.key?.id;
       if (!id) continue;
       const status = String(item?.status ?? item?.update?.status ?? "").toUpperCase();
       const isRead = status === "READ" || status === "PLAYED";
