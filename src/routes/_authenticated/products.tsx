@@ -11,6 +11,7 @@ import { ProductStockSummary } from "@/components/commerce/product-stock-summary
 import { listProductAttributes, saveProductAttribute } from "@/modules/commerce/stock.functions";
 import { CURRENCY_CODES, currencyName, inventoryValues } from "@/modules/commerce/currencies";
 import { ProductStockDialog } from "@/components/commerce/product-stock-dialog";
+import { ProductPropertyManager } from "@/components/commerce/product-property-manager";
 import { createFileRoute } from "@tanstack/react-router";
 import { ProductAnalytics } from "@/components/commerce/product-analytics";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -184,6 +185,7 @@ function ProductsPage() {
   const [imageUploading, setImageUploading] = useState(false);
 
   const [stockDialog, setStockDialog] = useState<ProductRow | null>(null);
+  const [readyPropertiesOpen, setReadyPropertiesOpen] = useState(false);
 
   const {
     data: products = [],
@@ -358,6 +360,12 @@ function ProductsPage() {
           </p>
         </div>
 
+        <div className="flex flex-col gap-2 sm:flex-row">
+        {canManageProperties && (
+          <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setReadyPropertiesOpen(true)}>
+            الخصائص الجاهزة
+          </Button>
+        )}
         <Dialog
           open={productDialogOpen}
           onOpenChange={(open) => {
@@ -533,7 +541,17 @@ function ProductsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </header>
+
+      <Dialog open={readyPropertiesOpen} onOpenChange={setReadyPropertiesOpen}>
+        <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>الخصائص الجاهزة</DialogTitle>
+          </DialogHeader>
+          <ProductPropertyManager />
+        </DialogContent>
+      </Dialog>
 
       {/* Stats */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 mb-5 md:mb-6">
