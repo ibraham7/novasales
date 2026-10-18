@@ -3,6 +3,7 @@ import { Plus, Settings2, X } from "lucide-react";
 import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
 import {
   MAX_OPTION_GROUPS,
+  READY_PROPERTIES,
   activeGroups,
   combinations,
   comboKey,
@@ -14,12 +15,14 @@ import {
   type SpecDraft,
 } from "@/modules/commerce/product-options";
 import { ProductAttributeFields } from "./product-attribute-fields";
+import { SCOPES, ValuesInput } from "./product-property-manager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Kind = AttributeDefinition["kind"];
+type Scope = AttributeDefinition["scope"];
 const OTHER_TYPES: [Kind, string][] = [
   ["text", "نص"],
   ["number", "رقم"],
@@ -73,7 +76,7 @@ export function ProductPropertiesSection({
   const groups = activeGroups(options.groups);
   const combos = combinations(options.groups);
   // Other stock properties (e.g. a number) are still filled per quantity row under ⚙.
-  const extraDefinitions = definitions.filter((d) => d.scope === "variant" && !isList(d.kind));
+  const extraDefinitions = definitions.filter((d) => d.scope === "variant" && !isList(d.kind) && !d.is_archived);
   const usedNames = [
     ...groups.map((g) => g.name),
     ...specs.map((s) => s.name.trim()),
@@ -128,15 +131,15 @@ export function ProductPropertiesSection({
         </div>
       )}
 
-      {isNew && canStock && (
+      {isNew && canStock && groups.length > 0 && (
         <div className="space-y-1.5">
           {combos.map((values) => {
             const key = comboKey(values);
             return (
               <ComboRow
                 key={key}
-                label={groups.length ? comboLabel(values) : "الكمية"}
-                showInclude={groups.length > 0}
+                label={comboLabel(values)}
+                showInclude
                 stock={options.stock[key] ?? emptyComboStock()}
                 onChange={(patch) => setStock(key, patch)}
                 extraDefinitions={extraDefinitions}
@@ -172,6 +175,38 @@ export function ProductPropertiesSection({
         />
       )}
     </section>
+  );
+}
+
+/**
+ * The stock of a new product that has no options with their own quantity. It sits with the price;
+ * batch number, expiry date and extra batches stay under ⚙. Hidden once such an option is added.
+ */
+export function ProductQuantityField({
+  options,
+  onOptionsChange,
+  definitions,
+  currency,
+}: {
+  options: OptionsDraft;
+  onOptionsChange: (draft: OptionsDraft) => void;
+  definitions: AttributeDefinition[];
+  currency: string;
+}) {
+  if (activeGroups(options.groups).length) return null;
+  const key = comboKey([]);
+  return (
+    <ComboRow
+      label="الكمية في المخزن (اختياري)"
+      showInclude={false}
+      stock={options.stock[key] ?? emptyComboStock()}
+      onChange={(patch) =>
+        onOptionsChange({ ...options, stock: { ...options.stock, [key]: { ...(options.stock[key] ?? emptyComboStock()), ...patch } } })
+      }
+      extraDefinitions={definitions.filter((d) => d.scope === "variant" && !isList(d.kind) && !d.is_archived)}
+      currency={currency}
+      canStock
+    />
   );
 }
 
@@ -214,174 +249,133 @@ function PropertyDialog({
   onSaveSpec: (spec: SpecDraft) => void;
 }) {
   const key = initialGroup?.key ?? initialSpec?.key ?? crypto.randomUUID();
+  const editing = !!(initialGroup || initialSpec);
+  const canStock = allowStock && (!stockFull || !!initialGroup);
   const [name, setName] = useState(initialGroup?.name ?? initialSpec?.name ?? "");
   const [values, setValues] = useState<string[]>(initialGroup?.values ?? initialSpec?.values ?? []);
-  const [input, setInput] = useState("");
-  const [perValueStock, setPerValueStock] = useState(allowStock && !stockFull && !initialSpec);
+  const [scope, setScope] = useState<Scope>(initialGroup || (canStock && !initialSpec) ? "variant" : "product");
   const [kind, setKind] = useState<Kind>(initialSpec?.kind ?? "select");
   const [scalar, setScalar] = useState(initialSpec?.scalar ?? "");
   const [isPriceFloor, setIsPriceFloor] = useState(initialSpec?.isPriceFloor ?? false);
+  const [applied, setApplied] = useState<string[]>([]);
   const [error, setError] = useState("");
 
   const existing = definitions.find((d) => d.name.trim() === name.trim());
-  // An existing property decides the type; a stock option is always a choice list.
-  const effectiveKind: Kind = existing ? existing.kind : perValueStock ? "select" : kind;
+  // A saved property keeps its own kind and scope; a new stock option is always a list of values.
+  const effectiveScope: Scope = existing ? existing.scope : scope;
+  const effectiveKind: Kind = existing ? existing.kind : scope === "variant" ? "select" : kind;
   const listKind = isList(effectiveKind);
-  const suggestions = (existing?.options ?? []).filter((o) => !values.includes(o));
-  const nameSuggestions = definitions.filter((d) => !takenNames.includes(d.name.trim()) && (allowStock || d.scope === "product"));
-
-  const editing = !!(initialGroup || initialSpec);
+  const templates = READY_PROPERTIES.filter((p) => p.stock === (effectiveScope === "variant"));
+  const suggestions = [
+    ...new Set([...(existing?.options ?? []), ...templates.filter((t) => applied.includes(t.label)).flatMap((t) => t.values)]),
+  ];
   // The organization's saved properties as one-tap buttons.
-  const ready = editing
+  const saved = editing
     ? []
-    : nameSuggestions.map((d) => ({ name: d.name, values: isList(d.kind) ? d.options : [], stock: d.scope === "variant" }));
-  const pickReady = (item: { name: string; values: string[]; stock: boolean }) => {
-    setName(item.name);
-    setValues(item.values);
-    setPerValueStock(item.stock && allowStock && !stockFull);
-    setKind("select");
+    : definitions.filter((d) => !d.is_archived && !takenNames.includes(d.name.trim()) && (allowStock || d.scope === "product"));
+
+  const pick = (d: AttributeDefinition) => {
+    setName(d.name);
+    setValues(isList(d.kind) ? d.options : []);
+    setScalar("");
     setError("");
   };
 
-  const addValues = (text: string) => {
-    const added = text.split(/[،,]/).map((v) => v.trim()).filter(Boolean);
-    if (!added.length) return;
-    setValues((old) => [...new Set([...old, ...added])]);
-    setInput("");
-  };
-
   const submit = () => {
-    const pending = input.trim() ? [...new Set([...values, ...input.split(/[،,]/).map((v) => v.trim()).filter(Boolean)])] : values;
     const trimmed = name.trim();
     if (!trimmed) return setError("اكتب اسم الخاصية");
     if (takenNames.includes(trimmed)) return setError("هذه الخاصية مضافة للمنتج");
-    const stock = existing ? existing.scope === "variant" : perValueStock;
-    if (stock && !allowStock) return setError("الخيارات ذات الكمية تُضاف عند إنشاء المنتج؛ استخدم إدارة المخزون للمنتجات الموجودة");
-    if (listKind && !pending.length) return setError("أضف قيمة واحدة على الأقل");
+    const stock = effectiveScope === "variant";
+    if (stock && !allowStock) return setError("الخيارات التي لها كمية تُضاف عند إنشاء المنتج؛ استخدم «المخزون» للمنتجات الموجودة");
+    if (stock && !canStock) return setError("يمكن إضافة 3 خيارات لها كمية كحد أقصى");
+    if (listKind && !values.length) return setError("أضف قيمة واحدة على الأقل");
     if (!listKind && effectiveKind !== "boolean" && !scalar.trim()) return setError("أدخل القيمة");
-    if (stock) onSaveGroup({ key, name: trimmed, values: pending });
-    else onSaveSpec({ key, name: trimmed, kind: effectiveKind, values: listKind ? pending : [], scalar, isPriceFloor });
+    if (stock) onSaveGroup({ key, name: trimmed, values });
+    else onSaveSpec({ key, name: trimmed, kind: effectiveKind, values: listKind ? values : [], scalar, isPriceFloor });
   };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent dir="rtl" className="sm:max-w-sm">
+      <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{editing ? "تعديل خاصية" : "إضافة خاصية"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3" data-validation-scope>
-          {ready.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {ready.map((item) => (
-                <button
-                  key={item.name}
-                  type="button"
-                  className={`rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent ${name.trim() === item.name ? "border-primary bg-primary/10 text-primary" : ""}`}
-                  onClick={() => pickReady(item)}
-                >
-                  {item.name}
-                </button>
-              ))}
+        <div className="space-y-4" data-validation-scope>
+          {saved.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">خصائصك المحفوظة</p>
+              <div className="flex flex-wrap gap-1.5">
+                {saved.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className={`rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent ${existing?.id === d.id ? "border-primary bg-primary/10 text-primary" : ""}`}
+                    onClick={() => pick(d)}
+                  >
+                    {d.name}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
+
           <div className="space-y-1">
-            <Label htmlFor="property-name">الاسم</Label>
+            <Label htmlFor="property-name">{saved.length > 0 ? "أو خاصية جديدة — اسم الخاصية" : "اسم الخاصية"}</Label>
             <Input
               id="property-name"
-              list="property-name-options"
               autoFocus
-              placeholder="مثال: اللون، المقاس، الخامة"
+              placeholder="مثال: لون الغطاء، مقاس البنطلون"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
                 setError("");
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  document.getElementById("property-values")?.focus();
-                }
-              }}
             />
-            <datalist id="property-name-options">
-              {nameSuggestions.map((d) => (
-                <option key={d.id} value={d.name} />
-              ))}
-            </datalist>
           </div>
 
-          {listKind ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="property-values">القيم</Label>
-              {values.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {values.map((value) => (
-                    <span key={value} className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium">
-                      {value}
-                      <button type="button" aria-label={`إزالة ${value}`} onClick={() => setValues(values.filter((v) => v !== value))}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <Input
-                id="property-values"
-                value={input}
-                placeholder="اكتب قيمة واضغط Enter"
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === ",") {
-                    e.preventDefault();
-                    if (!input.trim() && values.length) submit();
-                    else addValues(input);
-                  }
-                }}
-              />
-              {suggestions.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {suggestions.map((value) => (
-                    <button key={value} type="button" className="rounded-full border border-dashed px-2.5 py-0.5 text-xs hover:bg-accent" onClick={() => setValues([...values, value])}>
-                      + {value}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          {existing ? (
+            <p className="text-xs text-muted-foreground">{SCOPES[existing.scope].title} · خاصية محفوظة</p>
           ) : (
-            <ScalarInput kind={effectiveKind} value={scalar} onChange={setScalar} />
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="نوع الخاصية">
+              {(["variant", "product"] as Scope[]).map((option) => {
+                const off = option === "variant" && !canStock;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="radio"
+                    aria-checked={scope === option}
+                    disabled={off}
+                    className={`rounded-lg border p-2.5 text-start transition-colors disabled:opacity-50 ${scope === option ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
+                    onClick={() => {
+                      setScope(option);
+                      setError("");
+                    }}
+                  >
+                    <div className="text-sm font-medium">{SCOPES[option].title}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {off ? (allowStock ? "وصلت للحد الأقصى (3)" : "تُضاف من «المخزون» للمنتج الموجود") : SCOPES[option].hint}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
 
-          {allowStock && !existing && (
-            <label className={`flex items-center gap-2 text-sm ${stockFull ? "opacity-50" : ""}`}>
-              <input type="checkbox" checked={perValueStock} disabled={stockFull} onChange={(e) => setPerValueStock(e.target.checked)} />
-              كمية مستقلة لكل قيمة (مثل اللون والمقاس)
-            </label>
-          )}
-
-          {!perValueStock && !existing && (
-            <details
-              open={!isList(kind)}
-              onToggle={(e) => {
-                // Closing it goes back to a plain list of values.
-                if (!e.currentTarget.open && !isList(kind)) {
-                  setKind("select");
-                  setScalar("");
-                  setIsPriceFloor(false);
-                }
-              }}
-            >
-              <summary className="cursor-pointer text-xs text-muted-foreground">نوع قيمة آخر (رقم، تاريخ، سعر…)</summary>
+          {!existing && scope === "product" && (
+            <div className="space-y-1">
+              <Label htmlFor="property-kind">نوع القيمة</Label>
               <select
-                aria-label="نوع القيمة"
-                className="mt-2 w-full rounded-md border bg-background p-2 text-sm"
+                id="property-kind"
+                className="w-full rounded-md border bg-background p-2 text-sm"
                 value={isList(kind) ? "select" : kind}
                 onChange={(e) => {
                   setKind(e.target.value as Kind);
                   setScalar("");
+                  setIsPriceFloor(false);
                 }}
               >
-                <option value="select">قائمة قيم</option>
+                <option value="select">اختيار من قائمة</option>
                 {OTHER_TYPES.map(([k, label]) => (
                   <option key={k} value={k}>
                     {label}
@@ -389,12 +383,33 @@ function PropertyDialog({
                 ))}
               </select>
               {kind === "money" && (
-                <label className="mt-2 flex gap-2 text-sm">
+                <label className="flex gap-2 pt-1 text-sm">
                   <input type="checkbox" checked={isPriceFloor} onChange={(e) => setIsPriceFloor(e.target.checked)} />
                   حد أدنى للبيع (سعر التكلفة)
                 </label>
               )}
-            </details>
+            </div>
+          )}
+
+          {listKind ? (
+            <ValuesInput
+              values={values}
+              locked={new Set()}
+              suggestions={suggestions}
+              templates={templates}
+              applied={applied}
+              onApply={(t) => {
+                setApplied((old) => [...new Set([...old, t.label])]);
+                setValues((old) => [...new Set([...old, ...t.values])]);
+              }}
+              placeholder={effectiveScope === "variant" ? "مثال: أحمر" : "مثال: قطن"}
+              onChange={(next) => {
+                setValues(next);
+                setError("");
+              }}
+            />
+          ) : (
+            <ScalarInput kind={effectiveKind} value={scalar} onChange={setScalar} />
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}

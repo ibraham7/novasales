@@ -1,4 +1,4 @@
-import { ProductPropertiesSection } from "@/components/commerce/product-properties-section";
+import { ProductPropertiesSection, ProductQuantityField } from "@/components/commerce/product-properties-section";
 import { initialStockPayload } from "@/modules/commerce/initial-stock";
 import { EMPTY_OPTIONS, activeGroups, attributeSaves, specSaves, specValue, toInitialVariants, type OptionsDraft, type SpecDraft } from "@/modules/commerce/product-options";
 import { usePermission } from "@/platform/rbac/use-permission";
@@ -466,6 +466,14 @@ function ProductsPage() {
                   ))}
                 </select>
               </div>
+              {!form.id && canInitialStock && (
+                <ProductQuantityField
+                  options={optionsDraft}
+                  onOptionsChange={setOptionsDraft}
+                  definitions={attributes as AttributeDefinition[]}
+                  currency={form.currency}
+                />
+              )}
               <ProductPropertiesSection
                 isNew={!form.id}
                 options={optionsDraft}

@@ -5,6 +5,8 @@ export type AttributeDefinition = {
   scope: "product" | "variant";
   options: string[];
   is_price_floor: boolean;
+  /** Hidden from lists and quick picks; products keep their values. */
+  is_archived?: boolean;
 };
 export type AttributeValue = string | number | boolean | string[];
 export function validateAttributes(

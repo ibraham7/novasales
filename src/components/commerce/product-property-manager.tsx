@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowRight, Pencil, Plus, X } from "lucide-react";
-import { listProductAttributes, saveProductAttribute } from "@/modules/commerce/stock.functions";
+import { ArrowRight, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  deleteProductAttribute,
+  listProductAttributes,
+  saveProductAttribute,
+  setProductAttributeHidden,
+} from "@/modules/commerce/stock.functions";
 import type { AttributeDefinition } from "@/modules/commerce/product-attributes";
 import { READY_PROPERTIES } from "@/modules/commerce/product-options";
 import { usePermission } from "@/platform/rbac/use-permission";
@@ -10,12 +15,21 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Kind = AttributeDefinition["kind"];
 type Scope = AttributeDefinition["scope"];
 
 // Ordered so the common choices come first.
-const TYPES: [Kind, string][] = [
+export const TYPES: [Kind, string][] = [
   ["select", "اختيار من قائمة"],
   ["multiselect", "اختيار عدة قيم من قائمة"],
   ["text", "نص حر"],
@@ -27,9 +41,9 @@ const TYPES: [Kind, string][] = [
   ["file", "رابط ملف"],
 ];
 const typeLabel = (kind: Kind) => TYPES.find(([k]) => k === kind)?.[1] ?? kind;
-const isList = (kind: Kind) => kind === "select" || kind === "multiselect";
+export const isList = (kind: Kind) => kind === "select" || kind === "multiselect";
 
-const SCOPES: Record<Scope, { title: string; hint: string; newLabel: string }> = {
+export const SCOPES: Record<Scope, { title: string; hint: string; newLabel: string }> = {
   variant: { title: "خيارات لها كمية", hint: "مثل اللون والمقاس — لكل تركيبة كميتها", newLabel: "خيار جديد" },
   product: { title: "مواصفات المنتج", hint: "مثل الخامة أو الضمان — بدون كمية", newLabel: "مواصفة جديدة" },
 };
@@ -58,6 +72,32 @@ export function ProductPropertyManager({
   const [form, setForm] = useState<Form | null>(direct ? newForm(defaultScope) : null);
   const definitions = (q.data ?? []) as AttributeDefinition[];
   const original = form?.id ? definitions.find((d) => d.id === form.id) : undefined;
+  const remove = useServerFn(deleteProductAttribute);
+  const hide = useServerFn(setProductAttributeHidden);
+  // The property being deleted; usedBy is set when products use it and it can only be hidden.
+  const [removing, setRemoving] = useState<{ definition: AttributeDefinition; usedBy?: number } | null>(null);
+  const hidden = definitions.filter((d) => d.is_archived);
+
+  const removeMut = useMutation({
+    mutationFn: (definition: AttributeDefinition) => remove({ data: { id: definition.id } }),
+    onSuccess: (result, definition) => {
+      if (result.deleted) {
+        qc.invalidateQueries({ queryKey: ["product-attributes"] });
+        toast.success("تم حذف الخاصية");
+        setRemoving(null);
+      } else setRemoving({ definition, usedBy: result.usedBy });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const hideMut = useMutation({
+    mutationFn: ({ id, hidden }: { id: string; hidden: boolean }) => hide({ data: { id, hidden } }),
+    onSuccess: (_, { hidden }) => {
+      qc.invalidateQueries({ queryKey: ["product-attributes"] });
+      toast.success(hidden ? "تم إخفاء الخاصية" : "تم إظهار الخاصية");
+      setRemoving(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const mut = useMutation({
     mutationFn: async (f: Form) => {
@@ -102,7 +142,7 @@ export function ProductPropertyManager({
   return (
     <div className="space-y-5">
       {(["variant", "product"] as Scope[]).map((scope) => {
-        const items = definitions.filter((d) => d.scope === scope);
+        const items = definitions.filter((d) => d.scope === scope && !d.is_archived);
         return (
           <section key={scope} className="space-y-2">
             <div className="flex items-start justify-between gap-2">
@@ -154,6 +194,16 @@ export function ProductPropertyManager({
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                      aria-label={`حذف ${d.name}`}
+                      onClick={() => setRemoving({ definition: d })}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -161,6 +211,47 @@ export function ProductPropertyManager({
           </section>
         );
       })}
+
+      {hidden.length > 0 && (
+        <details className="rounded-md border p-2.5">
+          <summary className="cursor-pointer text-xs text-muted-foreground">خصائص مخفية ({hidden.length})</summary>
+          <ul className="mt-2 divide-y">
+            {hidden.map((d) => (
+              <li key={d.id} className="flex items-center justify-between gap-2 py-1.5">
+                <span className="text-sm">{d.name}</span>
+                <Button type="button" size="sm" variant="outline" disabled={hideMut.isPending} onClick={() => hideMut.mutate({ id: d.id, hidden: false })}>
+                  إظهار
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <AlertDialog open={!!removing} onOpenChange={(open) => !open && !removeMut.isPending && !hideMut.isPending && setRemoving(null)}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{removing?.usedBy ? `«${removing.definition.name}» مستعملة` : `حذف «${removing?.definition.name}»؟`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removing?.usedBy
+                ? `هذه الخاصية مستعملة في ${removing.usedBy} ${removing.usedBy === 1 ? "منتج" : "منتجات"}، لذلك لا يمكن حذفها. يمكنك إخفاؤها من القوائم، وتبقى قيمها في المنتجات كما هي.`
+                : "ستُحذف الخاصية نهائيًا إذا لم يكن أي منتج يستعملها."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            {removing?.usedBy ? (
+              <Button type="button" disabled={hideMut.isPending} onClick={() => removing && hideMut.mutate({ id: removing.definition.id, hidden: true })}>
+                {hideMut.isPending ? "جارٍ الإخفاء..." : "إخفاء"}
+              </Button>
+            ) : (
+              <Button type="button" variant="destructive" disabled={removeMut.isPending} onClick={() => removing && removeMut.mutate(removing.definition)}>
+                {removeMut.isPending ? "جارٍ الحذف..." : "حذف"}
+              </Button>
+            )}
+            <AlertDialogCancel disabled={removeMut.isPending || hideMut.isPending}>إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -274,6 +365,10 @@ function PropertyForm({
         </button>
       )}
 
+      {!isList(form.kind) && (
+        <p className="text-xs text-muted-foreground">القيمة تُكتب لكل منتج عند إضافته.</p>
+      )}
+
       {isList(form.kind) && (
         <ValuesInput
           values={form.options}
@@ -316,7 +411,7 @@ function PropertyForm({
 }
 
 /** Values as chips: type and press Enter (or comma). Values already saved cannot be removed. */
-function ValuesInput({
+export function ValuesInput({
   values,
   locked,
   suggestions,
