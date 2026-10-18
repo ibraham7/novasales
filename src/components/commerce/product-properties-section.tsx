@@ -3,6 +3,7 @@ import { Plus, Settings2, X } from "lucide-react";
 import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
 import {
   MAX_OPTION_GROUPS,
+  READY_PROPERTIES,
   activeGroups,
   combinations,
   comboKey,
@@ -32,13 +33,7 @@ const OTHER_TYPES: [Kind, string][] = [
 const isList = (kind: Kind) => kind === "select" || kind === "multiselect";
 
 /** Suggested to an organization that has no saved properties yet; nothing is saved until used. */
-const STARTER_PROPERTIES: { name: string; values: string[]; stock: boolean }[] = [
-  { name: "اللون", values: ["أسود", "أبيض", "أحمر", "أزرق"], stock: true },
-  { name: "المقاس", values: ["S", "M", "L", "XL"], stock: true },
-  { name: "السعة", values: ["64GB", "128GB", "256GB"], stock: true },
-  { name: "الخامة", values: ["قطن", "بوليستر", "جلد"], stock: false },
-  { name: "الضمان", values: ["6 أشهر", "سنة", "سنتان"], stock: false },
-];
+const STARTER_PROPERTIES = READY_PROPERTIES.slice(0, 5);
 
 function displayValue(value: AttributeValue) {
   if (Array.isArray(value)) return value.join("، ");
@@ -370,7 +365,17 @@ function PropertyDialog({
           )}
 
           {!perValueStock && !existing && (
-            <details open={!isList(kind)}>
+            <details
+              open={!isList(kind)}
+              onToggle={(e) => {
+                // Closing it goes back to a plain list of values.
+                if (!e.currentTarget.open && !isList(kind)) {
+                  setKind("select");
+                  setScalar("");
+                  setIsPriceFloor(false);
+                }
+              }}
+            >
               <summary className="cursor-pointer text-xs text-muted-foreground">نوع قيمة آخر (رقم، تاريخ، سعر…)</summary>
               <select
                 aria-label="نوع القيمة"
