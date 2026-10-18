@@ -92,7 +92,6 @@ export function ProductPropertyManager({
       <PropertyForm
         form={form}
         original={original}
-        definitions={definitions}
         saving={mut.isPending}
         onChange={setForm}
         onSave={() => mut.mutate(form)}
@@ -169,7 +168,6 @@ export function ProductPropertyManager({
 function PropertyForm({
   form,
   original,
-  definitions,
   saving,
   onChange,
   onSave,
@@ -177,7 +175,6 @@ function PropertyForm({
 }: {
   form: Form;
   original?: AttributeDefinition;
-  definitions: AttributeDefinition[];
   saving: boolean;
   onChange: (form: Form) => void;
   onSave: () => void;
@@ -188,10 +185,10 @@ function PropertyForm({
   const [otherType, setOtherType] = useState(form.scope === "variant" && form.kind !== "select");
   const showType = form.scope === "product" || otherType;
   const lockedValues = new Set(original?.options ?? []);
-  const savedNames = new Set(definitions.map((d) => d.name.trim()));
-  // Ready-made names for this kind of property; any other name can still be typed.
-  const readyNames = editing ? [] : READY_PROPERTIES.filter((p) => p.stock === (form.scope === "variant") && !savedNames.has(p.name));
-  const ready = READY_PROPERTIES.find((p) => p.name === form.name.trim());
+  // Ready-made value lists only add values; the property's name is always typed by the user.
+  const templates = READY_PROPERTIES.filter((p) => p.stock === (form.scope === "variant"));
+  const [applied, setApplied] = useState<string[]>([]);
+  const suggestions = [...new Set(templates.filter((p) => applied.includes(p.label)).flatMap((p) => p.values))];
 
   return (
     <section className="space-y-4" data-validation-scope>
@@ -201,6 +198,17 @@ function PropertyForm({
           رجوع للقائمة
         </button>
       )}
+
+      <div className="space-y-1">
+        <Label htmlFor="property-name">اسم الخاصية</Label>
+        <Input
+          id="property-name"
+          required
+          placeholder={form.scope === "variant" ? "مثال: لون الغطاء، مقاس البنطلون" : "مثال: نوع القماش، مدة الضمان"}
+          value={form.name}
+          onChange={(e) => onChange({ ...form, name: e.target.value })}
+        />
+      </div>
 
       {!editing && (
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="نوع الخاصية">
@@ -227,34 +235,6 @@ function PropertyForm({
           {SCOPES[form.scope].title} · {typeLabel(form.kind)} — يمكن تعديل الاسم وإضافة قيم جديدة.
         </p>
       )}
-
-      <div className="space-y-1">
-        <Label htmlFor="property-name">الاسم</Label>
-        {readyNames.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pb-1">
-            {readyNames.map((p) => (
-              <button
-                key={p.name}
-                type="button"
-                className={`rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent ${form.name.trim() === p.name ? "border-primary bg-primary/10 text-primary" : ""}`}
-                onClick={() => {
-                  setOtherType(false);
-                  onChange({ ...form, name: p.name, kind: "select", isPriceFloor: false, options: [...p.values] });
-                }}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
-        )}
-        <Input
-          id="property-name"
-          required
-          placeholder={form.scope === "variant" ? "مثال: اللون، المقاس، السعة" : "مثال: الخامة، الضمان، بلد الصنع"}
-          value={form.name}
-          onChange={(e) => onChange({ ...form, name: e.target.value })}
-        />
-      </div>
 
       {!editing && showType && (
         <div className="space-y-1">
@@ -298,7 +278,13 @@ function PropertyForm({
         <ValuesInput
           values={form.options}
           locked={lockedValues}
-          suggestions={ready?.values ?? []}
+          suggestions={suggestions}
+          templates={templates}
+          applied={applied}
+          onApply={(template) => {
+            setApplied((old) => [...new Set([...old, template.label])]);
+            onChange({ ...form, options: [...new Set([...form.options, ...template.values])] });
+          }}
           placeholder={form.scope === "variant" ? "مثال: أحمر" : "مثال: قطن"}
           onChange={(options) => onChange({ ...form, options })}
         />
@@ -334,12 +320,18 @@ function ValuesInput({
   values,
   locked,
   suggestions,
+  templates,
+  applied,
+  onApply,
   placeholder,
   onChange,
 }: {
   values: string[];
   locked: Set<string>;
   suggestions: string[];
+  templates: typeof READY_PROPERTIES;
+  applied: string[];
+  onApply: (template: (typeof READY_PROPERTIES)[number]) => void;
   placeholder: string;
   onChange: (values: string[]) => void;
 }) {
@@ -353,6 +345,21 @@ function ValuesInput({
   return (
     <div className="space-y-1.5">
       <Label htmlFor="property-value">القيم</Label>
+      {templates.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground">قيم جاهزة:</span>
+          {templates.map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              className={`rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent ${applied.includes(t.label) ? "border-primary bg-primary/10 text-primary" : ""}`}
+              onClick={() => onApply(t)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
       {values.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {values.map((value) => (
