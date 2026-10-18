@@ -1,5 +1,6 @@
-import { InitialProductStock } from "@/components/commerce/initial-product-stock";
-import { initialStockPayload, type InitialVariantDraft } from "@/modules/commerce/initial-stock";
+import { ProductOptionsBuilder } from "@/components/commerce/product-options-builder";
+import { initialStockPayload } from "@/modules/commerce/initial-stock";
+import { EMPTY_OPTIONS, attributeSaves, toInitialVariants, type OptionsDraft } from "@/modules/commerce/product-options";
 import { ProductPropertyManager } from "@/components/commerce/product-property-manager";
 import { usePermission } from "@/platform/rbac/use-permission";
 import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
@@ -9,7 +10,7 @@ import { EMPTY_PRODUCT_FILTERS, filterProducts } from "@/modules/commerce/produc
 import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
 import { ProductMediaEditor, ProductGallery } from "@/components/commerce/product-media";
 import { ProductStockSummary } from "@/components/commerce/product-stock-summary";
-import { listProductAttributes } from "@/modules/commerce/stock.functions";
+import { listProductAttributes, saveProductAttribute } from "@/modules/commerce/stock.functions";
 import { CURRENCY_CODES, currencyName, inventoryValues } from "@/modules/commerce/currencies";
 import { ProductStockDialog } from "@/components/commerce/product-stock-dialog";
 import { createFileRoute } from "@tanstack/react-router";
@@ -167,11 +168,12 @@ function ProductsPage() {
   });
 
   const attributes = attributesQ.data ?? [];
-  const [initialVariants,setInitialVariants] = useState<InitialVariantDraft[]>([]);
+  const [optionsDraft, setOptionsDraft] = useState<OptionsDraft>(EMPTY_OPTIONS);
+  const saveAttribute = useServerFn(saveProductAttribute);
   const canInitialStock = usePermission("inventory.manage");
   const canManageProperties = usePermission("products.manage");
   const [propertiesOpen,setPropertiesOpen] = useState(false);
-  const [inlineProperties,setInlineProperties] = useState(false);
+  const [specManagerOpen, setSpecManagerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(EMPTY_PRODUCT_FILTERS);
 
@@ -229,7 +231,7 @@ function ProductsPage() {
   const inventoryValue = useMemo(() => inventoryValues(products as ProductRow[]), [products]);
 
   const productMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const price = Number(form.price);
 
       if (!form.name.trim()) {
@@ -238,6 +240,26 @@ function ProductsPage() {
 
       if (!Number.isFinite(price) || price < 0) {
         throw new Error("السعر غير صالح");
+      }
+
+      // New product: save its options (اللون، المقاس…) as properties first, then build the variants.
+      let initialVariants: ReturnType<typeof initialStockPayload> | undefined;
+      if (!form.id) {
+        const definitions = attributes as AttributeDefinition[];
+        const saves = attributeSaves(optionsDraft, definitions);
+        const ids = new Map<string, string>();
+        const saved: AttributeDefinition[] = [];
+        for (const { groupKey, ...save } of saves) {
+          const current = definitions.find((d) => d.id === save.id);
+          const unchanged = current && current.options.length === save.options.length;
+          const row = unchanged ? current : ((await saveAttribute({ data: save })) as AttributeDefinition);
+          ids.set(groupKey, row.id);
+          saved.push(row);
+        }
+        if (saves.length) void qc.invalidateQueries({ queryKey: ["product-attributes"] });
+        initialVariants = initialStockPayload(
+          toInitialVariants(optionsDraft, ids, [...definitions.filter((d) => !saved.some((s) => s.id === d.id)), ...saved]),
+        );
       }
 
       return saveProduct({
@@ -252,7 +274,7 @@ function ProductsPage() {
 
           price,
           attributes: form.attributes,
-          initialVariants: form.id ? undefined : initialStockPayload(initialVariants),
+          initialVariants,
 
           currency: form.currency.trim().toUpperCase() || "USD",
 
@@ -268,7 +290,7 @@ function ProductsPage() {
       toast.success(form.id ? "تم تحديث المنتج" : "تمت إضافة المنتج");
 
       setProductDialogOpen(false);
-      setInitialVariants([]);
+      setOptionsDraft(EMPTY_OPTIONS);
 
       setForm(EMPTY_FORM);
 
@@ -288,14 +310,14 @@ function ProductsPage() {
   });
 
   function openCreateProduct() {
-    setInitialVariants([]);
+    setOptionsDraft(EMPTY_OPTIONS);
     setForm({ ...EMPTY_FORM, currency: platform.default_currency });
 
     setProductDialogOpen(true);
   }
 
   function openEditProduct(product: ProductRow) {
-    setInitialVariants([]);
+    setOptionsDraft(EMPTY_OPTIONS);
     setForm({
       id: product.id,
 
@@ -431,24 +453,47 @@ function ProductsPage() {
                   ))}
                 </select>
               </div>
-              <div className="space-y-3 rounded-lg border p-3">
-                <div className="flex items-center justify-between gap-2"><Label>خصائص المنتج</Label>
-                {canManageProperties && <Button type="button" variant="outline" size="sm" onClick={()=>setInlineProperties(!inlineProperties)}>إضافة خاصية</Button>}
-                </div>
-                <Dialog open={inlineProperties} onOpenChange={setInlineProperties}><DialogContent dir="rtl" className="sm:max-w-md max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>إضافة خاصية</DialogTitle></DialogHeader><ProductPropertyManager onSaved={()=>setInlineProperties(false)}/></DialogContent></Dialog>
-                {attributesQ.isError && <div className="text-destructive text-sm">تعذر تحميل الخصائص <Button type="button" variant="outline" onClick={()=>attributesQ.refetch()}>إعادة المحاولة</Button></div>}
-                {!attributes.length && !attributesQ.isPending && !attributesQ.isError && <p className="text-sm text-muted-foreground">أضف خصائص مثل المقاس أو السعة حسب نشاطك.</p>}
-                <ProductAttributeFields
-                  definitions={(attributes as AttributeDefinition[]).filter(
-                    (a) => a.scope === "product",
-                  )}
-                  values={form.attributes}
-                  onChange={(values) => setForm((old) => ({ ...old, attributes: values }))}
+              {!form.id && (
+                <ProductOptionsBuilder
+                  draft={optionsDraft}
+                  onChange={setOptionsDraft}
+                  definitions={attributes as AttributeDefinition[]}
                   currency={form.currency}
+                  canStock={canInitialStock}
+                  disabled={productMutation.isPending}
                 />
-
-              </div>
-              {!form.id && <InitialProductStock rows={initialVariants} onChange={setInitialVariants} definitions={attributes as AttributeDefinition[]} currency={form.currency} canStock={canInitialStock} disabled={productMutation.isPending}/>}
+              )}
+              <details className="group rounded-lg border" open={Object.keys(form.attributes).length > 0}>
+                <summary className="cursor-pointer list-none p-3 text-sm font-medium flex items-center justify-between">
+                  <span>
+                    مواصفات إضافية <span className="font-normal text-muted-foreground">— اختياري (مثل الخامة أو الضمان)</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground group-open:hidden">عرض</span>
+                </summary>
+                <div className="space-y-3 border-t p-3">
+                  {attributesQ.isError && <div className="text-destructive text-sm">تعذر تحميل المواصفات <Button type="button" variant="outline" onClick={()=>attributesQ.refetch()}>إعادة المحاولة</Button></div>}
+                  {!(attributes as AttributeDefinition[]).some((a) => a.scope === "product") && !attributesQ.isPending && !attributesQ.isError && (
+                    <p className="text-sm text-muted-foreground">لا توجد مواصفات معرّفة بعد.</p>
+                  )}
+                  <ProductAttributeFields
+                    definitions={(attributes as AttributeDefinition[]).filter((a) => a.scope === "product")}
+                    values={form.attributes}
+                    onChange={(values) => setForm((old) => ({ ...old, attributes: values }))}
+                    currency={form.currency}
+                  />
+                  {canManageProperties && (
+                    <Button type="button" variant="link" size="sm" className="px-0 h-auto" onClick={() => setSpecManagerOpen(true)}>
+                      + تعريف مواصفة جديدة
+                    </Button>
+                  )}
+                  <Dialog open={specManagerOpen} onOpenChange={setSpecManagerOpen}>
+                    <DialogContent dir="rtl" className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+                      <DialogHeader><DialogTitle>مواصفة جديدة</DialogTitle></DialogHeader>
+                      <ProductPropertyManager onSaved={() => setSpecManagerOpen(false)} />
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </details>
               <ProductMediaEditor
                 media={{ images: form.images, videos: form.videos }}
                 onChange={(media) => setForm((old) => ({ ...old, ...media }))}
