@@ -8,9 +8,24 @@ import { EMPTY_PRODUCT_FILTERS, filterProducts } from "@/modules/commerce/produc
 import { validateAttributes, type AttributeDefinition, type AttributeValue } from "@/modules/commerce/product-attributes";
 import { ProductMediaEditor, ProductGallery } from "@/components/commerce/product-media";
 import { ProductStockSummary } from "@/components/commerce/product-stock-summary";
-import { listProductAttributes, saveProductAttribute } from "@/modules/commerce/stock.functions";
+import {
+  adjustStockBatch,
+  createProductVariant,
+  listProductAttributes,
+  receiveStockBatch,
+  saveProductAttribute,
+} from "@/modules/commerce/stock.functions";
 import { CURRENCY_CODES, currencyName, inventoryValues } from "@/modules/commerce/currencies";
 import { ProductStockDialog } from "@/components/commerce/product-stock-dialog";
+import { ProductStockEditor } from "@/components/commerce/product-stock-editor";
+import {
+  EMPTY_STOCK_EDITS,
+  existingOptionGroups,
+  hasStockChanges,
+  stockPlan,
+  type StockEdits,
+  type StockProduct,
+} from "@/modules/commerce/product-stock-edit";
 import { ProductPropertyManager } from "@/components/commerce/product-property-manager";
 import { createFileRoute } from "@tanstack/react-router";
 import { ProductAnalytics } from "@/components/commerce/product-analytics";
@@ -23,6 +38,7 @@ import { useMemo, useState } from "react";
 import { Boxes, DollarSign, Package, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 
 import { toast } from "@/lib/toast";
+import { toLatinDigits } from "@/lib/utils";
 
 import { listProducts, upsertProduct, deleteProduct } from "@/modules/commerce";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from "@/components/ui/alert-dialog";
@@ -169,7 +185,11 @@ function ProductsPage() {
   const attributes = attributesQ.data ?? [];
   const [optionsDraft, setOptionsDraft] = useState<OptionsDraft>(EMPTY_OPTIONS);
   const [specs, setSpecs] = useState<SpecDraft[]>([]);
+  const [stockEdits, setStockEdits] = useState<StockEdits>(EMPTY_STOCK_EDITS);
   const saveAttribute = useServerFn(saveProductAttribute);
+  const createVariant = useServerFn(createProductVariant);
+  const receiveBatch = useServerFn(receiveStockBatch);
+  const adjustBatch = useServerFn(adjustStockBatch);
   const canInitialStock = usePermission("inventory.manage");
   const canManageProperties = usePermission("products.manage");
   const [search, setSearch] = useState("");
@@ -229,6 +249,16 @@ function ProductsPage() {
 
   const inventoryValue = useMemo(() => inventoryValues(products as ProductRow[]), [products]);
 
+  // The product open in the edit dialog, with its stock rows and current options.
+  const editedProduct = form.id ? ((products as ProductRow[]).find((p) => p.id === form.id) as StockProduct | undefined) : undefined;
+  const lockedOptions = useMemo(
+    () =>
+      editedProduct
+        ? Object.fromEntries(existingOptionGroups(editedProduct, attributes as AttributeDefinition[]).map((g) => [g.key, g.values]))
+        : {},
+    [editedProduct, attributes],
+  );
+
   const productMutation = useMutation({
     mutationFn: async () => {
       const price = Number(form.price);
@@ -237,14 +267,16 @@ function ProductsPage() {
         throw new Error("اسم المنتج مطلوب");
       }
 
-      if (!Number.isFinite(price) || price < 0) {
+      if (!form.price.trim() || !Number.isFinite(price) || price < 0) {
         throw new Error("السعر غير صالح");
       }
 
       // Save the properties added in the dialog first: stock options (اللون، المقاس) become variants of a
       // new product; specifications (الخامة: قطن) become values on the product.
       const definitions = attributes as AttributeDefinition[];
-      const optionSaves = form.id ? [] : attributeSaves(optionsDraft, definitions);
+      // An existing product: quantities, batches and new option values edited in the dialog.
+      const plan = editedProduct ? stockPlan(optionsDraft, stockEdits, editedProduct, definitions) : undefined;
+      const optionSaves = form.id && !plan?.variants.length ? [] : attributeSaves(optionsDraft, definitions);
       const specPlan = specSaves(specs, definitions, activeGroups(optionsDraft.groups).map((g) => g.name));
       const ids = new Map<string, string>();
       const saved: AttributeDefinition[] = [];
@@ -267,7 +299,7 @@ function ProductsPage() {
         ? undefined
         : initialStockPayload(toInitialVariants(optionsDraft, ids, allDefinitions));
 
-      return saveProduct({
+      const row = await saveProduct({
         data: {
           id: form.id,
 
@@ -289,6 +321,33 @@ function ProductsPage() {
           isActive: form.isActive,
         },
       });
+
+      if (form.id && plan && hasStockChanges(plan)) {
+        try {
+          const groups = activeGroups(optionsDraft.groups);
+          for (const variant of plan.variants) {
+            const variantAttributes: Record<string, AttributeValue> = { ...variant.extraAttributes };
+            for (const group of groups) {
+              const id = ids.get(group.key);
+              const definition = allDefinitions.find((d) => d.id === id);
+              if (!id || !definition) throw new Error(`تعذر حفظ الخيار «${group.name}»`);
+              variantAttributes[id] = definition.kind === "multiselect" ? [variant.values[group.name]] : variant.values[group.name];
+            }
+            const created = (await createVariant({ data: { productId: form.id, label: variant.label, attributes: variantAttributes } })) as { id: string };
+            for (const batch of variant.batches)
+              await receiveBatch({ data: { productId: form.id, variantId: created.id, ...batch } });
+          }
+          for (const batch of plan.receive) await receiveBatch({ data: { productId: form.id, ...batch } });
+          for (const change of plan.adjust)
+            await adjustBatch({ data: { productId: form.id, batchId: change.batchId, delta: change.delta, reason: "تعديل الكمية من نافذة المنتج" } });
+        } catch (error) {
+          // The product itself is saved; reload so the dialog reflects what was stored.
+          for (const key of ["sales-products", "product-attributes"]) void qc.invalidateQueries({ queryKey: [key] });
+          setStockEdits(EMPTY_STOCK_EDITS);
+          throw new Error(`تم حفظ المنتج، لكن تعذر حفظ بعض الكميات: ${error instanceof Error ? error.message : ""}`);
+        }
+      }
+      return row;
     },
 
     onSuccess: () => {
@@ -297,6 +356,7 @@ function ProductsPage() {
       setProductDialogOpen(false);
       setOptionsDraft(EMPTY_OPTIONS);
       setSpecs([]);
+      setStockEdits(EMPTY_STOCK_EDITS);
 
       setForm(EMPTY_FORM);
 
@@ -317,15 +377,17 @@ function ProductsPage() {
 
   function openCreateProduct() {
     setOptionsDraft(EMPTY_OPTIONS);
-      setSpecs([]);
+    setSpecs([]);
+    setStockEdits(EMPTY_STOCK_EDITS);
     setForm({ ...EMPTY_FORM, currency: platform.default_currency });
 
     setProductDialogOpen(true);
   }
 
   function openEditProduct(product: ProductRow) {
-    setOptionsDraft(EMPTY_OPTIONS);
-      setSpecs([]);
+    setOptionsDraft({ groups: existingOptionGroups(product as StockProduct, attributes as AttributeDefinition[]), stock: {} });
+    setSpecs([]);
+    setStockEdits(EMPTY_STOCK_EDITS);
     setForm({
       id: product.id,
 
@@ -430,15 +492,13 @@ function ProductsPage() {
                   <Label>السعر *</Label>
 
                   <Input required aria-label="سعر البيع"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    inputMode="decimal"
                     value={form.price}
                     onChange={(event) =>
                       setForm((old) => ({
                         ...old,
 
-                        price: event.target.value,
+                        price: toLatinDigits(event.target.value),
                       }))
                     }
                     placeholder="0.00"
@@ -474,6 +534,18 @@ function ProductsPage() {
                   currency={form.currency}
                 />
               )}
+              {editedProduct && (
+                <ProductStockEditor
+                  product={editedProduct}
+                  options={optionsDraft}
+                  onOptionsChange={setOptionsDraft}
+                  edits={stockEdits}
+                  onEditsChange={setStockEdits}
+                  definitions={attributes as AttributeDefinition[]}
+                  currency={form.currency}
+                  canStock={canInitialStock}
+                />
+              )}
               <ProductPropertiesSection
                 isNew={!form.id}
                 options={optionsDraft}
@@ -486,6 +558,8 @@ function ProductsPage() {
                 currency={form.currency}
                 canStock={canInitialStock}
                 disabled={productMutation.isPending}
+                allowStockOptions={!form.id || canInitialStock}
+                lockedOptions={lockedOptions}
               />
               <ProductMediaEditor
                 media={{ images: form.images, videos: form.videos }}

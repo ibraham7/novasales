@@ -20,3 +20,12 @@ const arabicDateTime = new Intl.DateTimeFormat("ar-u-nu-latn", {
 export function formatDateTime(value: string | number | Date) {
   return arabicDateTime.format(new Date(value));
 }
+
+/** Arabic-Indic and Persian digits to 0-9 and the Arabic decimal separator to a dot, for number fields. */
+export function toLatinDigits(value: string) {
+  return value
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x6f0))
+    .replace(/٫/g, ".")
+    .replace(/٬/g, "");
+}
