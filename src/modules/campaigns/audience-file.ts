@@ -25,6 +25,9 @@ export function normalizeCampaignPhone(raw: string, defaultCountryCode = ""): st
   return /^[1-9]\d{7,14}$/.test(digits) ? digits : null;
 }
 
+/** A WhatsApp internal id (LID) rather than a phone number: 14–15 digits starting with 1. */
+export const looksLikeLid = (identifier: string) => /^1\d{13,14}$/.test(identifier);
+
 /** CSV or pasted text into rows of cells; the separator (comma, semicolon or tab) is detected. */
 export function parseCsv(text: string): string[][] {
   const clean = text.replace(/^﻿/, "");

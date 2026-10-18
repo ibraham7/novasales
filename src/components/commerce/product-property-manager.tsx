@@ -369,7 +369,11 @@ function PropertyForm({
         <p className="text-xs text-muted-foreground">القيمة تُكتب لكل منتج عند إضافته.</p>
       )}
 
-      {isList(form.kind) && (
+      {isList(form.kind) && !form.name.trim() && (
+        <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">اكتب اسم الخاصية أولًا، ثم أضف قيمها</p>
+      )}
+
+      {isList(form.kind) && form.name.trim() && (
         <ValuesInput
           values={form.options}
           locked={lockedValues}
@@ -431,6 +435,9 @@ export function ValuesInput({
   onChange: (values: string[]) => void;
 }) {
   const [input, setInput] = useState("");
+  const [allTemplates, setAllTemplates] = useState(false);
+  // One row of ready lists; the rest behind «المزيد».
+  const shownTemplates = allTemplates ? templates : templates.slice(0, 3);
   const add = (text: string) => {
     const added = text.split(/[،,]/).map((v) => v.trim()).filter(Boolean);
     if (!added.length) return;
@@ -443,7 +450,7 @@ export function ValuesInput({
       {templates.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] text-muted-foreground">قيم جاهزة:</span>
-          {templates.map((t) => (
+          {shownTemplates.map((t) => (
             <button
               key={t.label}
               type="button"
@@ -453,6 +460,11 @@ export function ValuesInput({
               {t.label}
             </button>
           ))}
+          {templates.length > shownTemplates.length && (
+            <button type="button" className="px-1 text-xs text-primary hover:underline" onClick={() => setAllTemplates(true)}>
+              المزيد…
+            </button>
+          )}
         </div>
       )}
       {values.length > 0 && (

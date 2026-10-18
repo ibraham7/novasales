@@ -303,7 +303,13 @@ function PropertyDialog({
 
   const submit = () => {
     const trimmed = name.trim();
-    if (!trimmed) return setError("اكتب اسم الخاصية");
+    if (!trimmed) {
+      // The name is at the top of the dialog; bring it into view so the message is seen.
+      const field = document.getElementById("property-name");
+      field?.scrollIntoView({ block: "center", behavior: "smooth" });
+      field?.focus();
+      return setError("اكتب اسم الخاصية");
+    }
     if (takenNames.includes(trimmed)) return setError("هذه الخاصية مضافة للمنتج");
     const stock = effectiveScope === "variant";
     if (stock && !allowStock) return setError("إضافة خيارات لها كمية تحتاج صلاحية المخزون");
@@ -353,6 +359,7 @@ function PropertyDialog({
                 setError("");
               }}
             />
+            {error === "اكتب اسم الخاصية" && <p className="text-sm text-destructive">{error}</p>}
           </div>
 
           {existing ? (
@@ -413,7 +420,9 @@ function PropertyDialog({
             </div>
           )}
 
-          {listKind ? (
+          {!name.trim() ? (
+            <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">اكتب اسم الخاصية أولًا، ثم أضف قيمها</p>
+          ) : listKind ? (
             <ValuesInput
               values={values}
               locked={new Set(lockedValues)}
@@ -434,7 +443,7 @@ function PropertyDialog({
             <ScalarInput kind={effectiveKind} value={scalar} onChange={setScalar} />
           )}
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && error !== "اكتب اسم الخاصية" && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button type="button" onClick={submit}>

@@ -70,3 +70,12 @@ test("protection limits wait instead of failing the recipient", () => {
   assert.equal(retryDelayMinutes("no_phone"), null);
   assert.equal(retryDelayMinutes(undefined), null);
 });
+
+import { looksLikeLid } from "../src/modules/campaigns/audience-file.ts";
+
+test("WhatsApp internal ids are told apart from phone numbers", () => {
+  assert.equal(looksLikeLid("136391484780684"), true);
+  assert.equal(looksLikeLid("15551234567"), false);
+  assert.equal(looksLikeLid("905516886988"), false);
+  assert.equal(looksLikeLid("447876137354"), false);
+});
