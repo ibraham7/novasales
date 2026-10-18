@@ -31,6 +31,15 @@ const OTHER_TYPES: [Kind, string][] = [
 ];
 const isList = (kind: Kind) => kind === "select" || kind === "multiselect";
 
+/** Suggested to an organization that has no saved properties yet; nothing is saved until used. */
+const STARTER_PROPERTIES: { name: string; values: string[]; stock: boolean }[] = [
+  { name: "اللون", values: ["أسود", "أبيض", "أحمر", "أزرق"], stock: true },
+  { name: "المقاس", values: ["S", "M", "L", "XL"], stock: true },
+  { name: "السعة", values: ["64GB", "128GB", "256GB"], stock: true },
+  { name: "الخامة", values: ["قطن", "بوليستر", "جلد"], stock: false },
+  { name: "الضمان", values: ["6 أشهر", "سنة", "سنتان"], stock: false },
+];
+
 function displayValue(value: AttributeValue) {
   if (Array.isArray(value)) return value.join("، ");
   if (typeof value === "boolean") return value ? "نعم" : "لا";
@@ -229,6 +238,21 @@ function PropertyDialog({
   const suggestions = (existing?.options ?? []).filter((o) => !values.includes(o));
   const nameSuggestions = definitions.filter((d) => !takenNames.includes(d.name.trim()) && (allowStock || d.scope === "product"));
 
+  const editing = !!(initialGroup || initialSpec);
+  // Saved properties, or starter suggestions while none are saved, as one-tap buttons.
+  const ready = editing
+    ? []
+    : definitions.length
+      ? nameSuggestions.map((d) => ({ name: d.name, values: isList(d.kind) ? d.options : [], stock: d.scope === "variant" }))
+      : STARTER_PROPERTIES.filter((p) => !takenNames.includes(p.name) && (allowStock || !p.stock));
+  const pickReady = (item: { name: string; values: string[]; stock: boolean }) => {
+    setName(item.name);
+    setValues(item.values);
+    setPerValueStock(item.stock && allowStock && !stockFull);
+    setKind("select");
+    setError("");
+  };
+
   const addValues = (text: string) => {
     const added = text.split(/[،,]/).map((v) => v.trim()).filter(Boolean);
     if (!added.length) return;
@@ -253,9 +277,23 @@ function PropertyDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent dir="rtl" className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{initialGroup || initialSpec ? "تعديل خاصية" : "إضافة خاصية"}</DialogTitle>
+          <DialogTitle>{editing ? "تعديل خاصية" : "إضافة خاصية"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3" data-validation-scope>
+          {ready.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {ready.map((item) => (
+                <button
+                  key={item.name}
+                  type="button"
+                  className={`rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent ${name.trim() === item.name ? "border-primary bg-primary/10 text-primary" : ""}`}
+                  onClick={() => pickReady(item)}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="space-y-1">
             <Label htmlFor="property-name">الاسم</Label>
             <Input
@@ -363,7 +401,7 @@ function PropertyDialog({
         </div>
         <DialogFooter>
           <Button type="button" onClick={submit}>
-            {initialGroup || initialSpec ? "حفظ" : "إضافة"}
+            {editing ? "حفظ" : "إضافة"}
           </Button>
         </DialogFooter>
       </DialogContent>
