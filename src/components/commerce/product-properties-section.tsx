@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toLatinDigits } from "@/lib/utils";
 
 type Kind = AttributeDefinition["kind"];
 type Scope = AttributeDefinition["scope"];
@@ -59,6 +60,8 @@ export function ProductPropertiesSection({
   currency,
   canStock,
   disabled,
+  allowStockOptions = isNew,
+  lockedOptions = {},
 }: {
   isNew: boolean;
   options: OptionsDraft;
@@ -71,6 +74,10 @@ export function ProductPropertiesSection({
   currency: string;
   canStock: boolean;
   disabled: boolean;
+  /** Whether options with their own quantity can be added (a new product, or an existing one from its stock). */
+  allowStockOptions?: boolean;
+  /** Values an existing product already has for each option (by option key); they cannot be removed. */
+  lockedOptions?: Record<string, string[]>;
 }) {
   const [editing, setEditing] = useState<{ key?: string } | null>(null);
   const groups = activeGroups(options.groups);
@@ -106,7 +113,11 @@ export function ProductPropertiesSection({
               label={`${g.name}: ${g.values.join("، ")}`}
               stock
               onEdit={() => setEditing({ key: g.key })}
-              onRemove={() => onOptionsChange({ ...options, groups: options.groups.filter((x) => x.key !== g.key) })}
+              onRemove={
+                lockedOptions[g.key]
+                  ? undefined
+                  : () => onOptionsChange({ ...options, groups: options.groups.filter((x) => x.key !== g.key) })
+              }
             />
           ))}
           {specs.map((s) => (
@@ -153,8 +164,10 @@ export function ProductPropertiesSection({
 
       {editing && (
         <PropertyDialog
-          allowStock={isNew}
+          allowStock={allowStockOptions}
           stockFull={!editingGroup && options.groups.length >= MAX_OPTION_GROUPS}
+          lockedValues={editingGroup ? lockedOptions[editingGroup.key] : undefined}
+          blockNewStock={Object.keys(lockedOptions).length > 0}
           definitions={definitions}
           takenNames={usedNames.filter((n) => n && n !== (editingGroup?.name ?? editingSpec?.name ?? "").trim())}
           initialGroup={editingGroup}
@@ -210,7 +223,7 @@ export function ProductQuantityField({
   );
 }
 
-function PropertyChip({ label, stock, onEdit, onRemove }: { label: string; stock?: boolean; onEdit?: () => void; onRemove: () => void }) {
+function PropertyChip({ label, stock, onEdit, onRemove }: { label: string; stock?: boolean; onEdit?: () => void; onRemove?: () => void }) {
   return (
     <span className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-1 text-xs ${stock ? "border-primary/30 bg-primary/10 text-primary" : "bg-muted"}`}>
       {onEdit ? (
@@ -220,9 +233,11 @@ function PropertyChip({ label, stock, onEdit, onRemove }: { label: string; stock
       ) : (
         <span className="truncate">{label}</span>
       )}
-      <button type="button" aria-label={`إزالة ${label}`} className="rounded-full p-0.5 hover:bg-background/60" onClick={onRemove}>
-        <X className="h-3 w-3" />
-      </button>
+      {onRemove && (
+        <button type="button" aria-label={`إزالة ${label}`} className="rounded-full p-0.5 hover:bg-background/60" onClick={onRemove}>
+          <X className="h-3 w-3" />
+        </button>
+      )}
     </span>
   );
 }
@@ -237,9 +252,14 @@ function PropertyDialog({
   onClose,
   onSaveGroup,
   onSaveSpec,
+  lockedValues = [],
+  blockNewStock = false,
 }: {
   allowStock: boolean;
   stockFull: boolean;
+  lockedValues?: string[];
+  /** The product already has options: values can be added to them, but no new option. */
+  blockNewStock?: boolean;
   definitions: AttributeDefinition[];
   takenNames: string[];
   initialGroup?: OptionGroup;
@@ -286,8 +306,10 @@ function PropertyDialog({
     if (!trimmed) return setError("اكتب اسم الخاصية");
     if (takenNames.includes(trimmed)) return setError("هذه الخاصية مضافة للمنتج");
     const stock = effectiveScope === "variant";
-    if (stock && !allowStock) return setError("الخيارات التي لها كمية تُضاف عند إنشاء المنتج؛ استخدم «المخزون» للمنتجات الموجودة");
+    if (stock && !allowStock) return setError("إضافة خيارات لها كمية تحتاج صلاحية المخزون");
     if (stock && !canStock) return setError("يمكن إضافة 3 خيارات لها كمية كحد أقصى");
+    if (stock && blockNewStock && !initialGroup)
+      return setError("هذا المنتج له خيارات؛ اضغط على الخيار الموجود لإضافة قيم جديدة له");
     if (listKind && !values.length) return setError("أضف قيمة واحدة على الأقل");
     if (!listKind && effectiveKind !== "boolean" && !scalar.trim()) return setError("أدخل القيمة");
     if (stock) onSaveGroup({ key, name: trimmed, values });
@@ -354,7 +376,7 @@ function PropertyDialog({
                   >
                     <div className="text-sm font-medium">{SCOPES[option].title}</div>
                     <div className="text-[11px] text-muted-foreground">
-                      {off ? (allowStock ? "وصلت للحد الأقصى (3)" : "تُضاف من «المخزون» للمنتج الموجود") : SCOPES[option].hint}
+                      {off ? (allowStock ? "وصلت للحد الأقصى (3)" : "تحتاج صلاحية المخزون") : SCOPES[option].hint}
                     </div>
                   </button>
                 );
@@ -394,7 +416,7 @@ function PropertyDialog({
           {listKind ? (
             <ValuesInput
               values={values}
-              locked={new Set()}
+              locked={new Set(lockedValues)}
               suggestions={suggestions}
               templates={templates}
               applied={applied}
@@ -447,7 +469,7 @@ function ScalarInput({ kind, value, onChange }: { kind: Kind; value: string; onC
   );
 }
 
-function ComboRow({
+export function ComboRow({
   label,
   showInclude,
   stock,
@@ -489,7 +511,7 @@ function ComboRow({
             placeholder="الكمية"
             disabled={off}
             value={stock.quantity}
-            onChange={(e) => onChange({ quantity: e.target.value })}
+            onChange={(e) => onChange({ quantity: toLatinDigits(e.target.value) })}
           />
         )}
         {(canStock || extraDefinitions.length > 0) && (
@@ -529,7 +551,7 @@ function ComboRow({
                     <Input className="h-8" placeholder="رقم الدفعة" value={batch.batchCode} onChange={(e) => onChange({ extraBatches: stock.extraBatches.map((b) => (b.key === batch.key ? { ...b, batchCode: e.target.value } : b)) })} />
                   </div>
                   <Input className="h-8" type="date" aria-label="تاريخ انتهاء الدفعة" value={batch.expiresOn} onChange={(e) => onChange({ extraBatches: stock.extraBatches.map((b) => (b.key === batch.key ? { ...b, expiresOn: e.target.value } : b)) })} />
-                  <Input className="h-8" inputMode="decimal" aria-label="كمية الدفعة" placeholder="الكمية" value={batch.quantity} onChange={(e) => onChange({ extraBatches: stock.extraBatches.map((b) => (b.key === batch.key ? { ...b, quantity: e.target.value } : b)) })} />
+                  <Input className="h-8" inputMode="decimal" aria-label="كمية الدفعة" placeholder="الكمية" value={batch.quantity} onChange={(e) => onChange({ extraBatches: stock.extraBatches.map((b) => (b.key === batch.key ? { ...b, quantity: toLatinDigits(e.target.value) } : b)) })} />
                   <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label="حذف الدفعة" onClick={() => onChange({ extraBatches: stock.extraBatches.filter((b) => b.key !== batch.key) })}>
                     <X className="h-4 w-4" />
                   </Button>

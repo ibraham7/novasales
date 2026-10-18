@@ -64,6 +64,14 @@ export const upsertProduct = createServerFn({ method: "POST" })
     validateAttributes(values, defs ?? [], "product");
     if (data.price < minimumPrice(values, defs ?? []))
       throw new Error("سعر المبيع أقل من الحد الأدنى المحدد للتكلفة");
+    if (data.sku) {
+      // A clear message instead of the database's duplicate-key error.
+      let same = db.from("sales_products").select("id").eq("organization_id", organizationId).eq("sku", data.sku).limit(1);
+      if (data.id) same = same.neq("id", data.id);
+      const { data: taken, error } = await same;
+      if (error) throw new Error("تعذر التحقق من رمز SKU؛ أعد المحاولة");
+      if (taken?.length) throw new Error(`رمز SKU «${data.sku}» مستخدم لمنتج آخر؛ اختر رمزًا مختلفًا`);
+    }
     const payload = {
       attributes: values,
       organization_id: organizationId,
@@ -87,7 +95,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
         .eq("organization_id", organizationId)
         .select("*")
         .single();
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(error.code === "23505" ? "رمز SKU مستخدم لمنتج آخر؛ اختر رمزًا مختلفًا" : `تعذر حفظ المنتج: ${error.message}`);
       return row;
     }
 
