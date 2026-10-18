@@ -352,7 +352,7 @@ function ProductsPage() {
           </p>
         </div>
 
-        {canManageProperties && <div className="flex flex-col gap-2"><Button type="button" variant="outline" onClick={()=>setPropertiesOpen(true)}>إدارة الخصائص والقيم</Button><Dialog open={propertiesOpen} onOpenChange={setPropertiesOpen}><DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>خصائص المؤسسة وقيمها</DialogTitle></DialogHeader><ProductPropertyManager/></DialogContent></Dialog></div>}
+        {canManageProperties && <div className="flex flex-col gap-2"><Button type="button" variant="outline" onClick={()=>setPropertiesOpen(true)}>الخيارات والمواصفات</Button><Dialog open={propertiesOpen} onOpenChange={setPropertiesOpen}><DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>الخيارات والمواصفات</DialogTitle></DialogHeader><ProductPropertyManager/></DialogContent></Dialog></div>}
         <Dialog
           open={productDialogOpen}
           onOpenChange={(open) => {
