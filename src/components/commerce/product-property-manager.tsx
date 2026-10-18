@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { ArrowRight, Pencil, Plus, X } from "lucide-react";
 import { listProductAttributes, saveProductAttribute } from "@/modules/commerce/stock.functions";
 import type { AttributeDefinition } from "@/modules/commerce/product-attributes";
+import { READY_PROPERTIES } from "@/modules/commerce/product-options";
 import { usePermission } from "@/platform/rbac/use-permission";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ export function ProductPropertyManager({
       <PropertyForm
         form={form}
         original={original}
+        definitions={definitions}
         saving={mut.isPending}
         onChange={setForm}
         onSave={() => mut.mutate(form)}
@@ -167,6 +169,7 @@ export function ProductPropertyManager({
 function PropertyForm({
   form,
   original,
+  definitions,
   saving,
   onChange,
   onSave,
@@ -174,6 +177,7 @@ function PropertyForm({
 }: {
   form: Form;
   original?: AttributeDefinition;
+  definitions: AttributeDefinition[];
   saving: boolean;
   onChange: (form: Form) => void;
   onSave: () => void;
@@ -184,6 +188,10 @@ function PropertyForm({
   const [otherType, setOtherType] = useState(form.scope === "variant" && form.kind !== "select");
   const showType = form.scope === "product" || otherType;
   const lockedValues = new Set(original?.options ?? []);
+  const savedNames = new Set(definitions.map((d) => d.name.trim()));
+  // Ready-made names for this kind of property; any other name can still be typed.
+  const readyNames = editing ? [] : READY_PROPERTIES.filter((p) => p.stock === (form.scope === "variant") && !savedNames.has(p.name));
+  const ready = READY_PROPERTIES.find((p) => p.name === form.name.trim());
 
   return (
     <section className="space-y-4" data-validation-scope>
@@ -222,6 +230,23 @@ function PropertyForm({
 
       <div className="space-y-1">
         <Label htmlFor="property-name">الاسم</Label>
+        {readyNames.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-1">
+            {readyNames.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                className={`rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent ${form.name.trim() === p.name ? "border-primary bg-primary/10 text-primary" : ""}`}
+                onClick={() => {
+                  setOtherType(false);
+                  onChange({ ...form, name: p.name, kind: "select", isPriceFloor: false, options: [...p.values] });
+                }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
         <Input
           id="property-name"
           required
@@ -233,7 +258,22 @@ function PropertyForm({
 
       {!editing && showType && (
         <div className="space-y-1">
-          <Label htmlFor="property-kind">نوع القيمة</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="property-kind">نوع القيمة</Label>
+            {form.scope === "variant" && (
+              <button
+                type="button"
+                aria-label="إلغاء نوع القيمة المختلف"
+                className="rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => {
+                  setOtherType(false);
+                  onChange({ ...form, kind: "select", isPriceFloor: false });
+                }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <select
             id="property-kind"
             className="w-full border rounded-md bg-background p-2 text-sm"
@@ -258,6 +298,7 @@ function PropertyForm({
         <ValuesInput
           values={form.options}
           locked={lockedValues}
+          suggestions={ready?.values ?? []}
           placeholder={form.scope === "variant" ? "مثال: أحمر" : "مثال: قطن"}
           onChange={(options) => onChange({ ...form, options })}
         />
@@ -292,11 +333,13 @@ function PropertyForm({
 function ValuesInput({
   values,
   locked,
+  suggestions,
   placeholder,
   onChange,
 }: {
   values: string[];
   locked: Set<string>;
+  suggestions: string[];
   placeholder: string;
   onChange: (values: string[]) => void;
 }) {
@@ -342,6 +385,17 @@ function ValuesInput({
           إضافة
         </Button>
       </div>
+      {suggestions.some((v) => !values.includes(v)) && (
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions
+            .filter((v) => !values.includes(v))
+            .map((v) => (
+              <button key={v} type="button" className="rounded-full border border-dashed px-2.5 py-0.5 text-xs hover:bg-accent" onClick={() => onChange([...values, v])}>
+                + {v}
+              </button>
+            ))}
+        </div>
+      )}
       {locked.size > 0 && <p className="text-[11px] text-muted-foreground">القيم المحفوظة لا تُحذف لأنها قد تكون مستخدمة في منتجات.</p>}
     </div>
   );

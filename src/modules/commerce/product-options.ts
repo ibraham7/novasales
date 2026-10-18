@@ -27,6 +27,23 @@ export type AttributeSave = {
 };
 
 export const MAX_OPTION_GROUPS = 3;
+
+/**
+ * Ready-made properties offered as one-tap choices; the user can still type any other name or value.
+ * The first five are the starter suggestions in the product dialog.
+ */
+export const READY_PROPERTIES: { name: string; values: string[]; stock: boolean }[] = [
+  { name: "اللون", values: ["أسود", "أبيض", "أحمر", "أزرق", "أخضر", "رمادي", "بيج"], stock: true },
+  { name: "المقاس", values: ["XS", "S", "M", "L", "XL", "XXL"], stock: true },
+  { name: "السعة", values: ["64GB", "128GB", "256GB", "512GB"], stock: true },
+  { name: "الخامة", values: ["قطن", "بوليستر", "جلد", "صوف", "حرير"], stock: false },
+  { name: "الضمان", values: ["6 أشهر", "سنة", "سنتان"], stock: false },
+  { name: "مقاس الحذاء", values: ["38", "39", "40", "41", "42", "43", "44"], stock: true },
+  { name: "الحجم", values: ["صغير", "وسط", "كبير"], stock: true },
+  { name: "الوزن", values: ["250 غ", "500 غ", "1 كغ"], stock: true },
+  { name: "الفئة", values: ["رجالي", "نسائي", "أطفال"], stock: false },
+  { name: "بلد المنشأ", values: ["تركيا", "الصين", "ألمانيا", "إيطاليا"], stock: false },
+];
 export const EMPTY_OPTIONS: OptionsDraft = { groups: [], stock: {} };
 export const emptyComboStock = (): ComboStock => ({
   included: true,
