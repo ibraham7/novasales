@@ -785,24 +785,33 @@ function ProductsPage() {
                       </p>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2 mt-4 sm:mt-5">
-                      <Button variant="outline" size="sm" onClick={() => openEditProduct(product)}>
+                    {/* One main action (edit, which includes quantities), batch history aside, delete as a small icon. */}
+                    <div className="flex items-center gap-2 mt-4 sm:mt-5">
+                      <Button size="sm" className="flex-1" onClick={() => openEditProduct(product)}>
                         <Pencil className="h-4 w-4 ml-1" />
-                        تعديل
+                        تعديل المنتج والكميات
                       </Button>
-
                       <Button
+                        variant="outline"
                         size="sm"
-                        onClick={() => {
-                          setStockDialog(product);
-                        }}
+                        title="الدفعات وتواريخ الانتهاء وسجل التعديلات"
+                        onClick={() => setStockDialog(product)}
                       >
                         <Boxes className="h-4 w-4 ml-1" />
-                        خيارات المخزون والدفعات
+                        الدفعات
                       </Button>
-                      {canManageProperties && <Button variant="destructive" size="sm" className="col-span-2" onClick={() => setDeletingProduct(product)}>
-                        <Trash2 className="h-4 w-4 ml-1" /> حذف المنتج
-                      </Button>}
+                      {canManageProperties && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          aria-label="حذف المنتج"
+                          title="حذف المنتج"
+                          onClick={() => setDeletingProduct(product)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

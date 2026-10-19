@@ -144,6 +144,7 @@ export function ProductPropertiesSection({
 
       {isNew && canStock && groups.length > 0 && (
         <div className="space-y-1.5">
+          <StockTotals options={options} combos={combos} />
           {combos.map((values) => {
             const key = comboKey(values);
             return (
@@ -220,6 +221,33 @@ export function ProductQuantityField({
       currency={currency}
       canStock
     />
+  );
+}
+
+/**
+ * With options, the quantity is entered per row. A quantity typed before adding the options is kept
+ * and shown, with what is already spread over the rows, so it is not lost.
+ */
+function StockTotals({ options, combos }: { options: OptionsDraft; combos: string[][] }) {
+  const earlier = options.stock[comboKey([])]?.quantity.trim() ?? "";
+  const spread = combos.reduce((sum, values) => {
+    const stock = options.stock[comboKey(values)];
+    return sum + (stock?.included === false ? 0 : Number(stock?.quantity) || 0);
+  }, 0);
+  if (!earlier && !spread) return null;
+  const target = Number(earlier);
+  return (
+    <p className={`rounded-md px-2 py-1.5 text-xs ${earlier && spread !== target ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : "bg-muted text-muted-foreground"}`}>
+      {earlier ? (
+        <>
+          كتبت الكمية <b>{earlier}</b> قبل إضافة الخيارات؛ وزّعها على السطور تحت — الموزّع حتى الآن: <b>{spread}</b>
+        </>
+      ) : (
+        <>
+          مجموع الكميات: <b>{spread}</b>
+        </>
+      )}
+    </p>
   );
 }
 
