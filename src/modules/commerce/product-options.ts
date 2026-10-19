@@ -31,7 +31,8 @@ export const MAX_OPTION_GROUPS = 3;
 /**
  * Ready-made value lists (ألوان، مقاسات…) offered as one-tap choices; any other value can still be typed.
  */
-export const READY_PROPERTIES: { name: string; label: string; values: string[]; stock: boolean }[] = [
+export type ReadyValueList = { label: string; values: string[]; stock: boolean };
+export const READY_PROPERTIES: (ReadyValueList & { name: string })[] = [
   { name: "اللون", label: "ألوان", values: ["أسود", "أبيض", "أحمر", "أزرق", "أخضر", "رمادي", "بيج"], stock: true },
   { name: "المقاس", label: "مقاسات ملابس", values: ["XS", "S", "M", "L", "XL", "XXL"], stock: true },
   { name: "السعة", label: "سعات", values: ["64GB", "128GB", "256GB", "512GB"], stock: true },
@@ -210,4 +211,25 @@ export function specValue(spec: SpecDraft, definition: AttributeDefinition): Att
   if (definition.kind === "number" || definition.kind === "money") return Number(spec.scalar);
   if (definition.kind === "boolean") return spec.scalar === "true";
   return spec.scalar.trim();
+}
+
+/**
+ * A ready list works as a switch: the first tap adds its values, a second tap removes them again,
+ * except values typed by hand, values already saved, and values another chosen list also added.
+ */
+export function toggleReadyList(
+  values: string[],
+  applied: string[],
+  list: ReadyValueList,
+  lists: ReadyValueList[],
+  locked: Set<string> = new Set(),
+): { values: string[]; applied: string[] } {
+  if (!applied.includes(list.label))
+    return { values: [...new Set([...values, ...list.values])], applied: [...applied, list.label] };
+  const stillApplied = applied.filter((label) => label !== list.label);
+  const keep = new Set(lists.filter((l) => stillApplied.includes(l.label)).flatMap((l) => l.values));
+  return {
+    values: values.filter((v) => !list.values.includes(v) || locked.has(v) || keep.has(v)),
+    applied: stillApplied,
+  };
 }
