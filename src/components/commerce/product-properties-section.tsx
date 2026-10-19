@@ -3,7 +3,7 @@ import { Plus, Settings2, X } from "lucide-react";
 import type { AttributeDefinition, AttributeValue } from "@/modules/commerce/product-attributes";
 import {
   MAX_OPTION_GROUPS,
-  READY_PROPERTIES,
+  toggleReadyList,
   activeGroups,
   combinations,
   comboKey,
@@ -15,7 +15,7 @@ import {
   type SpecDraft,
 } from "@/modules/commerce/product-options";
 import { ProductAttributeFields } from "./product-attribute-fields";
-import { SCOPES, ValuesInput } from "./product-property-manager";
+import { SCOPES, ValuesInput, useReadyLists } from "./product-property-manager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -313,7 +313,8 @@ function PropertyDialog({
   const effectiveScope: Scope = existing ? existing.scope : scope;
   const effectiveKind: Kind = existing ? existing.kind : scope === "variant" ? "select" : kind;
   const listKind = isList(effectiveKind);
-  const templates = READY_PROPERTIES.filter((p) => p.stock === (effectiveScope === "variant"));
+  const readyLists = useReadyLists();
+  const templates = readyLists.filter((p) => p.stock === (effectiveScope === "variant"));
   const suggestions = [
     ...new Set([...(existing?.options ?? []), ...templates.filter((t) => applied.includes(t.label)).flatMap((t) => t.values)]),
   ];
@@ -458,8 +459,9 @@ function PropertyDialog({
               templates={templates}
               applied={applied}
               onApply={(t) => {
-                setApplied((old) => [...new Set([...old, t.label])]);
-                setValues((old) => [...new Set([...old, ...t.values])]);
+                const next = toggleReadyList(values, applied, t, templates, new Set(lockedValues));
+                setApplied(next.applied);
+                setValues(next.values);
               }}
               placeholder={effectiveScope === "variant" ? "مثال: أحمر" : "مثال: قطن"}
               onChange={(next) => {

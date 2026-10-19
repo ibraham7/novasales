@@ -5,11 +5,13 @@ import { ArrowRight, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   deleteProductAttribute,
   listProductAttributes,
+  listReadyValueLists,
+  saveReadyValueLists,
   saveProductAttribute,
   setProductAttributeHidden,
 } from "@/modules/commerce/stock.functions";
 import type { AttributeDefinition } from "@/modules/commerce/product-attributes";
-import { READY_PROPERTIES } from "@/modules/commerce/product-options";
+import { READY_PROPERTIES, toggleReadyList, type ReadyValueList } from "@/modules/commerce/product-options";
 import { usePermission } from "@/platform/rbac/use-permission";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -212,6 +214,8 @@ export function ProductPropertyManager({
         );
       })}
 
+      <ReadyListsSection />
+
       {hidden.length > 0 && (
         <details className="rounded-md border p-2.5">
           <summary className="cursor-pointer text-xs text-muted-foreground">خصائص مخفية ({hidden.length})</summary>
@@ -277,7 +281,7 @@ function PropertyForm({
   const showType = form.scope === "product" || otherType;
   const lockedValues = new Set(original?.options ?? []);
   // Ready-made value lists only add values; the property's name is always typed by the user.
-  const templates = READY_PROPERTIES.filter((p) => p.stock === (form.scope === "variant"));
+  const templates = useReadyLists().filter((p) => p.stock === (form.scope === "variant"));
   const [applied, setApplied] = useState<string[]>([]);
   const suggestions = [...new Set(templates.filter((p) => applied.includes(p.label)).flatMap((p) => p.values))];
 
@@ -381,8 +385,9 @@ function PropertyForm({
           templates={templates}
           applied={applied}
           onApply={(template) => {
-            setApplied((old) => [...new Set([...old, template.label])]);
-            onChange({ ...form, options: [...new Set([...form.options, ...template.values])] });
+            const next = toggleReadyList(form.options, applied, template, templates, lockedValues);
+            setApplied(next.applied);
+            onChange({ ...form, options: next.values });
           }}
           placeholder={form.scope === "variant" ? "مثال: أحمر" : "مثال: قطن"}
           onChange={(options) => onChange({ ...form, options })}
@@ -414,6 +419,13 @@ function PropertyForm({
   );
 }
 
+/** The organization's ready value lists (its own, or the built-in ones until it sets them). */
+export function useReadyLists(): ReadyValueList[] {
+  const fetchLists = useServerFn(listReadyValueLists);
+  const q = useQuery({ queryKey: ["ready-value-lists"], queryFn: () => fetchLists(), staleTime: 5 * 60_000 });
+  return q.data?.lists ?? READY_PROPERTIES;
+}
+
 /** Values as chips: type and press Enter (or comma). Values already saved cannot be removed. */
 export function ValuesInput({
   values,
@@ -428,9 +440,9 @@ export function ValuesInput({
   values: string[];
   locked: Set<string>;
   suggestions: string[];
-  templates: typeof READY_PROPERTIES;
+  templates: ReadyValueList[];
   applied: string[];
-  onApply: (template: (typeof READY_PROPERTIES)[number]) => void;
+  onApply: (template: ReadyValueList) => void;
   placeholder: string;
   onChange: (values: string[]) => void;
 }) {
@@ -512,5 +524,128 @@ export function ValuesInput({
       )}
       {locked.size > 0 && <p className="text-[11px] text-muted-foreground">القيم المحفوظة لا تُحذف لأنها قد تكون مستخدمة في منتجات.</p>}
     </div>
+  );
+}
+
+/** The ready value lists offered when adding a property; each organization can set its own. */
+function ReadyListsSection() {
+  const qc = useQueryClient();
+  const fetchLists = useServerFn(listReadyValueLists);
+  const save = useServerFn(saveReadyValueLists);
+  const q = useQuery({ queryKey: ["ready-value-lists"], queryFn: () => fetchLists(), staleTime: 5 * 60_000 });
+  const [draft, setDraft] = useState<(ReadyValueList & { key: string })[] | null>(null);
+  const mut = useMutation({
+    mutationFn: (lists: ReadyValueList[]) => save({ data: { lists } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ready-value-lists"] });
+      toast.success("تم حفظ القيم الجاهزة");
+      setDraft(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const lists = q.data?.lists ?? READY_PROPERTIES;
+
+  if (!draft)
+    return (
+      <section className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-sm">القيم الجاهزة</h3>
+            <p className="text-xs text-muted-foreground">
+              قوائم تظهر عند إضافة خاصية لتعبئة القيم بضغطة{q.data && !q.data.custom ? " — هذه القوائم الافتراضية، عدّلها لتناسب بضاعتك" : ""}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1 shrink-0"
+            onClick={() => setDraft(lists.map((l) => ({ label: l.label, stock: l.stock, values: [...l.values], key: crypto.randomUUID() })))}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            تعديل
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {lists.map((l) => (
+            <span key={l.label} className="rounded-full bg-muted px-2.5 py-0.5 text-[11px]" title={l.values.join("، ")}>
+              {l.label} ({l.values.length})
+            </span>
+          ))}
+        </div>
+      </section>
+    );
+
+  const update = (key: string, patch: Partial<ReadyValueList>) => setDraft(draft.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  return (
+    <section className="space-y-3 rounded-lg border p-3" data-validation-scope>
+      <h3 className="font-semibold text-sm">تعديل القيم الجاهزة</h3>
+      {draft.map((l) => (
+        <div key={l.key} className="space-y-2 rounded-md border p-2">
+          <div className="flex items-center gap-2">
+            <Input className="h-8" aria-label="اسم القائمة" placeholder="مثال: ألوان العبايات" value={l.label} onChange={(e) => update(l.key, { label: e.target.value })} />
+            <select
+              aria-label="نوع القائمة"
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+              value={l.stock ? "stock" : "spec"}
+              onChange={(e) => update(l.key, { stock: e.target.value === "stock" })}
+            >
+              <option value="stock">لها كمية</option>
+              <option value="spec">مواصفات</option>
+            </select>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+              aria-label={`حذف قائمة ${l.label}`}
+              onClick={() => setDraft(draft.filter((x) => x.key !== l.key))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <ValuesInput
+            values={l.values}
+            locked={new Set()}
+            suggestions={[]}
+            templates={[]}
+            applied={[]}
+            onApply={() => {}}
+            placeholder="مثال: كحلي"
+            onChange={(values) => update(l.key, { values })}
+          />
+        </div>
+      ))}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="gap-1"
+        onClick={() => setDraft([...draft, { key: crypto.randomUUID(), label: "", stock: true, values: [] }])}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        قائمة جديدة
+      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          disabled={mut.isPending}
+          onClick={() => {
+            const lists = draft.map(({ label, stock, values }) => ({ label: label.trim(), stock, values })).filter((l) => l.label || l.values.length);
+            if (lists.some((l) => !l.label)) return toast.error("اكتب اسمًا لكل قائمة");
+            if (lists.some((l) => !l.values.length)) return toast.error("أضف قيمة واحدة على الأقل لكل قائمة");
+            mut.mutate(lists);
+          }}
+        >
+          {mut.isPending ? "جارٍ الحفظ..." : "حفظ"}
+        </Button>
+        <Button type="button" variant="ghost" disabled={mut.isPending} onClick={() => setDraft(null)}>
+          إلغاء
+        </Button>
+        <Button type="button" variant="ghost" className="mr-auto text-xs" disabled={mut.isPending} onClick={() => mut.mutate([])}>
+          استرجاع القوائم الافتراضية
+        </Button>
+      </div>
+    </section>
   );
 }

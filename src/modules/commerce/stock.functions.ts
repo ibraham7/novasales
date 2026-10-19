@@ -166,6 +166,55 @@ export const setProductAttributeHidden = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+const ReadyList = z.object({
+  label: z.string().trim().min(1).max(60),
+  stock: z.boolean(),
+  values: z.array(z.string().trim().min(1).max(100)).max(100),
+});
+// The table is created by migration 20261019120000; until then the built-in lists are used.
+const missingTable = (error: any) => ["42P01", "PGRST205", "PGRST204"].includes(error?.code);
+
+/** The organization's ready value lists, or the built-in ones when it has not set its own. */
+export const listReadyValueLists = createServerFn({ method: "GET" }).handler(async () => {
+  const { db, organizationId } = await context("products.view");
+  const { READY_PROPERTIES } = await import("./product-options");
+  const builtIn = READY_PROPERTIES.map(({ label, values, stock }) => ({ label, values, stock }));
+  const { data, error } = await db
+    .from("sales_ready_value_lists")
+    .select("label,stock,values")
+    .eq("organization_id", organizationId)
+    .order("position");
+  if (error && !missingTable(error)) throw new Error("تعذر تحميل القيم الجاهزة");
+  return data?.length
+    ? { custom: true, lists: data as { label: string; stock: boolean; values: string[] }[] }
+    : { custom: false, lists: builtIn };
+});
+
+/** Replaces the organization's ready value lists; an empty list goes back to the built-in ones. */
+export const saveReadyValueLists = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ lists: z.array(ReadyList).max(50) }).parse(d))
+  .handler(async ({ data }) => {
+    const { db, organizationId } = await context("products.manage");
+    const labels = data.lists.map((l) => l.label);
+    if (new Set(labels).size !== labels.length) throw new Error("اسم القائمة مكرر؛ استخدم اسمًا مختلفًا لكل قائمة");
+    const del = await db.from("sales_ready_value_lists").delete().eq("organization_id", organizationId);
+    if (del.error)
+      throw new Error(missingTable(del.error) ? "تعديل القيم الجاهزة يحتاج تحديث قاعدة البيانات أولًا" : "تعذر حفظ القيم الجاهزة");
+    if (data.lists.length) {
+      const { error } = await db.from("sales_ready_value_lists").insert(
+        data.lists.map((l, position) => ({
+          organization_id: organizationId,
+          label: l.label,
+          stock: l.stock,
+          values: [...new Set(l.values)],
+          position,
+        })),
+      );
+      if (error) throw new Error("تعذر حفظ القيم الجاهزة");
+    }
+    return { ok: true };
+  });
+
 export const createProductVariant = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z

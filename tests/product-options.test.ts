@@ -104,3 +104,16 @@ test("specification values take the shape of their property type", () => {
   assert.equal(specValue(spec({ scalar: "true" }), def("boolean")), true);
   assert.equal(specValue(spec({ scalar: " سنة " }), def("text")), "سنة");
 });
+
+import { toggleReadyList } from "../src/modules/commerce/product-options.ts";
+
+test("a ready list is a switch: a second tap removes only the values it added", () => {
+  const colours = { label: "ألوان", values: ["أسود", "أبيض", "أحمر"], stock: true };
+  const dark = { label: "داكن", values: ["أسود", "كحلي"], stock: true };
+  let state = toggleReadyList(["بيج"], [], colours, [colours, dark]);
+  assert.deepEqual(state, { values: ["بيج", "أسود", "أبيض", "أحمر"], applied: ["ألوان"] });
+  state = toggleReadyList(state.values, state.applied, dark, [colours, dark]);
+  state = toggleReadyList(state.values, state.applied, colours, [colours, dark], new Set(["أحمر"]));
+  // «بيج» was typed by hand, «أسود» is still in «داكن», «أحمر» is already saved.
+  assert.deepEqual(state, { values: ["بيج", "أسود", "أحمر", "كحلي"], applied: ["داكن"] });
+});
