@@ -1,3 +1,4 @@
+import { toLatinDigits } from "@/lib/utils";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 
@@ -150,7 +151,7 @@ export const createUser = createServerFn({ method: "POST" })
     const db = supabaseAdmin as any;
 
     const generated = String(Math.floor(1000000 + Math.random() * 9000000));
-    const raw = (data.email ?? "").trim() || generated;
+    const raw = toLatinDigits((data.email ?? "").trim()) || generated;
     const password = (data.password ?? "").trim() || raw.replace(/\s+/g, "").toLowerCase();
     const email = raw.includes("@") ? raw : `${raw.replace(/\s+/g, "").toLowerCase()}@demo.app`;
 
@@ -204,7 +205,7 @@ export const updateUserCredentials = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const payload: Record<string, unknown> = {};
     if (data.username) {
-      const raw = data.username.trim();
+      const raw = toLatinDigits(data.username.trim());
       payload.email = raw.includes("@") ? raw : `${raw.replace(/\s+/g, "").toLowerCase()}@demo.app`;
       payload.email_confirm = true;
     }

@@ -1,3 +1,4 @@
+import { toLatinDigits } from "@/lib/utils";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 import { ROLE_RANK } from "./role-rank";
@@ -187,7 +188,7 @@ export const updateMemberCredentials = createServerFn({ method: "POST" })
 
     const payload: Record<string, unknown> = {};
     if (data.username) {
-      const raw = data.username.trim();
+      const raw = toLatinDigits(data.username.trim());
       payload.email = raw.includes("@") ? raw : `${raw.replace(/\s+/g, "").toLowerCase()}@demo.app`;
       payload.email_confirm = true;
     }

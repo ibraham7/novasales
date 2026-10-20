@@ -11,6 +11,7 @@ import { toast } from "@/lib/toast";
 import { z } from "@/lib/validation";
 import { validateControls } from "@/lib/form-validation";
 import { clearLocalAuthStorage, withAuthTimeout } from "@/lib/auth-session";
+import { toLatinDigits } from "@/lib/utils";
 
 const searchSchema = z.object({ redirect: z.string().optional() });
 
@@ -52,7 +53,8 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
-        const raw = email.trim();
+        // Arabic-Indic digits typed on a phone (١٣٦٩٤٤) are the same username as 136944.
+        const raw = toLatinDigits(email.trim());
         const { error } = await withAuthTimeout(supabase.auth.signUp({
           email: raw.includes("@") ? raw : `${raw.replace(/\s+/g, "").toLowerCase()}@demo.app`,
           password,
@@ -64,7 +66,8 @@ function AuthPage() {
         if (error) throw error;
         toast.success("تم إنشاء الحساب");
       } else {
-        const identifier = email.trim();
+        // Arabic-Indic digits typed on a phone (١٣٦٩٤٤) are the same username as 136944.
+        const identifier = toLatinDigits(email.trim());
         const loginEmail = identifier.includes("@")
           ? identifier
           : `${identifier.replace(/\s+/g, "").toLowerCase()}@demo.app`;
