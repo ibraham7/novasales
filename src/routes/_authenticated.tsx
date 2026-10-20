@@ -52,6 +52,8 @@ function AuthGate() {
     gcTime: 30 * 60 * 1000,
     retry: false,
     networkMode: "online",
+    // Saved permissions show the app at once, but are always re-checked once per visit.
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
     ...(cached ? {
       initialData: { permissions: cached.permissions, isSuperAdmin: cached.isSuperAdmin },
@@ -174,6 +176,38 @@ function AuthGate() {
     !policy ||
     (policy.superAdminOnly ? isSuperAdmin : isSuperAdmin || hasAnyPermission(permissions, policy.anyOf));
 
+  // A refusal is only shown from permissions checked with the server in this visit. Permissions saved
+  // on the device may be old (a permission granted since); while they are re-checked a loading view is
+  // shown, and if the check fails the user can retry instead of being wrongly refused.
+  if (!canAccess && !accessQ.isFetchedAfterMount) {
+    if (accessQ.isError) {
+      return (
+        <AppShell permissions={permissions} isSuperAdmin={isSuperAdmin} accessReady={false}>
+          <div className="p-8 max-w-xl mx-auto" dir="rtl">
+            <Card>
+              <CardContent className="p-8 flex flex-col items-center text-center gap-4">
+                <ShieldAlert className="h-10 w-10 text-destructive" />
+                <h1 className="text-lg font-bold">تعذّر التحقق من الصلاحيات</h1>
+                <p className="text-muted-foreground text-sm">يبدو أن الاتصال بالخادم ضعيف. أعد المحاولة.</p>
+                <button
+                  className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                  onClick={() => accessQ.refetch()}
+                >
+                  إعادة المحاولة
+                </button>
+              </CardContent>
+            </Card>
+          </div>
+        </AppShell>
+      );
+    }
+    return (
+      <AppShell permissions={permissions} isSuperAdmin={isSuperAdmin} accessReady={false}>
+        <PageSkeleton />
+      </AppShell>
+    );
+  }
+
   if (!canAccess) {
     // Users without reporting access land on the chats page instead of a dead end.
     if (location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/")) {
@@ -187,6 +221,15 @@ function AuthGate() {
               <ShieldAlert className="h-12 w-12 text-destructive" />
               <h1 className="text-xl font-bold">لا تملك صلاحية الوصول</h1>
               <p className="text-muted-foreground">هذه الصفحة مخصصة لصلاحيات أعلى: {policy?.label}</p>
+              <button
+                className="mt-2 px-4 py-2 rounded-md border text-sm font-medium hover:bg-accent"
+                onClick={() => {
+                  clearAccessCache();
+                  accessQ.refetch();
+                }}
+              >
+                إعادة التحقق من الصلاحيات
+              </button>
             </CardContent>
           </Card>
         </div>
