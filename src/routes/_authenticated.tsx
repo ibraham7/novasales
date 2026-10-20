@@ -50,7 +50,9 @@ function AuthGate() {
     enabled: !!userId,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    retry: false,
+    // A weak network gets two more tries before the retry screen.
+    retry: 2,
+    retryDelay: (attempt) => 1500 * (attempt + 1),
     networkMode: "online",
     // Saved permissions show the app at once, but are always re-checked once per visit.
     refetchOnMount: "always",
@@ -179,8 +181,10 @@ function AuthGate() {
   // A refusal is only shown from permissions checked with the server in this visit. Permissions saved
   // on the device may be old (a permission granted since); while they are re-checked a loading view is
   // shown, and if the check fails the user can retry instead of being wrongly refused.
-  if (!canAccess && !accessQ.isFetchedAfterMount) {
-    if (accessQ.isError) {
+  // Verified = the server answered in this visit. A failed check (weak network) never refuses.
+  const verified = accessQ.isFetchedAfterMount && !accessQ.isError;
+  if (!canAccess && !verified) {
+    if (accessQ.isError && !accessQ.isFetching) {
       return (
         <AppShell permissions={permissions} isSuperAdmin={isSuperAdmin} accessReady={false}>
           <div className="p-8 max-w-xl mx-auto" dir="rtl">
@@ -188,7 +192,8 @@ function AuthGate() {
               <CardContent className="p-8 flex flex-col items-center text-center gap-4">
                 <ShieldAlert className="h-10 w-10 text-destructive" />
                 <h1 className="text-lg font-bold">تعذّر التحقق من الصلاحيات</h1>
-                <p className="text-muted-foreground text-sm">يبدو أن الاتصال بالخادم ضعيف. أعد المحاولة.</p>
+                <p className="text-muted-foreground text-sm">يبدو أن الاتصال بالإنترنت ضعيف أو انقطع. أعد المحاولة.</p>
+                <p className="text-xs text-muted-foreground" dir="auto">{accessQ.error instanceof Error ? accessQ.error.message : ""}</p>
                 <button
                   className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
                   onClick={() => accessQ.refetch()}
