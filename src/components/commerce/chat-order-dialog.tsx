@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useServerFn } from "@tanstack/react-start";
 
-import { CheckCircle2, Minus, Package, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
+import { CheckCircle2, Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 
 import { toast } from "@/lib/toast";
 
@@ -17,9 +17,9 @@ import { Input } from "@/components/ui/input";
 
 import { Label } from "@/components/ui/label";
 
-import { Badge } from "@/components/ui/badge";
-
 import { Textarea } from "@/components/ui/textarea";
+
+import { ProductLotPicker } from "./product-lot-picker";
 
 import {
   Dialog,
@@ -236,9 +236,10 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
       toast.success(
         confirmNow
           ? "تم البيع وخصم المخزون وتحويل العميل إلى مشترٍ"
-          : "تم حفظ الطلب وبانتظار التأكيد",
+          : "تم حفظ الطلب وحجز الكمية، بانتظار التأكيد",
       );
 
+      qc.invalidateQueries({ queryKey: ["chat-order-products"] });
       qc.invalidateQueries({ queryKey: ["sales-products"] });
       qc.invalidateQueries({ queryKey: ["sales-reports"] });
       qc.invalidateQueries({ queryKey: ["sales-performance"] });
@@ -302,10 +303,16 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
         </button>
       </DialogTrigger>
 
-      <DialogContent dir="rtl" className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      {/* No auto-focus: a phone keyboard would cover the products. The product list does not
+          scroll on its own inside the scrolling dialog, so a finger never gets stuck in it. */}
+      <DialogContent
+        dir="rtl"
+        className="max-w-5xl max-h-[92dvh] overflow-y-auto p-3 sm:p-6"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <ShoppingCart className="h-4 w-4" />
             إنشاء طلب
             {contactName ? ` — ${contactName}` : ""}
           </DialogTitle>
@@ -313,62 +320,22 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
 
         <div className="grid lg:grid-cols-[1.2fr_1fr] gap-6">
           <div>
-            <div className="relative mb-4">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="relative mb-3">
+              <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
 
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="ابحث عن منتج..."
-                className="pr-9"
+                className="pr-8 h-8 text-sm"
               />
             </div>
 
             {isLoading ? (
               <div className="py-12 text-center text-muted-foreground">جارِ تحميل المنتجات...</div>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
-                {filtered.map((product: any) => {
-                  const stock = getStock(product);
-
-                  const image = Array.isArray(product.images) ? product.images[0] : null;
-
-                  return (
-                    <button
-                      type="button"
-                      key={product.id}
-                      disabled={stock <= 0}
-                      onClick={() => addProduct(product)}
-                      className="border rounded-xl overflow-hidden text-right hover:bg-muted/50 disabled:opacity-50 transition-colors"
-                    >
-                      <div className="h-28 bg-muted overflow-hidden flex items-center justify-center">
-                        {image ? (
-                          <img
-                            src={image}
-                            alt={product.name}
-                            className="w-full h-full object-contain"
-                          />
-                        ) : (
-                          <Package className="h-8 w-8 text-muted-foreground/50" />
-                        )}
-                      </div>
-
-                      <div className="p-3">
-                        <div className="font-semibold">{product.name}</div>
-
-                        <div className="flex justify-between gap-2 mt-2 text-sm">
-                          <span className="font-medium">
-                            {formatMoney(Number(product.price), product.currency)}
-                          </span>
-
-                          <Badge variant={stock > 0 ? "secondary" : "destructive"}>
-                            {stock > 0 ? `${stock} متوفر` : "نفد"}
-                          </Badge>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="lg:max-h-[60vh] lg:overflow-y-auto lg:pl-1">
+                <ProductLotPicker lots={filtered as any[]} onAdd={(lot) => addProduct(lot)} />
               </div>
             )}
           </div>
@@ -389,7 +356,7 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
                     return (
                       <div key={line.productId} className="border rounded-xl p-3 space-y-3">
                         <div className="flex justify-between gap-3">
-                          <div>
+                          <div className="min-w-0">
                             <div className="font-medium">{line.product.name}</div>
 
                             <div className="text-xs text-muted-foreground">

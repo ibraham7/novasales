@@ -24,17 +24,26 @@ export const listProducts = createServerFn({ method: "GET" })
     if (data.activeOnly) query = query.eq("is_active", true);
     if (data.search?.trim())
       query = query.or(`name.ilike.%${data.search.trim()}%,sku.ilike.%${data.search.trim()}%`);
-    const { data: rows, error } = await query;
+    // Products and property definitions are independent reads, so they share one round trip.
+    const [{ data: rows, error }, { data: defs, error: defsError }] = await Promise.all([
+      query,
+      db.from("sales_product_attributes").select("*").eq("organization_id", organizationId),
+    ]);
     if (error) throw new Error(error.message);
-    const { data: defs, error: defsError } = await db
-      .from("sales_product_attributes")
-      .select("*")
-      .eq("organization_id", organizationId);
     if (defsError) throw new Error(defsError.message);
-    return (rows ?? []).map((p: any) => ({
-      ...p,
-      minimum_price: minimumPrice(p.attributes, defs ?? []),
-    }));
+    const defName = new Map<string, string>((defs ?? []).map((d: any) => [d.id, d.name]));
+    return (rows ?? []).map((p: any) => {
+      // Names of the properties this product's variants use (colour, size…), for option pickers.
+      const variant_attribute_names: Record<string, string> = {};
+      for (const v of p.sales_product_variants ?? [])
+        for (const key of Object.keys(v.attributes ?? {}))
+          if (defName.has(key)) variant_attribute_names[key] = defName.get(key)!;
+      return {
+        ...p,
+        minimum_price: minimumPrice(p.attributes, defs ?? []),
+        variant_attribute_names,
+      };
+    });
   });
 
 export const upsertProduct = createServerFn({ method: "POST" })

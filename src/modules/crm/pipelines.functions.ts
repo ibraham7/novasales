@@ -184,14 +184,9 @@ export const upsertStage = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
+    if (data.isWon && data.isLost) throw new Error("لا يمكن أن تكون المرحلة نجاحًا وخسارة معًا");
     const { db, organizationId } = await managementContext();
     await assertPipeline(db, organizationId, data.pipelineId);
-    if (data.id) {
-      const current = await assertStage(db, organizationId, data.id);
-      if (current.pipeline_id !== data.pipelineId)
-        throw new Error("لا يمكن نقل المرحلة إلى قمع آخر");
-    }
-    if (data.isWon && data.isLost) throw new Error("لا يمكن أن تكون المرحلة نجاحًا وخسارة معًا");
     const row = {
       pipeline_id: data.pipelineId,
       name: data.name,
@@ -202,8 +197,17 @@ export const upsertStage = createServerFn({ method: "POST" })
       is_lost: data.isLost,
     };
     if (data.id) {
-      const { error } = await db.from("crm_pipeline_stages").update(row).eq("id", data.id);
+      // The pipeline is already checked against the organization, so filtering the update by that
+      // pipeline keeps a stage from moving to another pipeline without a separate lookup first
+      // (each lookup is a database round trip, ~0.35 s from production).
+      const { data: updated, error } = await db
+        .from("crm_pipeline_stages")
+        .update(row)
+        .eq("id", data.id)
+        .eq("pipeline_id", data.pipelineId)
+        .select("id");
       if (error) throw new Error(error.message);
+      if (!updated?.length) throw new Error("المرحلة غير موجودة ضمن هذا القمع");
       return { ok: true, id: data.id };
     }
     const { data: inserted, error } = await db
@@ -276,22 +280,28 @@ export const moveOpportunityToStage = createServerFn({ method: "POST" })
       "org.manage",
     ]);
     const { organizationId, userId } = access;
-    const { data: current, error: currentError } = await db
-      .from("opp_opportunities")
-      .select("id,owner_agent_id,department_id")
-      .eq("id", data.opportunityId)
-      .eq("organization_id", organizationId)
-      .is("deleted_at", null)
-      .maybeSingle();
+    // The opportunity and the stage (checked against the organization through its pipeline) are
+    // independent lookups, so they share one round trip (~0.35 s each from production).
+    const [{ data: current, error: currentError }, { data: stage, error: stageError }] =
+      await Promise.all([
+        db
+          .from("opp_opportunities")
+          .select("id,owner_agent_id,department_id")
+          .eq("id", data.opportunityId)
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .maybeSingle(),
+        db
+          .from("crm_pipeline_stages")
+          .select("id, name, probability, is_won, is_lost, pipeline_id, crm_pipelines!inner(organization_id)")
+          .eq("id", data.stageId)
+          .eq("crm_pipelines.organization_id", organizationId)
+          .maybeSingle(),
+      ]);
     if (currentError) throw new Error(currentError.message);
     if (!current || !canAccessOpportunityRow(access, current))
       throw new Error("الفرصة غير موجودة أو غير مسموح بتعديلها");
-    await assertStage(db, organizationId, data.stageId);
-    const { data: stage } = await db
-      .from("crm_pipeline_stages")
-      .select("id, name, probability, is_won, is_lost, pipeline_id")
-      .eq("id", data.stageId)
-      .maybeSingle();
+    if (stageError) throw new Error(stageError.message);
     if (!stage) throw new Error("المرحلة غير موجودة");
     const patch: Record<string, unknown> = {
       stage_id: stage.id,
@@ -323,24 +333,26 @@ export const moveOpportunityToStage = createServerFn({ method: "POST" })
     const { data: opp, error } = await updateQuery.select("id, contact_id, lead_id").single();
     if (error) throw new Error(error.message);
 
-    // Emit timeline event
-    await db.from("crm_timeline").insert({
-      organization_id: organizationId,
-      entity_type: "opportunity",
-      entity_id: opp.id,
-      event_kind: "stage.changed",
-      title: `تم النقل إلى المرحلة: ${stage.name}`,
-      actor_user_id: userId,
-      ref_type: "opportunity",
-      ref_id: opp.id,
-      metadata: { stage_id: stage.id, stage_name: stage.name },
-    });
-    await db.from("domain_events").insert({
-      organization_id: organizationId,
-      event_type: "crm.opportunity.stage_changed",
-      aggregate_type: "opportunity",
-      aggregate_id: opp.id,
-      payload: { stage_id: stage.id },
-    });
+    // Emit the timeline and domain events together; neither depends on the other.
+    await Promise.all([
+      db.from("crm_timeline").insert({
+        organization_id: organizationId,
+        entity_type: "opportunity",
+        entity_id: opp.id,
+        event_kind: "stage.changed",
+        title: `تم النقل إلى المرحلة: ${stage.name}`,
+        actor_user_id: userId,
+        ref_type: "opportunity",
+        ref_id: opp.id,
+        metadata: { stage_id: stage.id, stage_name: stage.name },
+      }),
+      db.from("domain_events").insert({
+        organization_id: organizationId,
+        event_type: "crm.opportunity.stage_changed",
+        aggregate_type: "opportunity",
+        aggregate_id: opp.id,
+        payload: { stage_id: stage.id },
+      }),
+    ]);
     return { ok: true };
   });

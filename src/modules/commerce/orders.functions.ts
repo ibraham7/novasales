@@ -54,6 +54,10 @@ export const createSalesOrder = createServerFn({
       throw new Error("العميل غير موجود");
     }
 
+    // A member who does not see every contact can only sell to contacts in their own scope.
+    const { assertContactVisible } = await import("@/modules/crm/contacts.server");
+    await assertContactVisible(db, access, data.contactId);
+
     /* -----------------------------------------------------
      * Validate chat
      * --------------------------------------------------- */
@@ -324,7 +328,61 @@ export const createSalesOrder = createServerFn({
       throw new Error(itemError.message);
     }
 
+    /* -----------------------------------------------------
+     * Hold the stock now, so the same piece cannot be sold
+     * to someone else while the order waits for confirmation.
+     * --------------------------------------------------- */
+
+    const { error: reserveError } = await db.rpc("reserve_sales_order_stock", {
+      _organization_id: organizationId,
+      _order_id: order.id,
+      _reserved_by: userId,
+    });
+
+    if (reserveError) {
+      await db.from("sales_order_items").delete().eq("order_id", order.id).eq("organization_id", organizationId);
+      await db.from("sales_orders").delete().eq("id", order.id).eq("organization_id", organizationId);
+      throw new Error(reserveError.message);
+    }
+
     return order;
+  });
+
+/* =========================================================
+ * Cancel sales order (waiting for confirmation only)
+ * ======================================================= */
+
+export const cancelSalesOrder = createServerFn({
+  method: "POST",
+})
+  .validator((data: unknown) => z.object({ orderId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requirePermission, getWorkspaceAccess } = await import("@/platform/rbac/rbac.server");
+    const { canAccessSalesOrderRow } = await import("@/platform/rbac/data-scope.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { organizationId, userId } = await requirePermission("sales.orders.create");
+    const access = await getWorkspaceAccess();
+    const db = supabaseAdmin as any;
+
+    const { data: order, error: readError } = await db
+      .from("sales_orders")
+      .select("id, sales_rep_user_id, department_id, status")
+      .eq("id", data.orderId)
+      .eq("organization_id", organizationId)
+      .single();
+    if (readError || !order) throw new Error(readError?.message ?? "عملية البيع غير موجودة");
+    if (!canAccessSalesOrderRow(access, order))
+      throw new Error("لا يمكنك إلغاء عملية بيع خارج نطاق صلاحياتك");
+    if (order.status !== "draft") throw new Error("لا يمكن إلغاء إلا الطلبات بانتظار التأكيد");
+
+    // Returns any stock the order holds and marks it cancelled, atomically.
+    const { error } = await db.rpc("cancel_sales_order", {
+      _organization_id: organizationId,
+      _order_id: data.orderId,
+      _cancelled_by: userId,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 /* =========================================================
@@ -478,7 +536,7 @@ export const listSalesOrders = createServerFn({
 
   const repIds = [...new Set(orders.map((order: any) => order.sales_rep_user_id).filter(Boolean))];
 
-  const [contactsResult, repsResult] = await Promise.all([
+  const [contactsResult, repsResult, phonesResult] = await Promise.all([
     contactIds.length
       ? db
           .from("crm_contacts")
@@ -509,7 +567,25 @@ export const listSalesOrders = createServerFn({
           data: [],
           error: null,
         }),
+
+    // Customer phone numbers, shown with the name.
+    contactIds.length
+      ? db
+          .from("crm_contact_points")
+          .select("contact_id, identifier, is_primary")
+          .eq("organization_id", organizationId)
+          .eq("channel_type", "whatsapp")
+          .in("contact_id", contactIds)
+      : Promise.resolve({
+          data: [],
+          error: null,
+        }),
   ]);
+
+  const phoneMap = new Map<string, string>();
+  for (const point of phonesResult.data ?? []) {
+    if (point.is_primary || !phoneMap.has(point.contact_id)) phoneMap.set(point.contact_id, point.identifier);
+  }
 
   if (contactsResult.error) {
     throw new Error(contactsResult.error.message);
@@ -534,6 +610,8 @@ export const listSalesOrders = createServerFn({
     ...order,
 
     contact_name: contactMap.get(order.contact_id) ?? "عميل بدون اسم",
+
+    contact_phone: phoneMap.get(order.contact_id) ?? null,
 
     sales_rep_name: repMap.get(order.sales_rep_user_id) ?? "—",
   }));

@@ -43,18 +43,21 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
-      {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background cursor-pointer transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+      {/* Sticky so it stays reachable while a long dialog scrolls on a phone; the negative margin
+          (its 36px height + the 16px grid gap) keeps it from pushing the content down. */}
+      <DialogPrimitive.Close className="sticky top-0 z-20 -mb-[52px] shrink-0 justify-self-start self-start flex h-9 w-9 items-center justify-center rounded-full border bg-background/95 shadow-sm opacity-90 ring-offset-background cursor-pointer transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
         <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
+        <span className="sr-only">إغلاق</span>
       </DialogPrimitive.Close>
+      {children}
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)} {...props} />
+  // Room on the start side (right, in Arabic) for the close button.
+  <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left ps-11 min-h-9 justify-center", className)} {...props} />
 );
 DialogHeader.displayName = "DialogHeader";
 

@@ -16,15 +16,98 @@ export function ProductFilters({
   products,
   value,
   onChange,
+  compact = false,
 }: {
   definitions: AttributeDefinition[];
   products: any[];
   value: Filters;
   onChange: (v: Filters) => void;
+  /** Small one-line bar for pickers on a phone: no currency filter, and price sorting only when
+   *  every product shares one currency. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const currencies = [...new Set<string>(products.map((p) => p.currency))];
   const needsCurrency = currencies.length > 1 && !value.currency;
+  if (compact) {
+    const active =
+      Object.values(value.attributes).filter((f) => f.values?.length || f.text || f.min || f.max).length +
+      (value.availableOnly ? 1 : 0) +
+      (value.priceMin || value.priceMax ? 1 : 0);
+    return (
+      <div className="space-y-2">
+        <div className="flex gap-2 items-center">
+          <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setOpen(!open)}>
+            <Filter className="w-3.5 h-3.5 ml-1" />
+            فلترة{active ? ` (${active})` : ""}
+          </Button>
+          {!needsCurrency && (
+            <select
+              aria-label="ترتيب المنتجات"
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+              value={value.sort}
+              onChange={(e) => onChange({ ...value, sort: e.target.value })}
+            >
+              <option value="default">الترتيب</option>
+              <option value="price-asc">الأرخص أولًا</option>
+              <option value="price-desc">الأغلى أولًا</option>
+            </select>
+          )}
+          {(active > 0 || value.sort !== "default") && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => onChange({ ...EMPTY_PRODUCT_FILTERS, attributes: {} })}
+            >
+              مسح
+            </Button>
+          )}
+        </div>
+        {open && (
+          <div className="space-y-3 border rounded-lg p-3 text-sm">
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={value.availableOnly}
+                onChange={(e) => onChange({ ...value, availableOnly: e.target.checked })}
+              />
+              المتوفر للبيع فقط
+            </label>
+            {definitions
+              .filter((d) => ["select", "multiselect"].includes(d.kind) && d.options.length)
+              .map((d) => (
+                <div key={d.id} className="space-y-1">
+                  <Label className="text-xs">{d.name}</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {d.options.map((o) => {
+                      const checked = value.attributes[d.id]?.values?.includes(o) ?? false;
+                      return (
+                        <button
+                          key={o}
+                          type="button"
+                          className={
+                            "rounded-full border px-2.5 py-1 text-xs " +
+                            (checked ? "bg-primary text-primary-foreground border-primary" : "bg-background")
+                          }
+                          onClick={() => {
+                            const old = value.attributes[d.id]?.values ?? [];
+                            update(d.id, { values: checked ? old.filter((v) => v !== o) : [...old, o] });
+                          }}
+                        >
+                          {o}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    );
+  }
   function update(id: string, change: AttributeFilter) {
     onChange({
       ...value,

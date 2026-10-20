@@ -121,32 +121,39 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
         </button>
       </DialogTrigger>
 
-      <DialogContent className="max-w-3xl max-h-[85dvh] overflow-y-auto flex flex-col" dir="rtl">
+      {/* People browse first and search only if they do not find it: opening must not focus the
+          search box, or a phone keyboard covers half the products. */}
+      <DialogContent
+        className="max-w-3xl max-h-[92dvh] overflow-y-auto flex flex-col gap-2 p-3 sm:p-6"
+        dir="rtl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShoppingBag className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <ShoppingBag className="h-4 w-4" />
             إرسال منتج للعميل
           </DialogTitle>
         </DialogHeader>
 
         <div className="relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
 
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ابحث باسم المنتج أو SKU..."
-            className="pr-9"
+            className="pr-8 h-8 text-sm"
           />
         </div>
 
         <ProductFilters
+          compact
           products={products as any[]}
           definitions={attributes as AttributeDefinition[]}
           value={filters}
           onChange={setFilters}
         />
-        <div className="shrink-0 mt-4 pr-1">
+        <div className="shrink-0 mt-1">
           {isLoading ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               جارِ تحميل المنتجات...

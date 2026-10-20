@@ -17,6 +17,11 @@ export function stockCatalog(products: any[]) {
         id: b.id,
         sourceProductId: p.id,
         batchId: b.id,
+        productName: p.name,
+        variantId: variant?.id ?? null,
+        variantAttributes: (variant?.attributes ?? {}) as Record<string, unknown>,
+        batchCode: b.batch_code,
+        expiresOn: b.expires_on ?? null,
         name: `${p.name} — ${variant?.label ?? "أساسي"} — دفعة ${b.batch_code}${b.expires_on ? ` — صلاحية ${b.expires_on}` : ""}${index === 0 && b.expires_on ? " (الأقرب انتهاءً)" : ""}`,
         sales_inventory: { quantity: Number(b.quantity) },
       };

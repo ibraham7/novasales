@@ -13,6 +13,7 @@ export {
 export {
     createSalesOrder,
     confirmSalesOrder,
+    cancelSalesOrder,
     listSalesOrders,
     getSalesStats,
 } from "./orders.functions";

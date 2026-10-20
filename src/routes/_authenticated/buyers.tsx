@@ -121,6 +121,8 @@ function BuyersPage() {
                     const haystack = [
                         buyer.name,
 
+                        buyer.phone ?? "",
+
                         ...buyer.reps.map(
                             (rep: any) =>
                                 rep.name,
@@ -304,11 +306,14 @@ function BuyersPage() {
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center justify-between gap-3">
                                                         <div>
-                                                            <h2 className="font-semibold truncate">
-                                                                {
-                                                                    buyer.name
-                                                                }
+                                                            <h2 className="font-semibold truncate" dir={buyer.phone ? "ltr" : undefined}>
+                                                                {buyer.phone ?? buyer.name}
                                                             </h2>
+                                                            {buyer.phone && (
+                                                                <p className="text-xs text-muted-foreground truncate">
+                                                                    {buyer.name}
+                                                                </p>
+                                                            )}
 
                                                             <div className="flex flex-wrap gap-1 mt-1.5">
                                                                 {buyer.departments.map(

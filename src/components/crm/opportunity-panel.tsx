@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDateTime } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import {
   getOpportunityByChat,
@@ -23,7 +23,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StageDot, StageBadge } from "./stage-badge";
-import { Mail, Phone, MapPin, User2, Building2, Tag, X, Plus, FileText, Activity, StickyNote } from "lucide-react";
+import { Mail, Phone, MapPin, User2, Building2, Tag, X, Plus, FileText, Activity, StickyNote, Upload, Download, Trash2 } from "lucide-react";
+import { listFiles, createUploadUrl, registerFile, deleteFile } from "@/modules/crm/files.functions";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Data = NonNullable<Awaited<ReturnType<typeof getOpportunityByChat>>>;
 
@@ -57,7 +68,7 @@ export function OpportunityPanel({ chatId, data }: { chatId: string; data: Data 
           <ActivityTab opportunityId={data.opportunity.id} />
         </TabsContent>
         <TabsContent value="files" className="mt-0">
-          <FilesTab />
+          <FilesTab oppId={data.opportunity.id} />
         </TabsContent>
       </div>
     </Tabs>
@@ -95,17 +106,30 @@ function DetailsTab({ chatId, data, onChanged }: { chatId: string; data: Data; o
 
   const [tagInput, setTagInput] = useState("");
 
-  // The organization's real pipeline stages (same cache as the pipeline board).
-  const pipelineId = data.opportunity.pipeline_id;
+  // The organization's real pipeline stages (same cache as the pipeline board). An opportunity not
+  // yet on a pipeline shows the default pipeline's stages; picking one places it there.
   const meta = useQuery({
     queryKey: ["pipeline-page-meta"],
     queryFn: () => fetchMeta(),
     staleTime: 5 * 60 * 1000,
-    enabled: !!pipelineId,
   });
-  const stages: { id: string; name: string; color: string | null; ord: number }[] = [
-    ...(meta.data?.pipelines?.find((p: { id: string }) => p.id === pipelineId)?.stages ?? []),
+  const pipelines: any[] = meta.data?.pipelines ?? [];
+  const pipeline =
+    pipelines.find((p) => p.id === data.opportunity.pipeline_id) ??
+    pipelines.find((p) => p.is_default) ??
+    pipelines[0];
+  const pipelineId = pipeline?.id ?? data.opportunity.pipeline_id;
+  const stages: { id: string; name: string; color: string | null; ord: number; is_won?: boolean; is_lost?: boolean }[] = [
+    ...(pipeline?.stages ?? []),
   ].sort((a, b) => a.ord - b.ord);
+  // Older opportunities carry only the won/lost outcome, not a stage: show the matching stage.
+  const currentStageId =
+    data.opportunity.stage_id ??
+    (data.opportunity.stage === "won"
+      ? stages.find((s) => s.is_won)?.id
+      : data.opportunity.stage === "lost"
+        ? stages.find((s) => s.is_lost)?.id
+        : undefined);
 
   // Edits show immediately and save in the background; a failed save restores the previous value.
   const cacheKey = ["opportunity-workspace", chatId];
@@ -132,7 +156,7 @@ function DetailsTab({ chatId, data, onChanged }: { chatId: string; data: Data; o
   };
 
   const moveStage = async (stageId: string) => {
-    const saved = await saveOptimistically({ stage_id: stageId }, () =>
+    const saved = await saveOptimistically({ stage_id: stageId, pipeline_id: pipelineId }, () =>
       moveToStage({ data: { opportunityId: data.opportunity.id, stageId } }),
     );
     if (saved) {
@@ -163,9 +187,9 @@ function DetailsTab({ chatId, data, onChanged }: { chatId: string; data: Data; o
 
       <Section title="الفرصة">
         <Row label="المرحلة">
-          {pipelineId ? (
+          {pipelineId || meta.isPending ? (
             <Select
-              value={data.opportunity.stage_id ?? undefined}
+              value={currentStageId ?? undefined}
               onValueChange={(v) => void moveStage(v)}
               disabled={meta.isPending}
             >
@@ -406,11 +430,164 @@ function ActivityTab({ opportunityId }: { opportunityId: string }) {
   );
 }
 
-function FilesTab() {
+/* Same upload flow as the opportunity page: the browser uploads straight to private storage through
+ * a one-time signed URL, then the server records the file. */
+function FilesTab({ oppId }: { oppId: string }) {
+  const qc = useQueryClient();
+  const doList = useServerFn(listFiles);
+  const doUploadUrl = useServerFn(createUploadUrl);
+  const doRegister = useServerFn(registerFile);
+  const doDelete = useServerFn(deleteFile);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState<any | null>(null);
+
+  const filesQ = useQuery({
+    queryKey: ["opp-files", oppId],
+    queryFn: () => doList({ data: { entityType: "opportunity", entityId: oppId } }),
+  });
+
+  async function handleUpload(files: File[]) {
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const up: any = await doUploadUrl({
+          data: { entityType: "opportunity", entityId: oppId, fileName: file.name },
+        });
+        if (!up?.path || !up?.token) throw new Error("فشل تجهيز رابط الرفع");
+        const { error: upErr } = await supabase.storage
+          .from("crm-files")
+          .uploadToSignedUrl(up.path, up.token, file, {
+            contentType: file.type || "application/octet-stream",
+            upsert: false,
+          });
+        if (upErr) throw new Error(upErr.message || "فشل رفع الملف");
+        await doRegister({
+          data: {
+            entityType: "opportunity",
+            entityId: oppId,
+            storagePath: up.path,
+            fileName: file.name,
+            mimeType: file.type || undefined,
+            sizeBytes: file.size,
+          },
+        });
+      }
+      toast.success(files.length > 1 ? `تم رفع ${files.length} ملفات` : "تم رفع الملف");
+    } catch (e: any) {
+      toast.error(e?.message ?? "فشل الرفع");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      qc.invalidateQueries({ queryKey: ["opp-files", oppId] });
+    }
+  }
+
+  const delMut = useMutation({
+    mutationFn: (fileId: string) => doDelete({ data: { fileId } }),
+    onSuccess: () => {
+      toast.success("تم حذف الملف");
+      setRemoving(null);
+      qc.invalidateQueries({ queryKey: ["opp-files", oppId] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "فشل الحذف"),
+  });
+
+  const files: any[] = filesQ.data ?? [];
+
   return (
-    <div className="rounded-xl border border-dashed bg-muted/30 p-8 text-center text-xs text-muted-foreground">
-      <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-      رفع الملفات سيتوفر قريباً.
+    <div className="space-y-3">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const picked = Array.from(e.target.files ?? []);
+          if (picked.length) void handleUpload(picked);
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        disabled={uploading}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <Upload className="h-4 w-4 ml-1" />
+        {uploading ? "جارٍ الرفع..." : "رفع ملف"}
+      </Button>
+
+      {filesQ.isLoading ? (
+        <div className="text-xs text-muted-foreground text-center py-6">جارٍ التحميل...</div>
+      ) : files.length === 0 ? (
+        <div className="rounded-xl border border-dashed bg-muted/30 p-8 text-center text-xs text-muted-foreground">
+          <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          لا توجد ملفات لهذه الفرصة بعد.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {files.map((f) => {
+            const isImage = (f.mime_type ?? "").startsWith("image/");
+            return (
+              <div key={f.id} className="flex items-center gap-2 rounded-lg border bg-muted/30 p-2 text-xs">
+                {isImage && f.signed_url ? (
+                  <img src={f.signed_url} alt={f.file_name} className="h-10 w-10 rounded object-cover shrink-0" />
+                ) : (
+                  <div className="h-10 w-10 rounded bg-background border flex items-center justify-center shrink-0">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-medium">{f.file_name}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {f.size_bytes ? `${Math.max(1, Math.round(f.size_bytes / 1024))} KB · ` : ""}
+                    {formatDateTime(f.created_at)}
+                  </div>
+                </div>
+                {f.signed_url && (
+                  <a
+                    href={f.signed_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1.5 hover:bg-background rounded"
+                    title="فتح / تنزيل"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setRemoving(f)}
+                  className="p-1.5 hover:bg-background rounded text-destructive"
+                  title="حذف"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <AlertDialog open={!!removing} onOpenChange={(open) => !open && !delMut.isPending && setRemoving(null)}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف الملف؟</AlertDialogTitle>
+            <AlertDialogDescription>سيُحذف «{removing?.file_name}» نهائياً من ملفات الفرصة.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={delMut.isPending}>تراجع</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={delMut.isPending}
+              onClick={() => removing && delMut.mutate(removing.id)}
+            >
+              {delMut.isPending ? "جارٍ الحذف..." : "حذف"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
