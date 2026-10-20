@@ -569,10 +569,14 @@ function SalesPage() {
                 <SelectContent>
                   {(contacts as any[]).map((contact) => (
                     <SelectItem key={contact.id} value={contact.id}>
-                      <span dir="ltr">{contact.phone || contact.name || "عميل بدون اسم"}</span>
-                      {contact.phone && contact.name && (
-                        <span className="text-xs text-muted-foreground mr-2">{contact.name}</span>
-                      )}
+                      {/* A flex gap, not a margin: the number is left-to-right inside right-to-left text,
+                          so a margin lands on the wrong side and the two run together. */}
+                      <span className="inline-flex items-center gap-2">
+                        <span dir="ltr">{contact.phone || contact.name || "عميل بدون اسم"}</span>
+                        {contact.phone && contact.name && (
+                          <span className="text-xs text-muted-foreground">{contact.name}</span>
+                        )}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
