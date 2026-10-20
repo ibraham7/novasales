@@ -985,8 +985,10 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
     let externalId: string | null = null;
     let sendError: string | null = null;
 
-    const RAW_BASE64_LIMIT = 9 * 1024 * 1024;
-    const preferBase64 = buffer.length <= RAW_BASE64_LIMIT;
+    // The WhatsApp server refuses request bodies over about 1 MB (HTTP 413) and base64 grows a file
+    // by a third, so a larger file goes as its link first instead of failing once before the retry.
+    const RAW_BASE64_LIMIT = 700 * 1024;
+    const preferBase64 = buffer.length <= RAW_BASE64_LIMIT || !mediaUrlForEvo;
 
     async function trySend(useBase64: boolean) {
       if (data.kind === "audio") {

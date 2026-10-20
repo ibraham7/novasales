@@ -37,14 +37,34 @@ export const getPipelinePageMeta = createServerFn({ method: "GET" }).handler(asy
   const { listPipelines } = await import("./pipelines.functions");
   const { organizationId } = await getWorkspace();
   // The permission check runs alongside the reads; nothing is returned unless it passes.
-  const [, pipelines, departments, memberships] = await Promise.all([
+  const { getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
+  const [access, pipelines, departments, memberships] = await Promise.all([
     requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]),
     listPipelines(),
     checkedRows(db.from("org_departments").select("id,name").eq("organization_id", organizationId).eq("is_active", true).order("name")),
     checkedRows(db.from("org_memberships").select("user_id").eq("organization_id", organizationId).eq("is_active", true)),
   ]);
-  const profiles = await readByIds(db, "profiles", "id,full_name,avatar_url", memberships.map(m => m.user_id));
-  return { pipelines, departments, members: profiles.map(p => ({ ...p, user_id: p.id, profile_name: p.full_name })) };
+  // What the board may filter by follows what the user can see: a member who sees only their own
+  // opportunities gets no agent or department filter, a department supervisor only their departments.
+  // The member list itself stays whole: chat transfer and assignment use it.
+  const visibility = getOpportunityVisibility(access);
+  const [profiles, departmentMembers] = await Promise.all([
+    readByIds(db, "profiles", "id,full_name,avatar_url", memberships.map(m => m.user_id)),
+    visibility === "department" && access.departmentIds.length
+      ? checkedRows(db.from("org_department_members").select("user_id").eq("organization_id", organizationId).eq("is_active", true).in("department_id", access.departmentIds))
+      : Promise.resolve([] as any[]),
+  ]);
+  const filterDepartmentIds = visibility === "all" ? null : visibility === "department" ? access.departmentIds : [];
+  const filterMemberIds =
+    visibility === "all" ? null : visibility === "department" ? Array.from(new Set([access.userId, ...departmentMembers.map((m: any) => m.user_id)])) : [];
+  return {
+    pipelines,
+    departments,
+    members: profiles.map(p => ({ ...p, user_id: p.id, profile_name: p.full_name })),
+    visibility,
+    filterDepartmentIds,
+    filterMemberIds,
+  };
 });
 
 export const listOpportunitiesBoard = createServerFn({ method: "GET" })

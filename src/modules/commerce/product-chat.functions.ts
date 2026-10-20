@@ -39,6 +39,18 @@ function guessImageMime(url: string) {
 }
 
 const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
+// The WhatsApp server refuses request bodies over about 1 MB (HTTP 413), and base64 grows a file by a
+// third, so only images up to this size are sent as the file itself.
+const MAX_INLINE_IMAGE_BYTES = 700 * 1024;
+
+/** Images uploaded to our own storage have public links the WhatsApp server can always fetch. */
+function isOwnStorageUrl(url: string) {
+  return /^https:\/\/[^/]+\/storage\/v1\/object\/public\//i.test(url);
+}
+
+function isTooLarge(error: unknown) {
+  return /\b413\b|too large/i.test(error instanceof Error ? error.message : String(error));
+}
 
 /** Fetches a product image for sending as a file; null when it is unreachable, not an image or too large. */
 async function downloadProductImage(url: string) {
@@ -229,7 +241,7 @@ export const sendProductToChatFn = createServerFn({
           source: "manual",
           peer: session.peer_identifier,
         }),
-        imageUrl
+        imageUrl && !isOwnStorageUrl(imageUrl)
           ? downloadProductImage(imageUrl)
           : Promise.resolve(null),
       ]);
@@ -262,22 +274,44 @@ export const sendProductToChatFn = createServerFn({
       Promise.resolve();
 
     try {
-      if (imageUrl) {
-        // Download the image here and send the file itself: the WhatsApp server accepts a
-        // link it later fails to fetch (e.g. search-engine thumbnails) and the customer gets nothing.
+      const sendImageLink = (url: string) =>
+        ops.opSendMedia(session.channel_account_id, number, {
+          mediatype: "image",
+          media: url,
+          mimetype: guessImageMime(url),
+          fileName: `product.${guessImageMime(url).split("/")[1].replace("jpeg", "jpg")}`,
+          caption,
+        });
+
+      if (imageUrl && isOwnStorageUrl(imageUrl)) {
+        // Our own storage link is always reachable, so the WhatsApp server fetches it itself and the
+        // request stays small whatever the image size.
+        const response: any = await sendImageLink(imageUrl);
+        externalId = ops.sentExternalId(response);
+        mediaSent = true;
+      } else if (imageUrl) {
+        // Other links: download the image here and send the file itself, since the WhatsApp server
+        // accepts a link it later fails to fetch (e.g. search-engine thumbnails) and the customer
+        // gets nothing. A file too large for its request limit is sent as the link instead.
         if (image) {
-          const response: any =
-            await ops.opSendMedia(
-              session.channel_account_id,
-              number,
-              {
+          const tooLargeInline = Buffer.byteLength(image.base64, "base64") > MAX_INLINE_IMAGE_BYTES;
+          let response: any;
+          if (tooLargeInline) {
+            response = await sendImageLink(imageUrl);
+          } else {
+            try {
+              response = await ops.opSendMedia(session.channel_account_id, number, {
                 mediatype: "image",
                 media: image.base64,
                 mimetype: image.mimetype,
                 fileName: image.fileName,
                 caption,
-              },
-            );
+              });
+            } catch (error) {
+              if (!isTooLarge(error)) throw error;
+              response = await sendImageLink(imageUrl);
+            }
+          }
 
           externalId =
             ops.sentExternalId(response);

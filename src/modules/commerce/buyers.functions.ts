@@ -144,6 +144,7 @@ export const listBuyers =
             contactsResult,
             repsResult,
             departmentsResult,
+            phonesResult,
         ] =
             await Promise.all([
                 contactIds.length
@@ -203,7 +204,25 @@ export const listBuyers =
                         data: [],
                         error: null,
                     }),
+
+                // Customer phone numbers, shown with the name.
+                contactIds.length
+                    ? db
+                        .from("crm_contact_points")
+                        .select("contact_id, identifier, is_primary")
+                        .eq("channel_type", "whatsapp")
+                        .in("contact_id", contactIds)
+                    : Promise.resolve({
+                        data: [],
+                        error: null,
+                    }),
             ]);
+
+        const phoneMap = new Map<string, string>();
+        for (const point of (phonesResult.data ?? []) as any[]) {
+            if (point.is_primary || !phoneMap.has(point.contact_id))
+                phoneMap.set(point.contact_id, point.identifier);
+        }
 
         if (
             contactsResult.error
@@ -581,6 +600,9 @@ export const listBuyers =
 
                     name:
                         buyer.name,
+
+                    phone:
+                        phoneMap.get(buyer.contactId) ?? null,
 
                     lifecycleStage:
                         buyer.lifecycleStage,

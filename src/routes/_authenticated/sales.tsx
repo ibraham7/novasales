@@ -18,6 +18,7 @@ import {
 import { toast } from "@/lib/toast";
 
 import {
+  cancelSalesOrder,
   confirmSalesOrder,
   createSalesOrder,
   getSalesStats,
@@ -47,6 +48,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ProductLotPicker } from "@/components/commerce/product-lot-picker";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_authenticated/sales")({
   head: () => ({
@@ -109,6 +120,7 @@ function SalesPage() {
 
   const createOrder = useServerFn(createSalesOrder);
   const confirmOrder = useServerFn(confirmSalesOrder);
+  const cancelOrder = useServerFn(cancelSalesOrder);
 
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -157,6 +169,7 @@ function SalesPage() {
     return (orders as any[]).filter((order) => {
       return (
         order.contact_name?.toLowerCase().includes(q) ||
+        order.contact_phone?.includes(q) ||
         order.sales_rep_name?.toLowerCase().includes(q) ||
         order.id.toLowerCase().includes(q)
       );
@@ -259,7 +272,11 @@ function SalesPage() {
     },
 
     onSuccess: () => {
-      toast.success("تم إنشاء الطلب وبانتظار التأكيد");
+      toast.success("تم إنشاء الطلب وحجز الكمية، بانتظار التأكيد");
+      // The order holds its stock now, so the shown quantities change.
+      qc.invalidateQueries({ queryKey: ["sales-products"] });
+      qc.invalidateQueries({ queryKey: ["sales-products-order"] });
+      qc.invalidateQueries({ queryKey: ["chat-order-products"] });
 
       resetForm();
       setOpen(false);
@@ -315,8 +332,49 @@ function SalesPage() {
     },
   });
 
+  const [cancelling, setCancelling] = useState<any | null>(null);
+  const cancelMutation = useMutation({
+    mutationFn: (orderId: string) => cancelOrder({ data: { orderId } }),
+    onSuccess: () => {
+      toast.success("تم إلغاء الطلب وإرجاع الكمية للمخزون");
+      setCancelling(null);
+      qc.invalidateQueries({ queryKey: ["sales-orders"] });
+      qc.invalidateQueries({ queryKey: ["sales-stats"] });
+      qc.invalidateQueries({ queryKey: ["sales-products"] });
+      qc.invalidateQueries({ queryKey: ["sales-products-order"] });
+      qc.invalidateQueries({ queryKey: ["chat-order-products"] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "تعذر إلغاء الطلب");
+    },
+  });
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8" dir="rtl">
+      <AlertDialog
+        open={!!cancelling}
+        onOpenChange={(value) => !value && !cancelMutation.isPending && setCancelling(null)}
+      >
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>إلغاء الطلب؟</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيُلغى طلب {cancelling?.contact_phone ?? cancelling?.contact_name} وتعود الكمية المحجوزة إلى المخزون.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelMutation.isPending}>تراجع</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={cancelMutation.isPending}
+              onClick={() => cancelling && cancelMutation.mutate(cancelling.id)}
+            >
+              {cancelMutation.isPending ? "جارِ الإلغاء..." : "إلغاء الطلب"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold">المبيعات والطلبات</h1>
@@ -374,7 +432,12 @@ function SalesPage() {
                   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-semibold">{order.contact_name}</p>
+                        <div>
+                          <p className="font-semibold" dir="ltr">{order.contact_phone ?? order.contact_name}</p>
+                          {order.contact_phone && (
+                            <p className="text-xs text-muted-foreground">{order.contact_name}</p>
+                          )}
+                        </div>
 
                         <Badge
                           variant={
@@ -402,7 +465,8 @@ function SalesPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6">
+                    {/* Wraps on phones: the figures stay on one line and the buttons drop below them at full width. */}
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 min-w-0">
                       <div>
                         <p className="text-xs text-muted-foreground">المنتجات</p>
 
@@ -431,13 +495,26 @@ function SalesPage() {
                       </div>
 
                       {order.status === "draft" && (
-                        <Button validate
-                          onClick={() => confirmMutation.mutate(order.id)}
-                          disabled={confirmMutation.isPending}
-                        >
-                          <Check className="h-4 w-4 ml-2" />
-                          تأكيد البيع
-                        </Button>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          <Button validate
+                            className="flex-1 sm:flex-none"
+                            onClick={() => confirmMutation.mutate(order.id)}
+                            disabled={confirmMutation.isPending}
+                          >
+                            <Check className="h-4 w-4 ml-2" />
+                            تأكيد البيع
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            className="flex-1 sm:flex-none"
+                            onClick={() => setCancelling(order)}
+                            disabled={cancelMutation.isPending}
+                          >
+                            <X className="h-4 w-4 ml-2" />
+                            إلغاء الطلب
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -445,15 +522,15 @@ function SalesPage() {
                   {!!order.sales_order_items?.length && (
                     <div className="mt-4 pt-4 border-t grid gap-2">
                       {order.sales_order_items.map((item: any) => (
-                        <div key={item.id} className="flex justify-between text-sm">
-                          <span>
+                        <div key={item.id} className="flex justify-between gap-3 text-sm">
+                          <span className="min-w-0">
                             {item.product_name}{" "}
                             {item.variant_label ? `— ${item.variant_label}` : ""}{" "}
                             {item.batch_code ? `— دفعة ${item.batch_code}` : ""}{" "}
                             {item.expires_on ? `— صلاحية ${item.expires_on}` : ""} × {item.quantity}
                           </span>
 
-                          <span className="font-medium">
+                          <span className="font-medium whitespace-nowrap shrink-0">
                             {money(Number(item.line_total), order.currency)}
                           </span>
                         </div>
@@ -492,10 +569,10 @@ function SalesPage() {
                 <SelectContent>
                   {(contacts as any[]).map((contact) => (
                     <SelectItem key={contact.id} value={contact.id}>
-                      {contact.display_name ||
-                        contact.full_name ||
-                        contact.phone ||
-                        "عميل بدون اسم"}
+                      <span dir="ltr">{contact.phone || contact.name || "عميل بدون اسم"}</span>
+                      {contact.phone && contact.name && (
+                        <span className="text-xs text-muted-foreground mr-2">{contact.name}</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -505,31 +582,10 @@ function SalesPage() {
             <div>
               <Label className="mb-3 block">المنتجات</Label>
 
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(products as Product[]).map((product) => {
-                  const stock = stockOf(product);
-
-                  return (
-                    <button
-                      type="button"
-                      key={product.id}
-                      onClick={() => addProduct(product)}
-                      disabled={stock <= 0}
-                      className="text-right border rounded-xl p-3 hover:bg-muted/50 disabled:opacity-50 transition-colors"
-                    >
-                      <p className="font-semibold">{product.name}</p>
-
-                      <div className="flex justify-between mt-2 text-sm">
-                        <span>{money(Number(product.price), product.currency)}</span>
-
-                        <span className={stock > 0 ? "text-muted-foreground" : "text-destructive"}>
-                          المتوفر: {stock}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              <ProductLotPicker
+                lots={products as any[]}
+                onAdd={(lot) => addProduct(lot as unknown as Product)}
+              />
             </div>
 
             {!!selectedProducts.length && (

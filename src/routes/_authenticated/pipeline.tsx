@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "@/lib/toast";
-import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus } from "lucide-react";
+import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -135,8 +135,22 @@ function PipelinePage() {
   const moveMut = useMutation({
     mutationFn: (v: { id: string; stageId: string }) =>
       move({ data: { opportunityId: v.id, stageId: v.stageId } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pipeline-board"] }),
-    onError: (e: Error) => toast.error(e.message),
+    // Move the card at once; the save follows in the background and is undone if it fails.
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ["pipeline-board"] });
+      const previous = qc.getQueriesData({ queryKey: ["pipeline-board"] });
+      qc.setQueriesData({ queryKey: ["pipeline-board"] }, (data: any) =>
+        Array.isArray(data)
+          ? data.map((o: any) => (o.id === v.id ? { ...o, stage_id: v.stageId } : o))
+          : data,
+      );
+      return { previous };
+    },
+    onError: (e: Error, _v, context) => {
+      for (const [key, data] of context?.previous ?? []) qc.setQueryData(key, data);
+      toast.error(e.message);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["pipeline-board"] }),
   });
 
   const saveStage = useServerFn(upsertStage);
@@ -154,11 +168,37 @@ function PipelinePage() {
           isLost: v.stage.is_lost,
         },
       }),
+    // Show the new name at once; the save follows in the background and is undone if it fails.
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ["pipeline-page-meta"] });
+      const previous = qc.getQueryData(["pipeline-page-meta"]);
+      qc.setQueryData(["pipeline-page-meta"], (data: any) =>
+        !data?.pipelines
+          ? data
+          : {
+              ...data,
+              pipelines: data.pipelines.map((pipe: any) =>
+                pipe.id !== v.stage.pipeline_id
+                  ? pipe
+                  : {
+                      ...pipe,
+                      stages: (pipe.stages ?? []).map((s: any) =>
+                        s.id === v.stage.id ? { ...s, name: v.name } : s,
+                      ),
+                    },
+              ),
+            },
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast.success("تم تحديث اسم المرحلة");
-      qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, _v, context) => {
+      if (context?.previous !== undefined) qc.setQueryData(["pipeline-page-meta"], context.previous);
+      toast.error(e.message);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] }),
   });
 
   const saveQuality = useServerFn(setStageQualityLevel);
@@ -261,6 +301,11 @@ function PipelinePage() {
     [assignMut.mutate]
   );
 
+  const handleMove = useCallback(
+    (opportunityId: string, stageId: string) => moveMut.mutate({ id: opportunityId, stageId }),
+    [moveMut.mutate]
+  );
+
   const currentPipe = useMemo(
     () => pipesQ.data?.find((p: any) => p.id === pipelineId) ?? null,
     [pipesQ.data, pipelineId]
@@ -314,6 +359,13 @@ function PipelinePage() {
   }
 
   const members = membersQ.data ?? [];
+  // Filter choices limited to what this user can see (null = everything).
+  const allowedMemberIds: string[] | null = metaQ.data?.filterMemberIds ?? null;
+  const allowedDepartmentIds: string[] | null = metaQ.data?.filterDepartmentIds ?? null;
+  const filterMembers = allowedMemberIds ? members.filter((m: any) => allowedMemberIds.includes(m.user_id)) : members;
+  const filterDepartments = (deptsQ.data ?? []).filter(
+    (d: any) => !allowedDepartmentIds || allowedDepartmentIds.includes(d.id),
+  );
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col p-6 gap-4 overflow-hidden" dir="rtl">
@@ -381,24 +433,29 @@ function PipelinePage() {
           placeholder="ابحث بالاسم أو المصدر..."
           className="w-56 h-9"
         />
-        <Select value={agentFilter} onValueChange={setAgentFilter}>
-          <SelectTrigger className="w-40 h-9"><SelectValue placeholder="المندوب" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">كل المناديب</SelectItem>
-            {members.map((m: any) => (
-              <SelectItem key={m.id} value={m.user_id}>{m.profile_name ?? m.display_name ?? "—"}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className="w-40 h-9"><SelectValue placeholder="القسم" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">كل الأقسام</SelectItem>
-            {(deptsQ.data ?? []).map((d: any) => (
-              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* A member who sees only their own opportunities has nothing to filter by agent or department. */}
+        {metaQ.data?.visibility !== "own" && (
+          <Select value={agentFilter} onValueChange={setAgentFilter}>
+            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="المندوب" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل المناديب</SelectItem>
+              {filterMembers.map((m: any) => (
+                <SelectItem key={m.id} value={m.user_id}>{m.profile_name ?? m.display_name ?? "—"}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {metaQ.data?.visibility !== "own" && (
+          <Select value={deptFilter} onValueChange={setDeptFilter}>
+            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="القسم" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل الأقسام</SelectItem>
+              {filterDepartments.map((d: any) => (
+                <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={channelFilter} onValueChange={setChannelFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder="القناة" /></SelectTrigger>
           <SelectContent>
@@ -464,6 +521,8 @@ function PipelinePage() {
               onRename={(name) => renameStageMut.mutate({ stage: s, name })}
               onQualityChange={(level) => qualityMut.mutate({ stage: s, level })}
               onAssign={handleAssign}
+              stages={stages}
+              onMove={handleMove}
             />
           ))}
         </div>
@@ -490,11 +549,15 @@ function KanbanColumn({
   onRename,
   onQualityChange,
   onAssign,
+  stages,
+  onMove,
 }: {
   stage: any;
   items: any[];
   loading: boolean;
   members: any[];
+  stages: any[];
+  onMove: (oppId: string, stageId: string) => void;
   canManageStages: boolean;
   isDragOver: boolean;
   onDragOver: () => void;
@@ -536,7 +599,7 @@ function KanbanColumn({
         ) : (
           <>
             {shown.map((o: any) => (
-              <KanbanCard key={o.id} opp={o} members={members} onAssign={onAssign} />
+              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onMove={onMove} />
             ))}
             {items.length > visible && (
               <Button
@@ -562,11 +625,15 @@ function KanbanColumn({
 const KanbanCard = memo(function KanbanCard({
   opp,
   members,
+  stages,
   onAssign,
+  onMove,
 }: {
   opp: any;
   members: any[];
+  stages: any[];
   onAssign: (oppId: string, userId: string) => void;
+  onMove: (oppId: string, stageId: string) => void;
 }) {
   const qc = useQueryClient();
   const warmWs = useServerFn(getOpportunityWorkspace);
@@ -657,12 +724,15 @@ const KanbanCard = memo(function KanbanCard({
           ) : (
             <Badge variant="outline" className="text-[10px]">غير مسند</Badge>
           )}
+          <div className="flex items-center gap-0.5 shrink-0">
+          <MoveStageMenu opp={opp} stages={stages} onMove={onMove} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-6 w-6 opacity-60 group-hover:opacity-100"
+                title="إسناد"
+                className="h-8 w-8 sm:h-6 sm:w-6 opacity-70 group-hover:opacity-100"
                 onClick={(e) => e.stopPropagation()}
               >
                 <UserPlus className="h-3.5 w-3.5" />
@@ -689,11 +759,56 @@ const KanbanCard = memo(function KanbanCard({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
       </Card>
     </div>
   );
 });
+
+/* Touch screens cannot drag between columns, so every card also offers a stage menu. */
+function MoveStageMenu({
+  opp,
+  stages,
+  onMove,
+}: {
+  opp: any;
+  stages: any[];
+  onMove: (oppId: string, stageId: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          title="نقل إلى مرحلة"
+          aria-label="نقل إلى مرحلة"
+          className="h-8 w-8 sm:h-6 sm:w-6 opacity-70 group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ArrowLeftRight className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel>نقل إلى مرحلة</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {stages.map((s: any) => (
+          <DropdownMenuItem
+            key={s.id}
+            disabled={s.id === opp.stage_id}
+            onSelect={() => onMove(opp.id, s.id)}
+            className="py-2.5 sm:py-1.5"
+          >
+            <span className="w-2.5 h-2.5 rounded-full ml-2 shrink-0" style={{ background: s.color ?? "#94a3b8" }} />
+            {s.name}
+            {s.id === opp.stage_id && <span className="mr-auto text-[10px] text-muted-foreground">الحالية</span>}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 const QUALITY_BADGE_CLASS: Record<QualityLevel, string> = {
   very_bad: "bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-900",

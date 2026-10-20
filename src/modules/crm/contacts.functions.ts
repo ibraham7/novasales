@@ -1,6 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
-import { FUNNEL_STAGES, normalizePhone, shapeContact } from "./contacts.server";
+import {
+  FUNNEL_STAGES,
+  assertContactVisible,
+  contactsByIds,
+  normalizePhone,
+  shapeContact,
+  shapeContacts,
+  visibleContactIds,
+} from "./contacts.server";
 
 export const funnelStages = FUNNEL_STAGES;
 
@@ -11,8 +19,11 @@ export const listContacts = createServerFn({ method: "GET" })
   const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
   const db = supabaseAdmin as any;
   const { organizationId } = await getWorkspace();
-  await requireAnyPermission(["contacts.view", "contacts.view_department"]);
+  const access = await requireAnyPermission(["contacts.view", "contacts.view_department"]);
   const term = (data.search ?? "").trim();
+  // Starts with the search below; both are independent of each other.
+  const visiblePromise = visibleContactIds(db, access);
+  visiblePromise.catch(() => {});
   const digits = term.replace(/\D/g, "");
   let matchedIds: string[] | null = null;
   if (term) {
@@ -38,18 +49,27 @@ export const listContacts = createServerFn({ method: "GET" })
     ) as string[];
     if (matchedIds.length === 0) return [];
   }
-  let q = db
-    .from("crm_contacts")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .order("updated_at", { ascending: false })
-    .limit(500);
-  if (matchedIds) q = q.in("id", matchedIds);
-  const { data: rows0, error } = await q;
-  if (error) throw new Error(error.message);
-  const rows: any[] = [];
-  for (const c of rows0 ?? []) rows.push(await shapeContact(organizationId, c, db));
-  return rows;
+  const visible = await visiblePromise;
+  let ids: string[] | null = matchedIds;
+  if (visible) {
+    const allowed = new Set(visible);
+    ids = matchedIds ? matchedIds.filter((id) => allowed.has(id)) : visible;
+  }
+  let rows0: any[];
+  if (ids) {
+    if (ids.length === 0) return [];
+    rows0 = await contactsByIds(db, organizationId, ids, 500);
+  } else {
+    const { data: all, error } = await db
+      .from("crm_contacts")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("updated_at", { ascending: false })
+      .limit(500);
+    if (error) throw new Error(error.message);
+    rows0 = all ?? [];
+  }
+  return await shapeContacts(organizationId, rows0, db);
 });
 
 
@@ -71,11 +91,12 @@ export const upsertContact = createServerFn({ method: "POST" })
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
-    await requireAnyPermission(["contacts.manage"]);
+    const access = await requireAnyPermission(["contacts.manage"]);
     const phone = normalizePhone(data.phone);
 
     let contactId = data.id ?? null;
     if (contactId) {
+      await assertContactVisible(db, access, contactId);
       const { error } = await db
         .from("crm_contacts")
         .update({
@@ -98,6 +119,7 @@ export const upsertContact = createServerFn({ method: "POST" })
         .maybeSingle();
       if (cp?.contact_id) {
         contactId = cp.contact_id;
+        await assertContactVisible(db, access, cp.contact_id);
         await db
           .from("crm_contacts")
           .update({
@@ -116,6 +138,8 @@ export const upsertContact = createServerFn({ method: "POST" })
             full_name: data.name ?? null,
             lifecycle_stage: data.funnel_stage,
             notes: data.notes ?? null,
+            // Lets a member who does not see every contact keep seeing the ones they add.
+            custom_fields: { created_by: access.userId },
           })
           .select()
           .single();
@@ -143,7 +167,8 @@ export const deleteContact = createServerFn({ method: "POST" })
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
-    await requireAnyPermission(["contacts.manage"]);
+    const access = await requireAnyPermission(["contacts.manage"]);
+    await assertContactVisible(db, access, data.id);
     const { error } = await db
       .from("crm_contacts")
       .delete()
@@ -162,7 +187,8 @@ export const updateContactName = createServerFn({ method: "POST" })
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
-    await requireAnyPermission(["contacts.manage", "crm.opportunities.update"]);
+    const access = await requireAnyPermission(["contacts.manage", "crm.opportunities.update"]);
+    await assertContactVisible(db, access, data.contactId);
     const { error } = await db
       .from("crm_contacts")
       .update({ display_name: data.name, full_name: data.name })
