@@ -20,20 +20,33 @@ function rbacKeyForSystemRole(role: string): string | null {
 async function syncRbacRole(db: any, userId: string, organizationId: string, systemRole: string) {
   const key = rbacKeyForSystemRole(systemRole);
   if (!key) return;
-  const { data: roles } = await db
-    .from("rbac_roles")
-    .select("id, organization_id")
-    .eq("key", key)
-    .or(`organization_id.eq.${organizationId},organization_id.is.null`);
-  const role = (roles ?? []).sort((a: any, b: any) =>
-    (a.organization_id === organizationId ? -1 : 0) - (b.organization_id === organizationId ? -1 : 0)
-  )[0];
-  if (!role) return;
+  const findRole = async () => {
+    const { data: roles, error } = await db
+      .from("rbac_roles")
+      .select("id, organization_id")
+      .eq("key", key)
+      .or(`organization_id.eq.${organizationId},organization_id.is.null`);
+    if (error) throw new Error(error.message);
+    return (roles ?? []).sort((a: any, b: any) =>
+      (a.organization_id === organizationId ? -1 : 0) - (b.organization_id === organizationId ? -1 : 0)
+    )[0];
+  };
+  let role = await findRole();
+  if (!role) {
+    // An organization without the standard roles gets them, so the user is not left with none.
+    const { ensureOrgRoles } = await import("./org-roles.server");
+    await ensureOrgRoles(db, organizationId);
+    role = await findRole();
+  }
+  // Never finish silently without a role: the user would sign in to a page saying "no access".
+  if (!role) throw new Error("تعذر إعطاء الصلاحية: المؤسسة لا تحتوي على هذا الدور");
   await db.from("rbac_user_roles").delete().eq("user_id", userId).eq("organization_id", organizationId);
-  await db.from("rbac_user_roles").insert({ user_id: userId, organization_id: organizationId, role_id: role.id });
+  const { error } = await db.from("rbac_user_roles").insert({ user_id: userId, organization_id: organizationId, role_id: role.id });
+  if (error) throw new Error(error.message);
 }
 
 export const listAllUsers = createServerFn({ method: "GET" }).handler(async () => {
+  await (await import("./guard.server")).requireSuperAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data: profiles } = await db
@@ -85,6 +98,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     await db.from("user_roles").delete().eq("user_id", data.user_id);
@@ -111,6 +125,7 @@ export const setUserRole = createServerFn({ method: "POST" })
 export const toggleUserBan = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ user_id: z.string().uuid(), banned: z.boolean() }).parse(d))
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, {
       ban_duration: data.banned ? "876000h" : "none",
@@ -127,6 +142,7 @@ export const toggleUserBan = createServerFn({ method: "POST" })
 export const sendPasswordReset = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ email: z.string().email() }).parse(d))
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: link, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery",
@@ -147,6 +163,7 @@ export const createUser = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
 
@@ -172,13 +189,18 @@ export const createUser = createServerFn({ method: "POST" })
     await db.from("user_roles").insert({ user_id: uid, role: data.role });
 
     if (data.organization_id) {
-      await db.from("org_memberships").insert({
-        user_id: uid,
-        organization_id: data.organization_id,
-        is_active: true,
-      });
+      await db.from("org_memberships").upsert(
+        { user_id: uid, organization_id: data.organization_id, is_active: true },
+        { onConflict: "user_id,organization_id" },
+      );
       await db.from("profiles").update({ active_organization_id: data.organization_id }).eq("id", uid);
       await syncRbacRole(db, uid, data.organization_id, data.role);
+      // A database trigger adds every new account to the default organization; a user created for
+      // another organization belongs only to that one.
+      const { DEFAULT_ORG_ID } = await import("@/platform/workspace/workspace.server");
+      if (data.organization_id !== DEFAULT_ORG_ID) {
+        await db.from("org_memberships").delete().eq("user_id", uid).eq("organization_id", DEFAULT_ORG_ID);
+      }
     }
 
     await db.from("platform_audit_log").insert({
@@ -202,6 +224,7 @@ export const updateUserCredentials = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const payload: Record<string, unknown> = {};
     if (data.username) {
@@ -224,6 +247,7 @@ export const updateUserCredentials = createServerFn({ method: "POST" })
 export const deleteUser = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
     if (error) throw new Error(error.message);
@@ -243,6 +267,7 @@ export const addUserToOrganization = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db.from("org_memberships").upsert({
@@ -251,6 +276,10 @@ export const addUserToOrganization = createServerFn({ method: "POST" })
       is_active: true,
     }, { onConflict: "user_id,organization_id" });
     if (error) throw new Error(error.message);
+    // Give the member their role in this organization too, or they join it with no permission.
+    const { data: sysRoles } = await db.from("user_roles").select("role").eq("user_id", data.user_id);
+    const systemRole = (sysRoles ?? [])[0]?.role ?? "sales";
+    await syncRbacRole(db, data.user_id, data.organization_id, systemRole);
     await db.from("platform_audit_log").insert({
       action: "org.member_added",
       target_type: "user",
@@ -268,6 +297,7 @@ export const removeUserFromOrganization = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db

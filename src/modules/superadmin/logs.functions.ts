@@ -10,6 +10,7 @@ export const listAuditLog = createServerFn({ method: "GET" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     let q = db
@@ -33,6 +34,7 @@ export const listAuditLog = createServerFn({ method: "GET" })
   });
 
 export const listImpersonationSessions = createServerFn({ method: "GET" }).handler(async () => {
+  await (await import("./guard.server")).requireSuperAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data } = await db

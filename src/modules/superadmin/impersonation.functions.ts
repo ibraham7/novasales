@@ -10,6 +10,7 @@ export const startImpersonation = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { getWorkspace } = await import("@/platform/workspace/workspace.server");
     const db = supabaseAdmin as any;
@@ -48,6 +49,7 @@ export const startImpersonation = createServerFn({ method: "POST" })
 export const stopImpersonation = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ session_id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db

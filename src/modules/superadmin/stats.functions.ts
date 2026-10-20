@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 export const getPlatformStats = createServerFn({ method: "GET" }).handler(async () => {
+  await (await import("./guard.server")).requireSuperAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
 
@@ -42,6 +43,7 @@ export const getPlatformStats = createServerFn({ method: "GET" }).handler(async 
 });
 
 export const getRevenueChart = createServerFn({ method: "GET" }).handler(async () => {
+  await (await import("./guard.server")).requireSuperAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const since = new Date();

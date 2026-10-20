@@ -18,6 +18,7 @@ export const createOrganization = createServerFn({ method: "POST" })
     }).parse(d)
   )
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     let slug = data.slug ? slugify(data.slug) : slugify(data.name);
@@ -29,6 +30,9 @@ export const createOrganization = createServerFn({ method: "POST" })
     }
     const { data: org, error } = await db.from("organizations").insert({ name: data.name, slug }).select().single();
     if (error) throw new Error(error.message);
+    // A new organization starts with the standard roles, or nobody added to it gets any permission.
+    const { ensureOrgRoles } = await import("./org-roles.server");
+    await ensureOrgRoles(db, org.id);
     await db.from("platform_audit_log").insert({
       action: "organization.created",
       target_type: "organization",
@@ -39,6 +43,7 @@ export const createOrganization = createServerFn({ method: "POST" })
   });
 
 export const listOrganizations = createServerFn({ method: "GET" }).handler(async () => {
+  await (await import("./guard.server")).requireSuperAdmin();
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const db = supabaseAdmin as any;
   const { data: orgs, error } = await db
@@ -68,6 +73,7 @@ export const listOrganizations = createServerFn({ method: "GET" }).handler(async
 export const getOrganizationDetails = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const [org, sub, members, overrides, usage] = await Promise.all([
@@ -89,6 +95,7 @@ export const getOrganizationDetails = createServerFn({ method: "GET" })
 export const deleteOrganization = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
+    await (await import("./guard.server")).requireSuperAdmin();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const db = supabaseAdmin as any;
     const { error } = await db.from("organizations").delete().eq("id", data.id);
