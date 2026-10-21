@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "@/lib/toast";
 import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -505,7 +505,7 @@ function PipelinePage() {
           </div>
         )
       ) : (
-        <div className="grid grid-flow-col auto-cols-[300px] gap-4 overflow-x-auto pb-2 flex-1 min-h-0">
+        <div data-kanban-board className="grid grid-flow-col auto-cols-[300px] gap-4 overflow-x-auto pb-2 flex-1 min-h-0">
           {stages.map((s: any) => (
             <KanbanColumn
               key={s.id}
@@ -572,6 +572,7 @@ function KanbanColumn({
 
   return (
     <div
+      data-stage-id={stage.id}
       className={cn(
         "bg-muted rounded-xl border border-border/80 shadow-sm p-3 flex flex-col min-h-0 transition-colors",
         isDragOver && "bg-primary/10 ring-2 ring-primary"
@@ -654,20 +655,23 @@ const KanbanCard = memo(function KanbanCard({
   }, [opp.id, qc, warmWs, warmChat]);
 
   const canDrag = useFinePointer();
+  const touchDragRef = useTouchCardDrag(opp.id, opp.stage_id, onMove);
 
   return (
     <div
-      // On a touch screen a draggable card takes the finger as the start of a drag, so swiping
-      // across the board only worked below the cards. Touch screens move cards with the ⇄ menu.
+      ref={touchDragRef}
+      // A mouse drags with the browser's drag and drop. On a touch screen that would take every
+      // finger on a card as a drag and stop the board from scrolling, so touch uses a long press.
       draggable={canDrag}
       onDragStart={canDrag ? (e) => e.dataTransfer.setData("text/opp-id", opp.id) : undefined}
       onPointerEnter={prefetch}
       onFocusCapture={prefetch}
-      className="group"
+      onContextMenu={canDrag ? undefined : (e) => e.preventDefault()}
+      className="group select-none [-webkit-touch-callout:none]"
     >
 
       <Card className="p-2.5 cursor-move hover:shadow-md transition-shadow relative">
-        <Link to="/pipeline/$oppId" params={{ oppId: opp.id }} className="block">
+        <Link to="/pipeline/$oppId" params={{ oppId: opp.id }} className="block" draggable={canDrag ? undefined : false}>
           <div className="flex items-start gap-2">
             <Avatar className="h-9 w-9 shrink-0">
               {opp.contact_avatar && <AvatarImage src={opp.contact_avatar} />}
@@ -769,6 +773,157 @@ const KanbanCard = memo(function KanbanCard({
     </div>
   );
 });
+
+const LONG_PRESS_MS = 350;
+const LONG_PRESS_TOLERANCE_PX = 10;
+const DROP_TARGET_CLASSES = ["ring-2", "ring-primary", "bg-primary/10"];
+
+/**
+ * Touch drag for a kanban card: a long press anywhere on the card lifts it, the finger carries it
+ * across columns (the board scrolls when the finger nears an edge), and lifting the finger over
+ * another column moves the card there. A finger that moves before the long press is a normal swipe
+ * and scrolls the board. Presses on the card's buttons are left alone.
+ */
+function useTouchCardDrag(
+  oppId: string,
+  currentStageId: string | null,
+  onMove: (oppId: string, stageId: string) => void,
+) {
+  const ref = useRef<HTMLDivElement>(null);
+  const latest = useRef({ oppId, currentStageId, onMove });
+  latest.current = { oppId, currentStageId, onMove };
+
+  useEffect(() => {
+    const card = ref.current;
+    if (!card) return;
+    let timer: number | null = null;
+    let raf = 0;
+    let dragging = false;
+    let suppressClick = false;
+    let ghost: HTMLElement | null = null;
+    let over: HTMLElement | null = null;
+    let startX = 0, startY = 0, x = 0, y = 0, offsetX = 0, offsetY = 0;
+
+    const setOver = (column: HTMLElement | null) => {
+      if (column === over) return;
+      over?.classList.remove(...DROP_TARGET_CLASSES);
+      over = column;
+      over?.classList.add(...DROP_TARGET_CLASSES);
+    };
+    const columnAt = (px: number, py: number) =>
+      (document.elementFromPoint(px, py) as HTMLElement | null)?.closest<HTMLElement>("[data-stage-id]") ?? null;
+
+    // Scroll the board sideways, and the column's list up or down, while the finger rests near an edge.
+    const followFinger = () => {
+      if (!dragging) return;
+      const board = document.querySelector<HTMLElement>("[data-kanban-board]");
+      if (board) {
+        const r = board.getBoundingClientRect();
+        if (x < r.left + 48) board.scrollLeft -= 12;
+        else if (x > r.right - 48) board.scrollLeft += 12;
+      }
+      const list = over?.querySelector<HTMLElement>(".overflow-y-auto");
+      if (list) {
+        const r = list.getBoundingClientRect();
+        if (y < r.top + 40) list.scrollTop -= 10;
+        else if (y > r.bottom - 40) list.scrollTop += 10;
+      }
+      setOver(columnAt(x, y));
+      raf = requestAnimationFrame(followFinger);
+    };
+
+    const cleanup = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = null;
+      cancelAnimationFrame(raf);
+      ghost?.remove();
+      ghost = null;
+      card.style.opacity = "";
+      setOver(null);
+      dragging = false;
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", cleanup);
+    };
+
+    const lift = () => {
+      timer = null;
+      dragging = true;
+      suppressClick = true;
+      navigator.vibrate?.(15);
+      const r = card.getBoundingClientRect();
+      offsetX = startX - r.left;
+      offsetY = startY - r.top;
+      ghost = card.cloneNode(true) as HTMLElement;
+      Object.assign(ghost.style, {
+        position: "fixed",
+        left: "0",
+        top: "0",
+        width: `${r.width}px`,
+        zIndex: "60",
+        pointerEvents: "none",
+        opacity: "0.95",
+        borderRadius: "12px",
+        boxShadow: "0 12px 28px rgba(0,0,0,0.25)",
+        transform: `translate(${r.left}px, ${r.top}px) scale(1.03)`,
+      });
+      document.body.appendChild(ghost);
+      card.style.opacity = "0.35";
+      setOver(columnAt(x, y));
+      raf = requestAnimationFrame(followFinger);
+    };
+
+    function onTouchMove(e: TouchEvent) {
+      const t = e.touches[0];
+      x = t.clientX;
+      y = t.clientY;
+      if (!dragging) {
+        // Moved before the long press: this is a swipe, let the board scroll.
+        if (Math.hypot(x - startX, y - startY) > LONG_PRESS_TOLERANCE_PX) cleanup();
+        return;
+      }
+      e.preventDefault();
+      if (ghost) ghost.style.transform = `translate(${x - offsetX}px, ${y - offsetY}px) scale(1.03) rotate(1deg)`;
+    }
+
+    function onTouchEnd() {
+      const target = dragging ? over?.dataset.stageId : undefined;
+      const { oppId: id, currentStageId: from, onMove: move } = latest.current;
+      cleanup();
+      if (target && target !== from) move(id, target);
+    }
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || (e.target as HTMLElement).closest("button")) return;
+      cleanup();
+      suppressClick = false;
+      startX = x = e.touches[0].clientX;
+      startY = y = e.touches[0].clientY;
+      document.addEventListener("touchmove", onTouchMove, { passive: false });
+      document.addEventListener("touchend", onTouchEnd);
+      document.addEventListener("touchcancel", cleanup);
+      timer = window.setTimeout(lift, LONG_PRESS_MS);
+    };
+
+    // Lifting the finger after a drag must not also open the card.
+    const onClick = (e: MouseEvent) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    card.addEventListener("touchstart", onTouchStart, { passive: true });
+    card.addEventListener("click", onClick, true);
+    return () => {
+      cleanup();
+      card.removeEventListener("touchstart", onTouchStart);
+      card.removeEventListener("click", onClick, true);
+    };
+  }, []);
+
+  return ref;
+}
 
 /** True on a mouse or trackpad, false on a touch screen; follows the device if it changes. */
 function useFinePointer() {
