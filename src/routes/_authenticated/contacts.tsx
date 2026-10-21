@@ -107,22 +107,24 @@ function Contacts() {
   });
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl">
-      <header className="flex items-center justify-between mb-8">
+    <div className="p-4 sm:p-6 md:p-8 max-w-6xl">
+      {/* On a phone the title sits above a full-width search and the add button, so nothing runs
+          off the screen; from sm up they share one row as before. */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
         <div>
-          <h1 className="text-3xl font-bold">جهات الاتصال</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">جهات الاتصال</h1>
           <p className="text-muted-foreground mt-1">{visible.length} من {contacts.length} جهة اتصال</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
         <Input
-          className="w-56"
+          className="flex-1 min-w-0 sm:w-56 sm:flex-none"
           placeholder="ابحث بالاسم أو الرقم..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => setForm({ id: "", phone: "", name: "", funnel_stage: "lead", notes: "" })}>
+            <Button className="shrink-0" onClick={() => setForm({ id: "", phone: "", name: "", funnel_stage: "lead", notes: "" })}>
               <Plus className="h-4 w-4 ml-1" /> جديدة
             </Button>
           </DialogTrigger>
@@ -167,21 +169,24 @@ function Contacts() {
           <p className="text-muted-foreground">{search ? "لا نتائج مطابقة للبحث." : "لا توجد جهات اتصال بعد."}</p>
         </CardContent></Card>
       ) : (
-        <div className="grid gap-3">
+        // minmax(0,1fr): a long name is cut with "…" instead of widening every row past the screen.
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
           {visible.map((c) => (
-            <Card key={c.id}>
-              <CardContent className="py-4 flex items-center justify-between gap-3">
+            <Card key={c.id} className="min-w-0">
+              <CardContent className="py-4 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold">
+                  <div className="h-10 w-10 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold">
                     {(c.name ?? c.phone).charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
                     <div className="font-medium truncate">{c.name ?? "بدون اسم"}</div>
                     <div className="text-xs text-muted-foreground font-mono" dir="ltr">{c.phone}</div>
+                    {/* On a phone the stage sits under the name instead of squeezing it. */}
+                    <Badge variant="secondary" className="mt-1 sm:hidden">{STAGE_LABEL[c.funnel_stage] ?? c.funnel_stage}</Badge>
                   </div>
                 </div>
-                <Badge variant="secondary">{STAGE_LABEL[c.funnel_stage] ?? c.funnel_stage}</Badge>
-                <div className="flex gap-1">
+                <Badge variant="secondary" className="hidden sm:inline-flex">{STAGE_LABEL[c.funnel_stage] ?? c.funnel_stage}</Badge>
+                <div className="flex gap-0.5 sm:gap-1 shrink-0">
                   <Button validate size="icon" variant="ghost" onClick={() => chatMut.mutate(c.id)} title="محادثة">
                     <MessageSquare className="h-4 w-4" />
                   </Button>
