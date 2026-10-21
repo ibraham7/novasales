@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "@/lib/toast";
 import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -653,10 +653,14 @@ const KanbanCard = memo(function KanbanCard({
     });
   }, [opp.id, qc, warmWs, warmChat]);
 
+  const canDrag = useFinePointer();
+
   return (
     <div
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData("text/opp-id", opp.id)}
+      // On a touch screen a draggable card takes the finger as the start of a drag, so swiping
+      // across the board only worked below the cards. Touch screens move cards with the ⇄ menu.
+      draggable={canDrag}
+      onDragStart={canDrag ? (e) => e.dataTransfer.setData("text/opp-id", opp.id) : undefined}
       onPointerEnter={prefetch}
       onFocusCapture={prefetch}
       className="group"
@@ -765,6 +769,19 @@ const KanbanCard = memo(function KanbanCard({
     </div>
   );
 });
+
+/** True on a mouse or trackpad, false on a touch screen; follows the device if it changes. */
+function useFinePointer() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia("(pointer: fine)");
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia("(pointer: fine)").matches,
+    () => true,
+  );
+}
 
 /* Touch screens cannot drag between columns, so every card also offers a stage menu. */
 function MoveStageMenu({
