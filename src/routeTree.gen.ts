@@ -41,6 +41,7 @@ import { Route as ApiPublicWhTickRouteImport } from './routes/api/public/wh-tick
 import { Route as ApiPublicWfTickRouteImport } from './routes/api/public/wf-tick'
 import { Route as ApiPublicMetaWebhookRouteImport } from './routes/api/public/meta-webhook'
 import { Route as ApiPublicCmpTickRouteImport } from './routes/api/public/cmp-tick'
+import { Route as AuthenticatedSettingsSocialRouteImport } from './routes/_authenticated/settings.social'
 import { Route as AuthenticatedSettingsRolesRouteImport } from './routes/_authenticated/settings.roles'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings.profile'
 import { Route as AuthenticatedSettingsPipelinesRouteImport } from './routes/_authenticated/settings.pipelines'
@@ -235,6 +236,12 @@ const ApiPublicCmpTickRoute = ApiPublicCmpTickRouteImport.update({
   path: '/api/public/cmp-tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSettingsSocialRoute =
+  AuthenticatedSettingsSocialRouteImport.update({
+    id: '/social',
+    path: '/social',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsRolesRoute =
   AuthenticatedSettingsRolesRouteImport.update({
     id: '/roles',
@@ -456,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/settings/roles': typeof AuthenticatedSettingsRolesRoute
+  '/settings/social': typeof AuthenticatedSettingsSocialRoute
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
@@ -516,6 +524,7 @@ export interface FileRoutesByTo {
   '/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/settings/roles': typeof AuthenticatedSettingsRolesRoute
+  '/settings/social': typeof AuthenticatedSettingsSocialRoute
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
@@ -581,6 +590,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/settings/roles': typeof AuthenticatedSettingsRolesRoute
+  '/_authenticated/settings/social': typeof AuthenticatedSettingsSocialRoute
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
@@ -646,6 +656,7 @@ export interface FileRouteTypes {
     | '/settings/pipelines'
     | '/settings/profile'
     | '/settings/roles'
+    | '/settings/social'
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
     | '/api/public/wf-tick'
@@ -706,6 +717,7 @@ export interface FileRouteTypes {
     | '/settings/pipelines'
     | '/settings/profile'
     | '/settings/roles'
+    | '/settings/social'
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
     | '/api/public/wf-tick'
@@ -770,6 +782,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/pipelines'
     | '/_authenticated/settings/profile'
     | '/_authenticated/settings/roles'
+    | '/_authenticated/settings/social'
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
     | '/api/public/wf-tick'
@@ -1032,6 +1045,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/cmp-tick'
       preLoaderRoute: typeof ApiPublicCmpTickRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/settings/social': {
+      id: '/_authenticated/settings/social'
+      path: '/social'
+      fullPath: '/settings/social'
+      preLoaderRoute: typeof AuthenticatedSettingsSocialRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/settings/roles': {
       id: '/_authenticated/settings/roles'
@@ -1315,6 +1335,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsPipelinesRoute: typeof AuthenticatedSettingsPipelinesRoute
   AuthenticatedSettingsProfileRoute: typeof AuthenticatedSettingsProfileRoute
   AuthenticatedSettingsRolesRoute: typeof AuthenticatedSettingsRolesRoute
+  AuthenticatedSettingsSocialRoute: typeof AuthenticatedSettingsSocialRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
 }
 
@@ -1332,6 +1353,7 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsPipelinesRoute: AuthenticatedSettingsPipelinesRoute,
   AuthenticatedSettingsProfileRoute: AuthenticatedSettingsProfileRoute,
   AuthenticatedSettingsRolesRoute: AuthenticatedSettingsRolesRoute,
+  AuthenticatedSettingsSocialRoute: AuthenticatedSettingsSocialRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 }
 

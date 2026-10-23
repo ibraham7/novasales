@@ -42,6 +42,7 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
     anyOf: ["crm.pipelines.manage", "org.manage"],
   },
   { prefix: "/settings/conversions", label: "تحويلات الإعلانات", anyOf: ["crm.pipelines.manage", "org.manage"] },
+  { prefix: "/settings/social", label: "ربط وسائل التواصل", anyOf: ["org.manage", "crm.pipelines.manage"] },
   {
     prefix: "/settings/custom-fields",
     label: "الحقول المخصصة",

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { Building2, User, Users, Mail, Shield, KanbanSquare, ListPlus, CreditCard, Plug } from "lucide-react";
+import { Building2, User, Users, Mail, Shield, KanbanSquare, ListPlus, CreditCard, Plug, Share2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyPermissions } from "@/modules/identity";
@@ -24,6 +24,7 @@ const TABS = [
   { to: "/settings/invitations", icon: Mail, label: "الدعوات" },
   { to: "/settings/pipelines", icon: KanbanSquare, label: "قنوات المبيعات" },
   { to: "/settings/conversions", icon: KanbanSquare, label: "تحويلات الإعلانات" },
+  { to: "/settings/social", icon: Share2, label: "ربط وسائل التواصل" },
   { to: "/settings/custom-fields", icon: ListPlus, label: "الحقول المخصصة" },
   { to: "/settings/billing", icon: CreditCard, label: "الفوترة" },
   { to: "/settings/integrations", icon: Plug, label: "التكاملات" },

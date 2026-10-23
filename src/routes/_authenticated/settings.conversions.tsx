@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { formatDateTime } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -27,6 +27,12 @@ export const Route = createFileRoute("/_authenticated/settings/conversions")({
   head: () => ({ meta: [{ title: "تحويلات الإعلانات - NovaSales" }] }),
   component: ConversionsPage,
 });
+const DELIVERY_LABELS: Record<string, string> = {
+  awaiting_connection: "بانتظار الإرسال للمنصة",
+  sent: "أُرسل إلى ميتا",
+  failed: "تعذّر الإرسال",
+  skipped: "لم يُرسل (أقدم من 7 أيام)",
+};
 const selectClass = "w-full rounded-md border bg-background p-2 text-sm";
 function ConversionsPage() {
   const qc = useQueryClient();
@@ -113,12 +119,16 @@ function ConversionsPage() {
         </p>
       </div>
       <Card className="p-4 space-y-2">
-        <Badge variant="secondary">المنصات غير مربوطة</Badge>
+        <Badge variant="secondary">الإرسال للمنصات من «ربط وسائل التواصل»</Badge>
         <p className="text-sm">
-          يُسجل النظام النتائج داخليًا فقط. لم يتم إرسال أي تحويل إلى Google أو Meta أو غيرهما.
+          تُسجل النتائج هنا، وتُرسل إلى بكسل ميتا الخاص بمؤسستك فقط بعد ربطه من صفحة{" "}
+          <Link to="/settings/social" className="text-primary underline">
+            ربط وسائل التواصل
+          </Link>
+          .
         </p>
         <p className="text-xs text-muted-foreground">
-          لا تحتاج Pixel أو مفتاح API الآن. تسجيل النقاط واحتمال الفوز يختلف عن تحديد هدف الإعلان.
+          تسجيل النقاط واحتمال الفوز يختلف عن تحديد هدف الإعلان.
         </p>
       </Card>
       {q.isPending ? (
@@ -315,9 +325,7 @@ function ConversionsPage() {
                           : "تحويل أول لهدف ثانوي"
                         : "سجل داخلي — لا يحتسب تحويلًا جديدًا"}{" "}
                       ·{" "}
-                      {r.delivery_state === "awaiting_connection"
-                        ? "بانتظار ربط المنصة"
-                        : "غير مخصص للإرسال"}
+                      {DELIVERY_LABELS[r.delivery_state] ?? "غير مخصص للإرسال"}
                     </p>
                     {r.quality_level && (
                       <p className="text-xs">
