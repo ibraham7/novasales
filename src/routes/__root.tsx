@@ -6,14 +6,12 @@ import {
   useRouter,
   HeadContent,
   Scripts,
-  useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { ConfirmHost } from "@/components/ui/confirm-dialog";
 import { ConnectionStatus } from "@/components/connection-status";
 import { setupQueryPersistence } from "@/lib/query-persist";
-import { startMetaPixel, trackMetaPageView } from "@/lib/meta-pixel";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../platform/errors/lovable-error-reporting";
@@ -131,12 +129,6 @@ function RootComponent() {
   useEffect(() => {
     setupQueryPersistence(queryClient);
   }, [queryClient]);
-
-  // Meta Pixel page views for site analytics (live domain only).
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  useEffect(() => {
-    if (startMetaPixel()) trackMetaPageView();
-  }, [pathname]);
 
   return (
     <QueryClientProvider client={queryClient}>
