@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Clock, KeyRound, Loader2, Send, ShieldCheck, Trash2 } from "lucide-react";
@@ -158,7 +158,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
         )}
       </div>
       <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-        <Input dir="ltr" aria-label={`${spec.idLabel} ${spec.label}`} placeholder={`${spec.idLabel} — ${spec.example}`} value={pixelId} onChange={(e) => setPixelId(e.target.value)} />
+        <Input dir="ltr" name={`pixel-${platform}`} autoComplete="off" data-lpignore="true" data-1p-ignore aria-label={`${spec.idLabel} ${spec.label}`} placeholder={`${spec.idLabel} — ${spec.example}`} value={pixelId} onChange={(e) => setPixelId(e.target.value)} />
         <div className="flex gap-2">
           <Button type="button" disabled={!pixelId.trim() || !changed || save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "حفظ"}
@@ -187,7 +187,13 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
               <KeyRound className="h-3 w-3" /> رمز Conversions API (Access Token)
             </Label>
             <Input
-              type="password"
+              // Not type=password: browsers would fill saved logins into it. The dots come from CSS.
+              type="text"
+              name="meta-capi-token"
+              style={{ WebkitTextSecurity: "disc" } as CSSProperties}
+              data-lpignore="true"
+              data-1p-ignore
+              spellCheck={false}
               dir="ltr"
               autoComplete="off"
               placeholder={connection?.has_token ? "محفوظ ومشفّر — اتركه فارغًا للإبقاء عليه" : "من Events Manager ← الإعدادات ← Generate access token"}
