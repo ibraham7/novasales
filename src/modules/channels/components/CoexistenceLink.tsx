@@ -30,7 +30,7 @@ declare global {
   }
 }
 
-function loadFbSdk(appId: string, version: string): Promise<any> {
+export function loadFbSdk(appId: string, version: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const init = () => {
       if (!window.FB) return false;
