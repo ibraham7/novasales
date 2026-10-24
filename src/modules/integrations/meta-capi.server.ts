@@ -4,7 +4,8 @@
  * «بانتظار ربط المنصة».
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { decryptToken, graphBase } from "@/modules/channels/whatsapp/cloud-http";
+import { graphBase } from "@/modules/channels/whatsapp/cloud-http";
+import { openSecret } from "./secret-box.server";
 import { META_MAX_AGE_MS, metaEventsFor, type ConversionEventRow } from "./meta-capi";
 
 const db = supabaseAdmin as any;
@@ -38,7 +39,7 @@ export async function metaGraph<T = any>(path: string, token: string, body?: unk
 
 /** Sends events to the pixel; returns how many Meta received. */
 export async function sendMetaEvents(connection: MetaConnection, events: Record<string, unknown>[]) {
-  const token = await decryptToken(connection.access_token);
+  const token = await openSecret(connection.access_token);
   const res = await metaGraph<{ events_received?: number }>(`${connection.pixel_id}/events`, token, {
     data: events,
     ...(connection.test_event_code ? { test_event_code: connection.test_event_code } : {}),

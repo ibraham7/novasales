@@ -94,8 +94,8 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
         );
         pixelName = pixel?.name ?? null;
         verified = !!pixel;
-        const { encryptToken } = await import("@/modules/channels/whatsapp/cloud-http");
-        row.access_token = await encryptToken(data.accessToken);
+        const { sealSecret } = await import("./secret-box.server");
+        row.access_token = await sealSecret(data.accessToken);
         row.connected_via = "manual";
         row.connected_at = new Date().toISOString();
       } else {
@@ -176,7 +176,8 @@ export const startMetaSocialLink = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await context();
     if (!process.env.META_SOCIAL_CONFIG_ID) throw new Error("الربط بواسطة ميتا غير مفعّل بعد على الخادم");
-    const { exchangeCodeForToken, encryptToken } = await import("@/modules/channels/whatsapp/cloud-http");
+    const { exchangeCodeForToken } = await import("@/modules/channels/whatsapp/cloud-http");
+    const { sealSecret } = await import("./secret-box.server");
     const { metaGraph } = await import("./meta-capi.server");
     const { token } = await exchangeCodeForToken(data.code, data.redirectUri);
     const accounts = await metaGraph<{ data?: { name?: string; adspixels?: { data?: { id: string; name?: string }[] } }[] }>(
@@ -188,7 +189,7 @@ export const startMetaSocialLink = createServerFn({ method: "POST" })
       for (const pixel of account.adspixels?.data ?? [])
         pixels.set(pixel.id, { id: pixel.id, name: pixel.name ?? pixel.id, account: account.name ?? "" });
     // The token goes back sealed (encrypted with the server key); the browser cannot read it.
-    return { pixels: [...pixels.values()], sealed: await encryptToken(token) };
+    return { pixels: [...pixels.values()], sealed: await sealSecret(token) };
   });
 
 export const finishMetaSocialLink = createServerFn({ method: "POST" })
@@ -198,9 +199,9 @@ export const finishMetaSocialLink = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { organizationId, db } = await context();
     const pixelId = cleanPixelId("facebook", data.pixelId);
-    const { decryptToken } = await import("@/modules/channels/whatsapp/cloud-http");
+    const { openSecret } = await import("./secret-box.server");
     const { metaGraph } = await import("./meta-capi.server");
-    const token = await decryptToken(data.sealed).catch(() => {
+    const token = await openSecret(data.sealed).catch(() => {
       throw new Error("انتهت جلسة الربط؛ أعد المحاولة");
     });
     await metaGraph(`${pixelId}?fields=id`, token);
