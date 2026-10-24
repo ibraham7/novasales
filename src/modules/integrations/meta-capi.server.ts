@@ -37,14 +37,18 @@ export async function metaGraph<T = any>(path: string, token: string, body?: unk
   return json as T;
 }
 
-/** Sends events to the pixel; returns how many Meta received. */
+/** Sends events to the pixel; returns how many Meta received and its trace id (for Meta support). */
 export async function sendMetaEvents(connection: MetaConnection, events: Record<string, unknown>[]) {
   const token = await openSecret(connection.access_token);
-  const res = await metaGraph<{ events_received?: number }>(`${connection.pixel_id}/events`, token, {
+  const res = await metaGraph<{ events_received?: number; fbtrace_id?: string }>(`${connection.pixel_id}/events`, token, {
     data: events,
     ...(connection.test_event_code ? { test_event_code: connection.test_event_code } : {}),
   });
-  return res.events_received ?? 0;
+  const received = res.events_received ?? 0;
+  console.log(
+    `[conversions] meta response org=${connection.organization_id} pixel=${connection.pixel_id} sent=${events.length} received=${received} test=${connection.test_event_code ? "yes" : "no"} trace=${res.fbtrace_id ?? "-"}`,
+  );
+  return { received, trace: res.fbtrace_id ?? null };
 }
 
 /** Delivers the waiting events of one organization (or all connected ones). */
@@ -83,7 +87,11 @@ export async function deliverMetaConversions(organizationId?: string) {
     const ids = rows.map((r: { id: string }) => r.id);
     try {
       const events = (await Promise.all(rows.map((r: ConversionEventRow) => metaEventsFor(r)))).flat();
-      if (events.length) await sendMetaEvents(connection, events);
+      if (events.length) {
+        // «Sent» only when Meta itself confirms it received every event.
+        const { received, trace } = await sendMetaEvents(connection, events);
+        if (received < events.length) throw new Error(`Meta استلمت ${received} من ${events.length} حدث (trace ${trace ?? "-"})`);
+      }
       await db
         .from("crm_conversion_events")
         .update({ delivery_state: "sent", delivered_at: new Date().toISOString(), delivery_error: null })

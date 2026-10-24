@@ -147,7 +147,7 @@ export const sendMetaTestEvent = createServerFn({ method: "POST" }).handler(asyn
     throw new Error("أدخل Test Event Code من Events Manager ← Test events حتى لا يُحسب الحدث التجريبي تحويلًا حقيقيًا");
   const { sendMetaEvents } = await import("./meta-capi.server");
   const { sha256 } = await import("./meta-capi");
-  const received = await sendMetaEvents(connection, [
+  const { received, trace } = await sendMetaEvents(connection, [
     {
       event_name: "Lead",
       event_time: Math.floor(Date.now() / 1000),
@@ -157,7 +157,7 @@ export const sendMetaTestEvent = createServerFn({ method: "POST" }).handler(asyn
       custom_data: { event_source: "crm", lead_event_source: "NovaSales", stage_name: "اختبار" },
     },
   ]);
-  return { received };
+  return { received, trace };
 });
 
 /** Sends this organization's waiting events now instead of waiting for the next minute. */
