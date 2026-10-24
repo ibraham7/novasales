@@ -79,16 +79,21 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
       updated_at: new Date().toISOString(),
     };
     let pixelName: string | null = null;
+    let verified = true;
     if (data.platform === "facebook") {
       row.test_event_code = data.testEventCode || null;
       if (data.accessToken) {
         const { metaGraph } = await import("./meta-capi.server");
+        // A token made in Events Manager may only send events and not read the pixel («Missing Permission»);
+        // that is not a reason to refuse it. A token Meta says is invalid or revoked (190) still is.
         const pixel = await metaGraph<{ id: string; name?: string }>(`${pixelId}?fields=id,name`, data.accessToken).catch(
-          (e: Error) => {
+          (e: Error & { metaCode?: number }) => {
+            if (e.metaCode === 100 || e.metaCode === 10 || e.metaCode === 200) return null;
             throw new Error(`لم تقبل Meta الرمز مع هذا البكسل: ${e.message}`);
           },
         );
-        pixelName = pixel.name ?? null;
+        pixelName = pixel?.name ?? null;
+        verified = !!pixel;
         const { encryptToken } = await import("@/modules/channels/whatsapp/cloud-http");
         row.access_token = await encryptToken(data.accessToken);
         row.connected_via = "manual";
@@ -106,7 +111,7 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
     }
     const { error } = await db.from("org_marketing_pixels").upsert(row, { onConflict: "organization_id,platform" });
     if (error) throw new Error(error.message);
-    return { ok: true, pixelName };
+    return { ok: true, pixelName, verified };
   });
 
 export const removeSocialPixel = createServerFn({ method: "POST" })

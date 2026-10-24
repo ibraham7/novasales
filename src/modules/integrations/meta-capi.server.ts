@@ -28,7 +28,10 @@ export async function metaGraph<T = any>(path: string, token: string, body?: unk
   if (!res.ok || json?.error) {
     const err = json?.error ?? {};
     const message = err.error_user_msg || err.message || `HTTP ${res.status}`;
-    throw new Error(err.code === 190 ? `انتهت صلاحية رمز الوصول أو أُلغي — أدخل رمزًا جديدًا (${message})` : `Meta: ${message}`);
+    throw Object.assign(
+      new Error(err.code === 190 ? `انتهت صلاحية رمز الوصول أو أُلغي — أدخل رمزًا جديدًا (${message})` : `Meta: ${message}`),
+      { metaCode: Number(err.code ?? 0) },
+    );
   }
   return json as T;
 }
