@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CheckCircle2, Clock, KeyRound, Loader2, Send, ShieldCheck, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Facebook, Ghost, Instagram, KeyRound, Linkedin, Loader2, Music2, Send, ShieldCheck, Trash2, Youtube } from "lucide-react";
 import {
   deliverConversionsNow,
   finishMetaSocialLink,
@@ -45,6 +45,43 @@ const LOGIN_PLATFORMS = [
   { key: "linkedin", label: "الربط بواسطة لينكد إن" },
 ] as const;
 
+const LOGO_STYLE: Record<string, { background: string; color: string }> = {
+  facebook: { background: "#1877F2", color: "#fff" },
+  meta: { background: "#1877F2", color: "#fff" },
+  instagram: { background: "linear-gradient(45deg,#f9ce34,#ee2a7b 55%,#6228d7)", color: "#fff" },
+  tiktok: { background: "#010101", color: "#fff" },
+  snapchat: { background: "#FFFC00", color: "#111" },
+  x: { background: "#000", color: "#fff" },
+  linkedin: { background: "#0A66C2", color: "#fff" },
+  google: { background: "#FF0000", color: "#fff" },
+};
+
+/** The platform's mark on its own color. */
+function PlatformLogo({ platform, className = "h-9 w-9" }: { platform: string; className?: string }) {
+  const icon = "h-[55%] w-[55%]";
+  return (
+    <span aria-hidden className={`inline-flex shrink-0 items-center justify-center rounded-lg ${className}`} style={LOGO_STYLE[platform]}>
+      {platform === "facebook" || platform === "meta" ? (
+        <Facebook className={icon} />
+      ) : platform === "instagram" ? (
+        <Instagram className={icon} />
+      ) : platform === "tiktok" ? (
+        <Music2 className={icon} />
+      ) : platform === "snapchat" ? (
+        <Ghost className={icon} />
+      ) : platform === "linkedin" ? (
+        <Linkedin className={icon} />
+      ) : platform === "google" ? (
+        <Youtube className={icon} />
+      ) : (
+        <svg viewBox="0 0 24 24" className={icon} fill="currentColor">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 function SocialConnectionsPage() {
   const fetchFn = useServerFn(getSocialConnections);
   const q = useQuery({ queryKey: ["social-connections"], queryFn: () => fetchFn() });
@@ -72,8 +109,9 @@ function SocialConnectionsPage() {
             p.key === "meta" ? (
               <MetaLoginButton key={p.key} label={p.label} setup={q.data?.metaLogin} />
             ) : (
-              <div key={p.key} className="flex items-center justify-between gap-2 rounded-lg border p-3 opacity-70">
-                <span className="text-sm font-medium">{p.label}</span>
+              <div key={p.key} className="flex items-center gap-3 rounded-lg border p-3 opacity-70">
+                <PlatformLogo platform={p.key} />
+                <span className="flex-1 text-sm font-medium">{p.label}</span>
                 <Badge variant="secondary">بانتظار موافقة المنصة</Badge>
               </div>
             ),
@@ -150,6 +188,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
   return (
     <div className="space-y-2 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-2">
+        <PlatformLogo platform={platform} className="h-8 w-8" />
         <span className="flex-1 text-sm font-semibold">{spec.label}</span>
         {connection ? (
           isMeta && !connection.has_token ? (
@@ -287,8 +326,9 @@ function MetaLoginButton({ label, setup }: { label: string; setup?: MetaSetup })
 
   if (!setup?.available)
     return (
-      <div className="flex items-center justify-between gap-2 rounded-lg border p-3 opacity-70">
-        <span className="text-sm font-medium">{label}</span>
+      <div className="flex items-center gap-3 rounded-lg border p-3 opacity-70">
+        <PlatformLogo platform="meta" />
+        <span className="flex-1 text-sm font-medium">{label}</span>
         <Badge variant="secondary">بانتظار موافقة Meta</Badge>
       </div>
     );
@@ -338,8 +378,8 @@ function MetaLoginButton({ label, setup }: { label: string; setup?: MetaSetup })
 
   return (
     <div className="space-y-2 rounded-lg border border-primary/40 p-3 sm:col-span-2">
-      <Button type="button" className="w-full" disabled={busy} onClick={launch}>
-        {busy && <Loader2 className="ml-1 h-4 w-4 animate-spin" />}
+      <Button type="button" className="w-full gap-2" disabled={busy} onClick={launch}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformLogo platform="meta" className="h-6 w-6" />}
         {label}
       </Button>
       {choice && (
