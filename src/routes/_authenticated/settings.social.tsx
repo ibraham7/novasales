@@ -268,7 +268,8 @@ function MetaDelivery({ delivery }: { delivery: { waiting: number; sent: number;
   const deliverFn = useServerFn(deliverConversionsNow);
   const test = useMutation({
     mutationFn: () => testFn(),
-    onSuccess: (r) => toast.success(`استلمت Meta ${r.received} حدث تجريبي — افتح Test events في Events Manager`),
+    onSuccess: (r) =>
+      toast.success(`استلمت Meta ${r.received} حدث تجريبي${r.trace ? ` (trace ${r.trace})` : ""} — افتح Test events في Events Manager`),
     onError: (e: Error) => toast.error(e.message),
   });
   const deliver = useMutation({
