@@ -126,7 +126,13 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
       saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : {}) } }),
     onSuccess: (r) => {
       setToken("");
-      toast.success(r.pixelName ? `تم الربط بالبكسل «${r.pixelName}»` : "تم الحفظ");
+      toast.success(
+        r.pixelName
+          ? `تم الربط بالبكسل «${r.pixelName}»`
+          : r.verified
+            ? "تم الحفظ"
+            : "تم الحفظ. لم تسمح Meta بقراءة البكسل بهذا الرمز، فتأكد منه بـ «إرسال حدث تجريبي»",
+      );
       refresh();
     },
     onError: (e: Error) => toast.error(e.message),
