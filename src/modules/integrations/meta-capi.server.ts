@@ -6,7 +6,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { graphBase } from "@/modules/channels/whatsapp/cloud-http";
 import { openSecret } from "./secret-box.server";
-import { META_MAX_AGE_MS, metaEventsFor, type ConversionEventRow } from "./meta-capi";
+import { META_MAX_AGE_MS, metaEventsFor, type ContactInfo, type ConversionEventRow } from "./meta-capi";
 
 const db = supabaseAdmin as any;
 const BATCH = 50;
@@ -51,6 +51,20 @@ export async function sendMetaEvents(connection: MetaConnection, events: Record<
   return { received, trace: res.fbtrace_id ?? null };
 }
 
+/** Name, email, country and city of the contacts behind the events. */
+async function contactInfo(organizationId: string, contactIds: string[]): Promise<Map<string, ContactInfo>> {
+  const ids = [...new Set(contactIds.filter(Boolean))];
+  const info = new Map<string, ContactInfo>();
+  if (!ids.length) return info;
+  const [contacts, emails] = await Promise.all([
+    db.from("crm_contacts").select("id,full_name,display_name,country,city").eq("organization_id", organizationId).in("id", ids),
+    db.from("crm_contact_points").select("contact_id,identifier").eq("organization_id", organizationId).eq("channel_type", "email").in("contact_id", ids),
+  ]);
+  for (const c of contacts.data ?? []) info.set(c.id, { name: c.full_name || c.display_name, country: c.country, city: c.city });
+  for (const e of emails.data ?? []) info.set(e.contact_id, { ...(info.get(e.contact_id) ?? {}), email: e.identifier });
+  return info;
+}
+
 /** Delivers the waiting events of one organization (or all connected ones). */
 export async function deliverMetaConversions(organizationId?: string) {
   let query = db
@@ -86,7 +100,8 @@ export async function deliverMetaConversions(organizationId?: string) {
     if (!rows?.length) continue;
     const ids = rows.map((r: { id: string }) => r.id);
     try {
-      const events = (await Promise.all(rows.map((r: ConversionEventRow) => metaEventsFor(r)))).flat();
+      const people = await contactInfo(connection.organization_id, rows.map((r: ConversionEventRow) => r.contact_id ?? ""));
+      const events = (await Promise.all(rows.map((r: ConversionEventRow) => metaEventsFor(r, people.get(r.contact_id ?? "") ?? {})))).flat();
       if (events.length) {
         // «Sent» only when Meta itself confirms it received every event.
         const { received, trace } = await sendMetaEvents(connection, events);

@@ -31,6 +31,18 @@ test("qualified lead becomes a hashed Lead event", async () => {
   assert.equal(JSON.stringify(event).includes("966501234567"), false);
 });
 
+test("name, email and country are hashed when the CRM has them", async () => {
+  const [event] = (await metaEventsFor(row(), { name: "Ahmed Al-Sayed Ali", email: " Ahmed@Example.com ", country: "SA", city: "Riyadh" })) as any[];
+  assert.deepEqual(event.user_data.fn, [await sha256("ahmed")]);
+  assert.deepEqual(event.user_data.ln, [await sha256("alsayedali")]);
+  assert.deepEqual(event.user_data.em, [await sha256("ahmed@example.com")]);
+  assert.deepEqual(event.user_data.country, [await sha256("sa")]);
+  assert.equal(JSON.stringify(event).toLowerCase().includes("ahmed"), false);
+  const [bare] = (await metaEventsFor(row(), { email: "not-an-email", country: "Saudi" })) as any[];
+  assert.equal(bare.user_data.em, undefined);
+  assert.equal(bare.user_data.country, undefined);
+});
+
 test("purchase carries value and currency; quality adds its own event", async () => {
   const events = (await metaEventsFor(
     row({ event_kind: "purchase", value: "150", currency: "sar", is_quality_signal: true, quality_level: "good", quality_score: 6 }),

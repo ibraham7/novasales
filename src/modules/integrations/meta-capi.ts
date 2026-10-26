@@ -22,6 +22,12 @@ export type ConversionEventRow = {
   occurred_at: string;
 };
 
+/** What the CRM knows about the person, sent hashed so Meta can match the event to an account. */
+export type ContactInfo = { name?: string | null; email?: string | null; country?: string | null; city?: string | null };
+
+/** Meta's normalisation: lower case, trimmed, no punctuation or spaces inside the value. */
+const clean = (value: string) => value.toLowerCase().replace(/[\s.,'"()\-_]+/g, "");
+
 /** Meta accepts events up to 7 days old. */
 export const META_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -40,13 +46,22 @@ export function metaPhone(raw: string | null): string | null {
 }
 
 /** The Meta events for one conversion row (a row can be both a goal and a quality signal). */
-export async function metaEventsFor(row: ConversionEventRow) {
+export async function metaEventsFor(row: ConversionEventRow, contact: ContactInfo = {}) {
   const time = Math.floor(new Date(row.occurred_at).getTime() / 1000);
   const phone = metaPhone(row.contact_phone);
   const fbclid = typeof row.attribution?.fbclid === "string" ? row.attribution.fbclid : null;
+  const [first, ...rest] = String(contact.name ?? "").trim().split(/\s+/).filter(Boolean);
+  const email = String(contact.email ?? "").trim().toLowerCase();
+  const country = String(contact.country ?? "").trim().toLowerCase();
+  const city = clean(String(contact.city ?? ""));
   const userData: Record<string, unknown> = {
     external_id: [await sha256(row.contact_id ?? row.opportunity_id)],
     ...(phone ? { ph: [await sha256(phone)] } : {}),
+    ...(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? { em: [await sha256(email)] } : {}),
+    ...(first ? { fn: [await sha256(clean(first))] } : {}),
+    ...(rest.length ? { ln: [await sha256(clean(rest.join("")))] } : {}),
+    ...(/^[a-z]{2}$/.test(country) ? { country: [await sha256(country)] } : {}),
+    ...(city ? { ct: [await sha256(city)] } : {}),
     ...(fbclid ? { fbc: `fb.1.${time * 1000}.${fbclid}` } : {}),
   };
   const base = { event_time: time, action_source: "system_generated", user_data: userData };
