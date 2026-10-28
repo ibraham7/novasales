@@ -34,6 +34,17 @@ const OTHER_TYPES: [Kind, string][] = [
   ["file", "رابط ملف"],
 ];
 const isList = (kind: Kind) => kind === "select" || kind === "multiselect";
+const KIND_LABEL: Record<Kind, string> = {
+  select: "قائمة قيم",
+  multiselect: "قائمة قيم",
+  ...Object.fromEntries(OTHER_TYPES),
+} as Record<Kind, string>;
+/** «المقاس» and «مقاس» are the same word: compare names without the article and diacritics. */
+const nameRoot = (name: string) =>
+  name
+    .trim()
+    .replace(/[ً-ْ]/g, "")
+    .replace(/^ال/, "");
 
 
 function displayValue(value: AttributeValue) {
@@ -323,6 +334,18 @@ function PropertyDialog({
     ? []
     : definitions.filter((d) => !d.is_archived && !takenNames.includes(d.name.trim()) && (allowStock || d.scope === "product"));
 
+  // A saved property with one value (a number, text…) cannot take several values. When the typed name
+  // matches one, say so and offer the saved lists with a similar name (e.g. «مقاس» for «المقاس»).
+  const singleValueMatch = !editing && existing && !isList(existing.kind) ? existing : null;
+  const similarLists = singleValueMatch
+    ? saved.filter((d) => {
+        if (d.id === singleValueMatch.id || !isList(d.kind)) return false;
+        const a = nameRoot(d.name);
+        const b = nameRoot(singleValueMatch.name);
+        return !!a && !!b && (a.includes(b) || b.includes(a));
+      })
+    : [];
+
   const pick = (d: AttributeDefinition) => {
     setName(d.name);
     setValues(isList(d.kind) ? d.options : []);
@@ -392,7 +415,32 @@ function PropertyDialog({
           </div>
 
           {existing ? (
-            <p className="text-xs text-muted-foreground">{SCOPES[existing.scope].title} · خاصية محفوظة</p>
+            singleValueMatch ? (
+              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+                <p>
+                  «{singleValueMatch.name}» محفوظة من قبل كـ<b>{KIND_LABEL[singleValueMatch.kind]}</b> (قيمة واحدة فقط).
+                  {" "}لقيم متعددة {similarLists.length ? "اختر خاصية من تحت، أو اكتب" : "اكتب"} اسمًا آخر.
+                </p>
+                {similarLists.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {similarLists.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className="rounded-full border border-amber-400 bg-background px-3 py-1 font-medium text-foreground hover:bg-accent"
+                        onClick={() => pick(d)}
+                      >
+                        {d.name} <span className="text-muted-foreground">({d.options.length} قيم)</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {SCOPES[existing.scope].title} · خاصية محفوظة · {KIND_LABEL[existing.kind]}
+              </p>
+            )
           ) : (
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="نوع الخاصية">
               {(["variant", "product"] as Scope[]).map((option) => {
