@@ -235,14 +235,7 @@ export const sendProductToChatFn = createServerFn({
         import("@/modules/risk/risk.server"),
       ]);
 
-    const imageUrl =
-      Array.isArray(product.images) &&
-      product.images.length
-        ? String(product.images[0])
-        : null;
-
-    // Permission is confirmed above: fetch the image while the engine and risk checks run.
-    const [providerRef, guard, image] =
+    const [providerRef, guard] =
       await Promise.all([
         resolveAccountProvider(
           session.channel_account_id,
@@ -253,9 +246,6 @@ export const sendProductToChatFn = createServerFn({
           source: "manual",
           peer: session.peer_identifier,
         }),
-        imageUrl && !isOwnStorageUrl(imageUrl)
-          ? downloadProductImage(imageUrl)
-          : Promise.resolve(null),
       ]);
 
     if (!providerRef.provider.isConfigured()) {
@@ -278,169 +268,98 @@ export const sendProductToChatFn = createServerFn({
     const caption =
       formatProductCaption(product, definitionsRes?.data ?? []);
 
-    let externalId: string | null = null;
-    let mediaSent = false;
-    let usedTextFallback = false;
-    let sendError: string | null = null;
-    let outboundRecorded: Promise<unknown> =
-      Promise.resolve();
+    // The other photos and the videos go first, and the main photo with the details last, so the
+    // details are the last thing the customer reads. Photos sent one after another with no text
+    // between them are grouped by WhatsApp into an album.
+    const links = (list: unknown) =>
+      (Array.isArray(list) ? list : []).map(String).filter((u) => /^https?:\/\//i.test(u));
+    const [coverUrl, ...otherImages] = links(product.images);
+    const media: { url: string; kind: "image" | "video" }[] = [
+      ...otherImages.map((url) => ({ url, kind: "image" as const })),
+      ...links(product.videos).map((url) => ({ url, kind: "video" as const })),
+    ];
+    const mediaSentList: { url: string; kind: "image" | "video"; externalId: string | null }[] = [];
+    let mediaFailed = 0;
+    const outbound: Promise<unknown>[] = [];
+    const countOutbound = () =>
+      // Counting must never turn a message WhatsApp already accepted into a failure.
+      outbound.push(
+        risk
+          .recordOutbound({ orgId: organizationId, accountId: session.channel_account_id })
+          .catch((e) => console.error("[product-chat] recordOutbound failed", e)),
+      );
 
-    try {
-      const sendImageLink = (url: string) =>
-        ops.opSendMedia(session.channel_account_id, number, {
-          mediatype: "image",
-          media: url,
-          mimetype: guessImageMime(url),
-          fileName: `product.${guessImageMime(url).split("/")[1].replace("jpeg", "jpg")}`,
-          caption,
+    const sendMedia = async (item: { url: string; kind: "image" | "video" }, text?: string): Promise<any> => {
+      if (item.kind === "video" || isOwnStorageUrl(item.url)) {
+        // Our storage links (and any video) go as links: the WhatsApp server fetches them itself and
+        // the request stays small whatever the file size.
+        const mimetype = item.kind === "video" ? guessVideoMime(item.url) : guessImageMime(item.url);
+        return ops.opSendMedia(session.channel_account_id, number, {
+          mediatype: item.kind,
+          media: item.url,
+          mimetype,
+          fileName: `product.${mimetype.split("/")[1].replace("jpeg", "jpg").replace("quicktime", "mov")}`,
+          caption: text,
         });
-
-      if (imageUrl && isOwnStorageUrl(imageUrl)) {
-        // Our own storage link is always reachable, so the WhatsApp server fetches it itself and the
-        // request stays small whatever the image size.
-        const response: any = await sendImageLink(imageUrl);
-        externalId = ops.sentExternalId(response);
-        mediaSent = true;
-      } else if (imageUrl) {
-        // Other links: download the image here and send the file itself, since the WhatsApp server
-        // accepts a link it later fails to fetch (e.g. search-engine thumbnails) and the customer
-        // gets nothing. A file too large for its request limit is sent as the link instead.
-        if (image) {
-          const tooLargeInline = Buffer.byteLength(image.base64, "base64") > MAX_INLINE_IMAGE_BYTES;
-          let response: any;
-          if (tooLargeInline) {
-            response = await sendImageLink(imageUrl);
-          } else {
-            try {
-              response = await ops.opSendMedia(session.channel_account_id, number, {
-                mediatype: "image",
-                media: image.base64,
-                mimetype: image.mimetype,
-                fileName: image.fileName,
-                caption,
-              });
-            } catch (error) {
-              if (!isTooLarge(error)) throw error;
-              response = await sendImageLink(imageUrl);
-            }
-          }
-
-          externalId =
-            ops.sentExternalId(response);
-
-          mediaSent = true;
-        } else {
-          const response: any =
-            await ops.opSendText(
-              session.channel_account_id,
-              number,
-              caption,
-            );
-
-          externalId =
-            ops.sentExternalId(response);
-
-          usedTextFallback = true;
-        }
-      } else {
-        const response: any =
-          await ops.opSendText(
-            session.channel_account_id,
-            number,
-            caption,
-          );
-
-        externalId =
-          ops.sentExternalId(response);
       }
+      // Other links: download the image here and send the file itself, since the WhatsApp server
+      // accepts a link it later fails to fetch (e.g. search-engine thumbnails) and the customer
+      // gets nothing. A file too large for its request limit is sent as the link instead.
+      const file = await downloadProductImage(item.url);
+      if (!file) throw new Error("تعذر تنزيل الصورة");
+      const linkOnly = { mediatype: "image" as const, media: item.url, mimetype: file.mimetype, fileName: file.fileName, caption: text };
+      if (Buffer.byteLength(file.base64, "base64") > MAX_INLINE_IMAGE_BYTES) {
+        return ops.opSendMedia(session.channel_account_id, number, linkOnly);
+      }
+      try {
+        return await ops.opSendMedia(session.channel_account_id, number, { ...linkOnly, media: file.base64 });
+      } catch (error) {
+        if (!isTooLarge(error)) throw error;
+        return ops.opSendMedia(session.channel_account_id, number, linkOnly);
+      }
+    };
 
-      // Counting must never turn a product WhatsApp already accepted into a failure.
-      outboundRecorded = risk
-        .recordOutbound({
-          orgId: organizationId,
-          accountId:
-            session.channel_account_id,
-        })
-        .catch((e) =>
-          console.error(
-            "[product-chat] recordOutbound failed",
-            e,
-          ),
-        );
+    for (const [i, item] of media.entries()) {
+      if (i > 0) await sleep(BETWEEN_MEDIA_MS);
+      try {
+        const response = await sendMedia(item);
+        mediaSentList.push({ ...item, externalId: ops.sentExternalId(response) });
+        countOutbound();
+      } catch (error) {
+        mediaFailed++;
+        console.warn("[product-chat] media failed", item.kind, error instanceof Error ? error.message : error);
+      }
+    }
+
+    // Last message: the main photo with the details; if the photo cannot go, the details alone.
+    let externalId: string | null = null;
+    let coverSent = false;
+    let sendError: string | null = null;
+    try {
+      if (media.length) await sleep(BETWEEN_MEDIA_MS);
+      let response: any = null;
+      if (coverUrl) {
+        try {
+          response = await sendMedia({ url: coverUrl, kind: "image" }, caption);
+          coverSent = true;
+        } catch (error) {
+          console.warn("[product-chat] main photo failed", error instanceof Error ? error.message : error);
+        }
+      }
+      if (!coverSent) response = await ops.opSendText(session.channel_account_id, number, caption);
+      externalId = ops.sentExternalId(response);
+      countOutbound();
     } catch (error) {
-      sendError =
-        error instanceof Error
-          ? error.message
-          : "فشل إرسال المنتج";
-
+      sendError = error instanceof Error ? error.message : "فشل إرسال المنتج";
       await risk.recordHealthEvent({
         orgId: organizationId,
-        accountId:
-          session.channel_account_id,
+        accountId: session.channel_account_id,
         eventType: "send_failed",
-        detail: {
-          error: sendError,
-          source: "product",
-        },
+        detail: { error: sendError, source: "product" },
       });
     }
 
-    const status = sendError
-      ? "failed"
-      : "sent";
-
-    // After the first message (the first image with the details), the product's other images and then
-    // its videos follow, each as its own message. One of them failing does not undo what was sent.
-    const extraMedia: { url: string; kind: "image" | "video" }[] = sendError
-      ? []
-      : [
-          ...(Array.isArray(product.images) ? product.images.slice(imageUrl ? 1 : 0) : []).map((u: unknown) => ({
-            url: String(u),
-            kind: "image" as const,
-          })),
-          ...(Array.isArray(product.videos) ? product.videos : []).map((u: unknown) => ({
-            url: String(u),
-            kind: "video" as const,
-          })),
-        ].filter((m) => /^https?:\/\//i.test(m.url));
-    const extraSent: { url: string; kind: "image" | "video"; externalId: string | null }[] = [];
-    let extraFailed = 0;
-    const extraOutbound: Promise<unknown>[] = [];
-    for (const media of extraMedia) {
-      await sleep(BETWEEN_MEDIA_MS);
-      try {
-        let response: any;
-        if (media.kind === "video" || isOwnStorageUrl(media.url)) {
-          // Our storage links (and any video) go as links: the WhatsApp server fetches them itself.
-          const mimetype = media.kind === "video" ? guessVideoMime(media.url) : guessImageMime(media.url);
-          response = await ops.opSendMedia(session.channel_account_id, number, {
-            mediatype: media.kind,
-            media: media.url,
-            mimetype,
-            fileName: `product.${mimetype.split("/")[1].replace("jpeg", "jpg").replace("quicktime", "mov")}`,
-          });
-        } else {
-          const file = await downloadProductImage(media.url);
-          if (!file) throw new Error("تعذر تنزيل الصورة");
-          const inline = Buffer.byteLength(file.base64, "base64") <= MAX_INLINE_IMAGE_BYTES;
-          response = await ops.opSendMedia(session.channel_account_id, number, {
-            mediatype: "image",
-            media: inline ? file.base64 : media.url,
-            mimetype: file.mimetype,
-            fileName: file.fileName,
-          });
-        }
-        extraSent.push({ ...media, externalId: ops.sentExternalId(response) });
-        extraOutbound.push(
-          risk
-            .recordOutbound({ orgId: organizationId, accountId: session.channel_account_id })
-            .catch((e) => console.error("[product-chat] recordOutbound failed", e)),
-        );
-      } catch (error) {
-        extraFailed++;
-        console.warn("[product-chat] extra media failed", media.kind, error instanceof Error ? error.message : error);
-      }
-    }
+    const status = sendError ? "failed" : "sent";
 
     const productMeta = {
       source: "product",
@@ -455,20 +374,7 @@ export const sendProductToChatFn = createServerFn({
     const messageInsert = db
       .from("msg_messages")
       .insert([
-        {
-          organization_id: organizationId,
-          session_id: data.chatId,
-          external_id: externalId,
-          direction: "outbound",
-          message_type: mediaSent ? "image" : "text",
-          content: caption,
-          media_url: mediaSent ? imageUrl : null,
-          media_meta: productMeta,
-          status,
-          sent_by_user_id: userId,
-          created_at: new Date(startedAt).toISOString(),
-        },
-        ...extraSent.map((media, i) => ({
+        ...mediaSentList.map((media, i) => ({
           organization_id: organizationId,
           session_id: data.chatId,
           external_id: media.externalId,
@@ -479,8 +385,21 @@ export const sendProductToChatFn = createServerFn({
           media_meta: productMeta,
           status: "sent",
           sent_by_user_id: userId,
-          created_at: new Date(startedAt + (i + 1) * 10).toISOString(),
+          created_at: new Date(startedAt + i * 10).toISOString(),
         })),
+        {
+          organization_id: organizationId,
+          session_id: data.chatId,
+          external_id: externalId,
+          direction: "outbound",
+          message_type: coverSent ? "image" : "text",
+          content: caption,
+          media_url: coverSent ? coverUrl : null,
+          media_meta: productMeta,
+          status,
+          sent_by_user_id: userId,
+          created_at: new Date(startedAt + mediaSentList.length * 10).toISOString(),
+        },
       ])
       .select("id, created_at");
 
@@ -532,8 +451,7 @@ export const sendProductToChatFn = createServerFn({
         messageInsert,
         previewUpdate,
         interactionInsert,
-        outboundRecorded,
-        ...extraOutbound,
+        ...outbound,
       ]);
 
     if (messageError) {
@@ -548,12 +466,12 @@ export const sendProductToChatFn = createServerFn({
 
     return {
       ok: true,
-      messageId: messages?.[0]?.id,
-      mediaSent,
-      usedTextFallback,
+      messageId: messages?.at(-1)?.id,
+      mediaSent: coverSent || mediaSentList.length > 0,
+      usedTextFallback: !!coverUrl && !coverSent,
       productName: product.name,
-      imagesSent: (mediaSent ? 1 : 0) + extraSent.filter((m) => m.kind === "image").length,
-      videosSent: extraSent.filter((m) => m.kind === "video").length,
-      mediaFailed: extraFailed,
+      imagesSent: mediaSentList.filter((m) => m.kind === "image").length + (coverSent ? 1 : 0),
+      videosSent: mediaSentList.filter((m) => m.kind === "video").length,
+      mediaFailed,
     };
   });

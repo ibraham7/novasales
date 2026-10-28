@@ -329,6 +329,34 @@ function ChatView() {
     [data?.messages, pending],
   );
 
+  // Photos sent back to back without text (e.g. a product's pictures) show as one album, as WhatsApp does.
+  const albums = useMemo(() => {
+    const byFirst = new Map<string, MessageRow[]>();
+    const hidden = new Set<string>();
+    const isBarePhoto = (m?: MessageRow) => m?.message_type === "image" && !!m.media_url && !m.content;
+    let run: MessageRow[] = [];
+    const close = () => {
+      if (run.length > 1) {
+        byFirst.set(run[0].id, run);
+        run.slice(1).forEach((m) => hidden.add(m.id));
+      }
+      run = [];
+    };
+    for (const message of messages) {
+      const last = run.at(-1);
+      const joins =
+        last &&
+        isBarePhoto(message) &&
+        message.from_me === last.from_me &&
+        dayKey(message.created_at) === dayKey(last.created_at) &&
+        new Date(message.created_at).getTime() - new Date(last.created_at).getTime() < 5 * 60_000;
+      if (!joins) close();
+      if (isBarePhoto(message)) run.push(message);
+    }
+    close();
+    return { byFirst, hidden };
+  }, [messages]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top:
@@ -635,7 +663,7 @@ function ChatView() {
               (
                 message: MessageRow,
                 index: number,
-              ) => (
+              ) => albums.hidden.has(message.id) ? null : (
                 <Fragment key={message.id}>
                 {dayKey(message.created_at) !== dayKey(messages[index - 1]?.created_at) && (
                   <div className="flex justify-center py-2">
@@ -668,7 +696,18 @@ function ChatView() {
                         : "bg-chat-in text-foreground rounded-tl-none",
                     )}
                   >
-                    {message.message_type ===
+                    {albums.byFirst.has(message.id) ? (
+                      <PhotoAlbum photos={albums.byFirst.get(message.id)!} />
+                    ) : message.message_type === "video" && message.media_url ? (
+                      <video
+                        src={message.media_url}
+                        controls
+                        preload="metadata"
+                        playsInline
+                        onClick={(event) => event.stopPropagation()}
+                        className="rounded-lg mb-1 max-h-[320px] w-full bg-black"
+                      />
+                    ) : message.message_type ===
                       "image" &&
                       message.media_url && (
                         <img
@@ -1089,6 +1128,33 @@ function slaState(
   }
 
   return "متأخر";
+}
+
+// Up to four tiles like WhatsApp; the last tile says how many more there are. Each opens the full photo.
+function PhotoAlbum({ photos }: { photos: MessageRow[] }) {
+  const shown = photos.slice(0, 4);
+  const more = photos.length - shown.length;
+  return (
+    <div className={cn("grid w-64 max-w-full gap-0.5 mb-1 rounded-lg overflow-hidden", shown.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+      {shown.map((photo, i) => (
+        <a
+          key={photo.id}
+          href={photo.media_url!}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className="relative block aspect-square bg-muted"
+        >
+          <img src={photo.media_url!} alt="صورة" loading="lazy" className="h-full w-full object-cover" />
+          {more > 0 && i === shown.length - 1 && (
+            <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-2xl font-semibold text-white">
+              +{more}
+            </span>
+          )}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function dayKey(iso: string | undefined) {
