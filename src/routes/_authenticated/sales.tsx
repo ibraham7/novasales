@@ -12,6 +12,7 @@ import {
   Search,
   ShoppingCart,
   Tag,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -19,6 +20,8 @@ import { toast } from "@/lib/toast";
 
 import {
   cancelSalesOrder,
+  deleteSalesOrder,
+  getSalesOrderAbilities,
   confirmSalesOrder,
   createSalesOrder,
   getSalesStats,
@@ -121,6 +124,8 @@ function SalesPage() {
   const createOrder = useServerFn(createSalesOrder);
   const confirmOrder = useServerFn(confirmSalesOrder);
   const cancelOrder = useServerFn(cancelSalesOrder);
+  const deleteOrder = useServerFn(deleteSalesOrder);
+  const fetchAbilities = useServerFn(getSalesOrderAbilities);
 
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -349,8 +354,65 @@ function SalesPage() {
     },
   });
 
+  const { data: abilities } = useQuery({
+    queryKey: ["sales-order-abilities"],
+    queryFn: () => fetchAbilities(),
+    staleTime: 5 * 60 * 1000,
+  });
+  // A confirmed sale can be deleted only by the owner or a supervisor; other orders by whoever sees them.
+  const canDelete = (order: any) => order.status !== "confirmed" || !!abilities?.canDeleteConfirmed;
+  const [deleting, setDeleting] = useState<any | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: (orderId: string) => deleteOrder({ data: { orderId } }),
+    onSuccess: () => {
+      toast.success(
+        deleting?.status === "cancelled" ? "تم حذف الطلب" : "تم حذف الطلب وإرجاع الكمية للمخزون",
+      );
+      setDeleting(null);
+      qc.invalidateQueries({ queryKey: ["sales-orders"] });
+      qc.invalidateQueries({ queryKey: ["sales-stats"] });
+      qc.invalidateQueries({ queryKey: ["sales-products"] });
+      qc.invalidateQueries({ queryKey: ["sales-products-order"] });
+      qc.invalidateQueries({ queryKey: ["chat-order-products"] });
+      qc.invalidateQueries({ queryKey: ["sales-reports"] });
+      qc.invalidateQueries({ queryKey: ["sales-performance"] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "تعذر حذف الطلب");
+    },
+  });
+  const deletingQty =
+    deleting?.sales_order_items?.reduce((sum: number, item: any) => sum + Number(item.quantity), 0) ?? 0;
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8" dir="rtl">
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(value) => !value && !deleteMutation.isPending && setDeleting(null)}
+      >
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deleting?.status === "confirmed" ? "حذف البيع؟" : "حذف الطلب؟"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting?.status === "confirmed"
+                ? `سيُحذف بيع ${deleting?.contact_phone ?? deleting?.contact_name ?? ""} من المبيعات والإحصائيات، وترجع ${deletingQty} قطعة إلى المخزون.`
+                : deleting?.status === "cancelled"
+                  ? `سيُحذف الطلب الملغي ${deleting?.contact_phone ?? deleting?.contact_name ?? ""} من القائمة.`
+                  : `سيُحذف طلب ${deleting?.contact_phone ?? deleting?.contact_name ?? ""}، وترجع أي كمية محجوزة له إلى المخزون.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>تراجع</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleting && deleteMutation.mutate(deleting.id)}
+            >
+              {deleteMutation.isPending ? "جارِ الحذف..." : "حذف"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!cancelling}
         onOpenChange={(value) => !value && !cancelMutation.isPending && setCancelling(null)}
@@ -428,9 +490,23 @@ function SalesPage() {
           ) : (
             <div className="space-y-3">
               {filteredOrders.map((order: any) => (
-                <div key={order.id} className="border rounded-xl p-4">
+                <div key={order.id} className="relative border rounded-xl p-4">
+                  {canDelete(order) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title={order.status === "confirmed" ? "حذف البيع" : "حذف الطلب"}
+                      aria-label={order.status === "confirmed" ? "حذف البيع" : "حذف الطلب"}
+                      className="absolute left-2 top-2 h-9 w-9 text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeleting(order)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    <div>
+                    <div className="pl-10 lg:pl-0">
                       <div className="flex items-center gap-2">
                         <div>
                           <p className="font-semibold" dir="ltr">{order.contact_phone ?? order.contact_name}</p>

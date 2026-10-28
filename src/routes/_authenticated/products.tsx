@@ -379,7 +379,14 @@ function ProductsPage() {
     setOptionsDraft(EMPTY_OPTIONS);
     setSpecs([]);
     setStockEdits(EMPTY_STOCK_EDITS);
-    setForm({ ...EMPTY_FORM, currency: platform.default_currency });
+    // A new product starts in the currency of the organization's latest product (the list is newest
+    // first), so a currency picked once carries on to the next products; the platform default is
+    // only for the first product.
+    const lastCurrency = (products as ProductRow[])[0]?.currency;
+    setForm({
+      ...EMPTY_FORM,
+      currency: lastCurrency && CURRENCY_CODES.includes(lastCurrency) ? lastCurrency : platform.default_currency,
+    });
 
     setProductDialogOpen(true);
   }

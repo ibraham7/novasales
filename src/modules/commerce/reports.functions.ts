@@ -34,6 +34,7 @@ export const getSalesReports = createServerFn({ method: "GET" })
           )
           .eq("organization_id", organizationId)
           .eq("status", "confirmed")
+          .is("deleted_at", null)
           .order("confirmed_at")
           .order("id"),
         access,

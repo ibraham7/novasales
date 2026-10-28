@@ -69,6 +69,7 @@ export const listBuyers =
                 "status",
                 "confirmed",
             )
+            .is("deleted_at", null)
             .order(
                 "confirmed_at",
                 {

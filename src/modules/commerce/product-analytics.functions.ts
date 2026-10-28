@@ -61,6 +61,7 @@ export const getProductAnalytics = createServerFn({
       )
       .eq("organization_id", organizationId)
       .eq("status", "confirmed")
+      .is("deleted_at", null)
       .limit(10000);
 
     if (cutoff) {

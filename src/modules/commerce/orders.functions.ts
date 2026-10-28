@@ -369,6 +369,7 @@ export const cancelSalesOrder = createServerFn({
       .select("id, sales_rep_user_id, department_id, status")
       .eq("id", data.orderId)
       .eq("organization_id", organizationId)
+      .is("deleted_at", null)
       .single();
     if (readError || !order) throw new Error(readError?.message ?? "عملية البيع غير موجودة");
     if (!canAccessSalesOrderRow(access, order))
@@ -384,6 +385,60 @@ export const cancelSalesOrder = createServerFn({
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/* =========================================================
+ * Delete sales order
+ *
+ * Takes the order off the sales list and stats (the row stays as a
+ * record) and returns any stock it took. A confirmed sale can be
+ * deleted only by the owner or a supervisor; a waiting or cancelled
+ * order by whoever can cancel it.
+ * ======================================================= */
+
+export const deleteSalesOrder = createServerFn({
+  method: "POST",
+})
+  .validator((data: unknown) => z.object({ orderId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { requirePermission, getWorkspaceAccess } = await import("@/platform/rbac/rbac.server");
+    const { canAccessSalesOrderRow } = await import("@/platform/rbac/data-scope.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { organizationId, userId } = await requirePermission("sales.orders.create");
+    const access = await getWorkspaceAccess();
+    const db = supabaseAdmin as any;
+
+    const { data: order, error: readError } = await db
+      .from("sales_orders")
+      .select("id, sales_rep_user_id, department_id, status, deleted_at")
+      .eq("id", data.orderId)
+      .eq("organization_id", organizationId)
+      .single();
+    if (readError || !order || order.deleted_at) throw new Error("عملية البيع غير موجودة");
+    if (!canAccessSalesOrderRow(access, order))
+      throw new Error("لا يمكنك حذف عملية بيع خارج نطاق صلاحياتك");
+    if (order.status === "confirmed" && !canDeleteConfirmedSale(access))
+      throw new Error("حذف بيع مؤكد للمالك والمشرف العام فقط");
+
+    const { error } = await db.rpc("delete_sales_order", {
+      _organization_id: organizationId,
+      _order_id: data.orderId,
+      _deleted_by: userId,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+/** Owners and supervisors may delete a confirmed sale (its stock goes back). */
+function canDeleteConfirmedSale(access: { isSuperAdmin: boolean; roleKeys: string[] }) {
+  return access.isSuperAdmin || access.roleKeys.some((r) => r === "owner" || r === "org_owner" || r === "supervisor");
+}
+
+/** For the page: whether this user may delete a confirmed sale. */
+export const getSalesOrderAbilities = createServerFn({ method: "GET" }).handler(async () => {
+  const { getWorkspaceAccess } = await import("@/platform/rbac/rbac.server");
+  const access = await getWorkspaceAccess();
+  return { canDeleteConfirmed: canDeleteConfirmedSale(access) };
+});
 
 /* =========================================================
  * Confirm sales order
@@ -428,6 +483,7 @@ export const confirmSalesOrder = createServerFn({
       )
       .eq("id", data.orderId)
       .eq("organization_id", organizationId)
+      .is("deleted_at", null)
       .single();
 
     if (readError || !order) {
@@ -502,6 +558,7 @@ export const listSalesOrders = createServerFn({
         `,
     )
     .eq("organization_id", organizationId)
+    .is("deleted_at", null)
     .order("created_at", {
       ascending: false,
     });
@@ -652,7 +709,8 @@ export const getSalesStats = createServerFn({
           created_at
         `,
     )
-    .eq("organization_id", organizationId);
+    .eq("organization_id", organizationId)
+    .is("deleted_at", null);
 
   /* -----------------------------------------------------
    * Apply RBAC scope

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
+import { formatProductCaption } from "./product-caption";
 
 const SendProductInput = z.object({
   chatId: z.string().uuid(),
@@ -16,17 +17,6 @@ function stockOf(product: any) {
   return Number(inventory?.quantity ?? 0);
 }
 
-function formatProductCaption(product: any) {
-  return [
-    `📦 ${product.name}`,
-    product.description?.trim() || null,
-    `💰 السعر: ${Number(product.price)} ${product.currency}`,
-    product.sku ? `🔖 SKU: ${product.sku}` : null,
-    "✅ متوفر الآن",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
 
 function guessImageMime(url: string) {
   const clean = url.toLowerCase().split("?")[0];
@@ -37,6 +27,18 @@ function guessImageMime(url: string) {
 
   return "image/jpeg";
 }
+
+function guessVideoMime(url: string) {
+  const clean = url.toLowerCase().split("?")[0];
+  if (clean.endsWith(".webm")) return "video/webm";
+  if (clean.endsWith(".mov")) return "video/quicktime";
+  return "video/mp4";
+}
+
+// Pause between the product's messages so they arrive in order and WhatsApp does not read a burst
+// of media as spam.
+const BETWEEN_MEDIA_MS = 900;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
 // The WhatsApp server refuses request bodies over about 1 MB (HTTP 413), and base64 grows a file by a
@@ -98,7 +100,7 @@ export const sendProductToChatFn = createServerFn({
       await getWorkspace();
 
     // Permission and the three reads are independent: one parallel round.
-    const [access, productRes, sessionRes, linkRes] =
+    const [access, productRes, sessionRes, linkRes, definitionsRes] =
       await Promise.all([
         requireAnyPermission([
           "messaging.send",
@@ -114,8 +116,12 @@ export const sendProductToChatFn = createServerFn({
             price,
             currency,
             images,
+            videos,
+            attributes,
             is_active,
-            sales_inventory(quantity)
+            sales_inventory(quantity),
+            sales_product_variants!sales_variants_product_scope_fk(id, attributes),
+            sales_stock_batches!sales_stock_batches_product_id_fkey(variant_id, quantity, expires_on)
           `)
           .eq("id", data.productId)
           .eq(
@@ -147,6 +153,12 @@ export const sendProductToChatFn = createServerFn({
           )
           .eq("session_ref", data.chatId)
           .maybeSingle(),
+
+        // Property names for the caption (fabric, sizes…).
+        db
+          .from("sales_product_attributes")
+          .select("id, name, kind, scope, is_archived, is_price_floor")
+          .eq("organization_id", organizationId),
       ]);
 
     if (
@@ -264,7 +276,7 @@ export const sendProductToChatFn = createServerFn({
     ).split("@")[0];
 
     const caption =
-      formatProductCaption(product);
+      formatProductCaption(product, definitionsRes?.data ?? []);
 
     let externalId: string | null = null;
     let mediaSent = false;
@@ -377,45 +389,100 @@ export const sendProductToChatFn = createServerFn({
       ? "failed"
       : "sent";
 
-    // Message row, chat preview, interaction and risk counters are independent writes.
-    const messageInsert =
-      db
-        .from("msg_messages")
-        .insert({
-          organization_id:
-            organizationId,
+    // After the first message (the first image with the details), the product's other images and then
+    // its videos follow, each as its own message. One of them failing does not undo what was sent.
+    const extraMedia: { url: string; kind: "image" | "video" }[] = sendError
+      ? []
+      : [
+          ...(Array.isArray(product.images) ? product.images.slice(imageUrl ? 1 : 0) : []).map((u: unknown) => ({
+            url: String(u),
+            kind: "image" as const,
+          })),
+          ...(Array.isArray(product.videos) ? product.videos : []).map((u: unknown) => ({
+            url: String(u),
+            kind: "video" as const,
+          })),
+        ].filter((m) => /^https?:\/\//i.test(m.url));
+    const extraSent: { url: string; kind: "image" | "video"; externalId: string | null }[] = [];
+    let extraFailed = 0;
+    const extraOutbound: Promise<unknown>[] = [];
+    for (const media of extraMedia) {
+      await sleep(BETWEEN_MEDIA_MS);
+      try {
+        let response: any;
+        if (media.kind === "video" || isOwnStorageUrl(media.url)) {
+          // Our storage links (and any video) go as links: the WhatsApp server fetches them itself.
+          const mimetype = media.kind === "video" ? guessVideoMime(media.url) : guessImageMime(media.url);
+          response = await ops.opSendMedia(session.channel_account_id, number, {
+            mediatype: media.kind,
+            media: media.url,
+            mimetype,
+            fileName: `product.${mimetype.split("/")[1].replace("jpeg", "jpg").replace("quicktime", "mov")}`,
+          });
+        } else {
+          const file = await downloadProductImage(media.url);
+          if (!file) throw new Error("تعذر تنزيل الصورة");
+          const inline = Buffer.byteLength(file.base64, "base64") <= MAX_INLINE_IMAGE_BYTES;
+          response = await ops.opSendMedia(session.channel_account_id, number, {
+            mediatype: "image",
+            media: inline ? file.base64 : media.url,
+            mimetype: file.mimetype,
+            fileName: file.fileName,
+          });
+        }
+        extraSent.push({ ...media, externalId: ops.sentExternalId(response) });
+        extraOutbound.push(
+          risk
+            .recordOutbound({ orgId: organizationId, accountId: session.channel_account_id })
+            .catch((e) => console.error("[product-chat] recordOutbound failed", e)),
+        );
+      } catch (error) {
+        extraFailed++;
+        console.warn("[product-chat] extra media failed", media.kind, error instanceof Error ? error.message : error);
+      }
+    }
 
+    const productMeta = {
+      source: "product",
+      product_id: product.id,
+      product_name: product.name,
+      sku: product.sku,
+      price: product.price,
+      currency: product.currency,
+    };
+    // One insert with increasing times keeps the chat in the order the customer received them.
+    const startedAt = Date.now();
+    const messageInsert = db
+      .from("msg_messages")
+      .insert([
+        {
+          organization_id: organizationId,
           session_id: data.chatId,
-
           external_id: externalId,
-
           direction: "outbound",
-
-          message_type: mediaSent
-            ? "image"
-            : "text",
-
+          message_type: mediaSent ? "image" : "text",
           content: caption,
-
-          media_url: mediaSent
-            ? imageUrl
-            : null,
-
-          media_meta: {
-            source: "product",
-            product_id: product.id,
-            product_name: product.name,
-            sku: product.sku,
-            price: product.price,
-            currency: product.currency,
-          },
-
+          media_url: mediaSent ? imageUrl : null,
+          media_meta: productMeta,
           status,
-
           sent_by_user_id: userId,
-        })
-        .select("id, created_at")
-        .single();
+          created_at: new Date(startedAt).toISOString(),
+        },
+        ...extraSent.map((media, i) => ({
+          organization_id: organizationId,
+          session_id: data.chatId,
+          external_id: media.externalId,
+          direction: "outbound",
+          message_type: media.kind,
+          content: "",
+          media_url: media.url,
+          media_meta: productMeta,
+          status: "sent",
+          sent_by_user_id: userId,
+          created_at: new Date(startedAt + (i + 1) * 10).toISOString(),
+        })),
+      ])
+      .select("id, created_at");
 
     const previewUpdate = db
       .from("msg_sessions")
@@ -460,12 +527,13 @@ export const sendProductToChatFn = createServerFn({
           interaction_type: "sent",
         });
 
-    const [{ data: message, error: messageError }] =
+    const [{ data: messages, error: messageError }] =
       await Promise.all([
         messageInsert,
         previewUpdate,
         interactionInsert,
         outboundRecorded,
+        ...extraOutbound,
       ]);
 
     if (messageError) {
@@ -480,9 +548,12 @@ export const sendProductToChatFn = createServerFn({
 
     return {
       ok: true,
-      messageId: message.id,
+      messageId: messages?.[0]?.id,
       mediaSent,
       usedTextFallback,
       productName: product.name,
+      imagesSent: (mediaSent ? 1 : 0) + extraSent.filter((m) => m.kind === "image").length,
+      videosSent: extraSent.filter((m) => m.kind === "video").length,
+      mediaFailed: extraFailed,
     };
   });

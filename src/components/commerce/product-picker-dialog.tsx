@@ -79,12 +79,16 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
     },
 
     onSuccess: (result) => {
-      if (result.usedTextFallback) {
-        toast.warning("تم إرسال تفاصيل المنتج، لكن تعذر إرسال الصورة.");
-      } else if (result.mediaSent) {
-        toast.success("تم إرسال صورة المنتج والتفاصيل للعميل.");
+      const parts = [
+        result.imagesSent ? `${result.imagesSent} ${result.imagesSent === 1 ? "صورة" : "صور"}` : null,
+        result.videosSent ? `${result.videosSent} ${result.videosSent === 1 ? "فيديو" : "فيديوهات"}` : null,
+      ].filter(Boolean);
+      const sentMedia = parts.length ? ` مع ${parts.join(" و")}` : "";
+      if (result.usedTextFallback || result.mediaFailed) {
+        const failed = (result.mediaFailed ?? 0) + (result.usedTextFallback ? 1 : 0);
+        toast.warning(`تم إرسال تفاصيل المنتج${sentMedia}، وتعذر إرسال ${failed} من الصور أو الفيديوهات.`);
       } else {
-        toast.success("تم إرسال تفاصيل المنتج للعميل.");
+        toast.success(`تم إرسال تفاصيل المنتج للعميل${sentMedia}.`);
       }
 
       setOpen(false);

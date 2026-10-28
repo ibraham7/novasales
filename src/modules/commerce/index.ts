@@ -14,6 +14,8 @@ export {
     createSalesOrder,
     confirmSalesOrder,
     cancelSalesOrder,
+    deleteSalesOrder,
+    getSalesOrderAbilities,
     listSalesOrders,
     getSalesStats,
 } from "./orders.functions";
