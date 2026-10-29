@@ -64,3 +64,7 @@ test("pixel ids are checked per platform", () => {
   assert.throws(() => cleanPixelId("facebook", "abc"));
   assert.equal(cleanPixelId("google", "AW-123456789"), "AW-123456789");
 });
+
+test("an access token pasted into the pixel id box gets a clear message", () => {
+  assert.throws(() => cleanPixelId("facebook", "EAAXjadoFj9IBS1E" + "x".repeat(150)), /رمز وصول/);
+});

@@ -63,8 +63,8 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
     z
       .object({
         platform,
-        pixelId: z.string().max(120),
-        accessToken: z.string().trim().max(1000).optional(),
+        pixelId: z.string().max(4000),
+        accessToken: z.string().trim().max(4000).optional(),
         testEventCode: z.string().trim().max(40).optional(),
       })
       .parse(data),
@@ -83,6 +83,7 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
     if (data.platform === "facebook") {
       row.test_event_code = data.testEventCode || null;
       if (data.accessToken) {
+        data.accessToken = data.accessToken.replace(/\s+/g, "");
         const { metaGraph } = await import("./meta-capi.server");
         // A token made in Events Manager may only send events and not read the pixel («Missing Permission»);
         // that is not a reason to refuse it. A token Meta says is invalid or revoked (190) still is.
