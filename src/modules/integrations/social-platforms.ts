@@ -24,6 +24,9 @@ export function cleanPixelId(platform: SocialPlatform, raw: string): string {
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660))
     .trim();
   const spec = SOCIAL_PLATFORMS[platform];
+  // A long access token pasted into the id box is the commonest slip.
+  if (value.length > 40 || /^EAA/.test(value))
+    throw new Error(`هذا يبدو رمز وصول وليس ${spec.idLabel}. الصقه في خانة «رمز Conversions API» وضع في هذه الخانة الرقم فقط`);
   if (!spec.pattern.test(value)) throw new Error(`${spec.idLabel} غير صحيح لـ ${spec.label} (مثال: ${spec.example})`);
   return value;
 }
