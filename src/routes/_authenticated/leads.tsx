@@ -36,6 +36,8 @@ import {
 } from "@/modules/crm";
 import { CustomFieldInput } from "@/components/crm/custom-field-input";
 import { leadCreateSchema, leadUpdateSchema } from "@/modules/crm/lead-input";
+import { CURRENCY_CODES } from "@/modules/commerce/currencies";
+import { toLatinDigits } from "@/lib/utils";
 export const Route = createFileRoute("/_authenticated/leads")({
   head: () => ({ meta: [{ title: "العملاء المحتملون - NovaSales" }] }),
   component: LeadsPage,
@@ -154,10 +156,16 @@ function LeadsPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  // The deal value goes to Meta with the Purchase event, so it is asked for when the lead becomes an opportunity.
+  const [converting, setConverting] = useState<any>(null),
+    [dealAmount, setDealAmount] = useState(""),
+    [dealCurrency, setDealCurrency] = useState("");
   const convertMut = useMutation({
-    mutationFn: (id: string) => convert({ data: { leadId: id } }),
+    mutationFn: ({ id, amount, currency }: { id: string; amount?: number; currency?: string }) =>
+      convert({ data: { leadId: id, ...(amount != null ? { amount } : {}), ...(currency ? { currency } : {}) } }),
     onSuccess: () => {
       toast.success("تم تحويل العميل إلى فرصة مبيعات");
+      setConverting(null);
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -388,10 +396,14 @@ function LeadsPage() {
                             size="sm"
                             variant="outline"
                             disabled={l.status === "converted" || busy}
-                            onClick={() => convertMut.mutate(l.id)}
+                            onClick={() => {
+                              setConverting(l);
+                              setDealAmount("");
+                              setDealCurrency("");
+                            }}
                           >
                             <ArrowRightLeft className="h-3 w-3" />
-                            {convertMut.isPending && convertMut.variables === l.id
+                            {convertMut.isPending && convertMut.variables?.id === l.id
                               ? "جارٍ التحويل…"
                               : "تحويل إلى فرصة"}
                           </Button>
@@ -598,6 +610,60 @@ function LeadsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!converting} onOpenChange={(value) => !convertMut.isPending && !value && setConverting(null)}>
+        <DialogContent dir="rtl" className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>تحويل «{converting?.contact_name}» إلى فرصة</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="deal-amount">قيمة الصفقة (اختياري)</Label>
+              <Input
+                id="deal-amount"
+                inputMode="decimal"
+                dir="ltr"
+                placeholder="1500"
+                value={dealAmount}
+                onChange={(e) => setDealAmount(toLatinDigits(e.target.value).replace(/[^0-9.]/g, ""))}
+              />
+              <p className="text-xs text-muted-foreground">تُرسل مع حدث الشراء إلى ميتا، فتجنّب تحذيرات القيمة.</p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="deal-currency">العملة</Label>
+              <select
+                id="deal-currency"
+                className="w-full rounded-md border bg-background p-2 text-sm"
+                value={dealCurrency}
+                onChange={(e) => setDealCurrency(e.target.value)}
+              >
+                <option value="">العملة الافتراضية للمنصة</option>
+                {CURRENCY_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={convertMut.isPending} onClick={() => setConverting(null)}>
+              إلغاء
+            </Button>
+            <Button
+              disabled={convertMut.isPending}
+              onClick={() =>
+                convertMut.mutate({
+                  id: converting.id,
+                  ...(dealAmount && Number.isFinite(Number(dealAmount)) ? { amount: Number(dealAmount) } : {}),
+                  ...(dealCurrency ? { currency: dealCurrency } : {}),
+                })
+              }
+            >
+              {convertMut.isPending ? "جارٍ التحويل…" : "تحويل"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <AlertDialog
