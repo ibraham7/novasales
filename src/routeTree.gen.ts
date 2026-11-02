@@ -39,6 +39,7 @@ import { Route as ApiV1LeadsRouteImport } from './routes/api/v1/leads'
 import { Route as ApiV1ContactsRouteImport } from './routes/api/v1/contacts'
 import { Route as ApiPublicWhTickRouteImport } from './routes/api/public/wh-tick'
 import { Route as ApiPublicWfTickRouteImport } from './routes/api/public/wf-tick'
+import { Route as ApiPublicPushReceiptRouteImport } from './routes/api/public/push-receipt'
 import { Route as ApiPublicMetaWebhookRouteImport } from './routes/api/public/meta-webhook'
 import { Route as ApiPublicCmpTickRouteImport } from './routes/api/public/cmp-tick'
 import { Route as AuthenticatedSettingsSocialRouteImport } from './routes/_authenticated/settings.social'
@@ -46,11 +47,13 @@ import { Route as AuthenticatedSettingsRolesRouteImport } from './routes/_authen
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings.profile'
 import { Route as AuthenticatedSettingsPipelinesRouteImport } from './routes/_authenticated/settings.pipelines'
 import { Route as AuthenticatedSettingsOrganizationRouteImport } from './routes/_authenticated/settings.organization'
+import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings.notifications'
 import { Route as AuthenticatedSettingsMembersRouteImport } from './routes/_authenticated/settings.members'
 import { Route as AuthenticatedSettingsInvitationsRouteImport } from './routes/_authenticated/settings.invitations'
 import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
 import { Route as AuthenticatedSettingsCustomFieldsRouteImport } from './routes/_authenticated/settings.custom-fields'
 import { Route as AuthenticatedSettingsConversionsRouteImport } from './routes/_authenticated/settings.conversions'
+import { Route as AuthenticatedSettingsBroadcastsRouteImport } from './routes/_authenticated/settings.broadcasts'
 import { Route as AuthenticatedSettingsBillingRouteImport } from './routes/_authenticated/settings.billing'
 import { Route as AuthenticatedPipelineTrashRouteImport } from './routes/_authenticated/pipeline.trash'
 import { Route as AuthenticatedPipelineOppIdRouteImport } from './routes/_authenticated/pipeline.$oppId'
@@ -226,6 +229,11 @@ const ApiPublicWfTickRoute = ApiPublicWfTickRouteImport.update({
   path: '/api/public/wf-tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicPushReceiptRoute = ApiPublicPushReceiptRouteImport.update({
+  id: '/api/public/push-receipt',
+  path: '/api/public/push-receipt',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicMetaWebhookRoute = ApiPublicMetaWebhookRouteImport.update({
   id: '/api/public/meta-webhook',
   path: '/api/public/meta-webhook',
@@ -266,6 +274,12 @@ const AuthenticatedSettingsOrganizationRoute =
     path: '/organization',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsNotificationsRoute =
+  AuthenticatedSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsMembersRoute =
   AuthenticatedSettingsMembersRouteImport.update({
     id: '/members',
@@ -294,6 +308,12 @@ const AuthenticatedSettingsConversionsRoute =
   AuthenticatedSettingsConversionsRouteImport.update({
     id: '/conversions',
     path: '/conversions',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsBroadcastsRoute =
+  AuthenticatedSettingsBroadcastsRouteImport.update({
+    id: '/broadcasts',
+    path: '/broadcasts',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 const AuthenticatedSettingsBillingRoute =
@@ -454,11 +474,13 @@ export interface FileRoutesByFullPath {
   '/pipeline/$oppId': typeof AuthenticatedPipelineOppIdRoute
   '/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
+  '/settings/broadcasts': typeof AuthenticatedSettingsBroadcastsRoute
   '/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
   '/settings/members': typeof AuthenticatedSettingsMembersRoute
+  '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
   '/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -466,6 +488,7 @@ export interface FileRoutesByFullPath {
   '/settings/social': typeof AuthenticatedSettingsSocialRoute
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
+  '/api/public/push-receipt': typeof ApiPublicPushReceiptRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
   '/api/public/wh-tick': typeof ApiPublicWhTickRoute
   '/api/v1/contacts': typeof ApiV1ContactsRoute
@@ -515,11 +538,13 @@ export interface FileRoutesByTo {
   '/pipeline/$oppId': typeof AuthenticatedPipelineOppIdRoute
   '/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
+  '/settings/broadcasts': typeof AuthenticatedSettingsBroadcastsRoute
   '/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
   '/settings/members': typeof AuthenticatedSettingsMembersRoute
+  '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
   '/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -527,6 +552,7 @@ export interface FileRoutesByTo {
   '/settings/social': typeof AuthenticatedSettingsSocialRoute
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
+  '/api/public/push-receipt': typeof ApiPublicPushReceiptRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
   '/api/public/wh-tick': typeof ApiPublicWhTickRoute
   '/api/v1/contacts': typeof ApiV1ContactsRoute
@@ -581,11 +607,13 @@ export interface FileRoutesById {
   '/_authenticated/pipeline/$oppId': typeof AuthenticatedPipelineOppIdRoute
   '/_authenticated/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/_authenticated/settings/billing': typeof AuthenticatedSettingsBillingRoute
+  '/_authenticated/settings/broadcasts': typeof AuthenticatedSettingsBroadcastsRoute
   '/_authenticated/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/_authenticated/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/_authenticated/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
   '/_authenticated/settings/invitations': typeof AuthenticatedSettingsInvitationsRoute
   '/_authenticated/settings/members': typeof AuthenticatedSettingsMembersRoute
+  '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
   '/_authenticated/settings/pipelines': typeof AuthenticatedSettingsPipelinesRoute
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -593,6 +621,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/social': typeof AuthenticatedSettingsSocialRoute
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
+  '/api/public/push-receipt': typeof ApiPublicPushReceiptRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
   '/api/public/wh-tick': typeof ApiPublicWhTickRoute
   '/api/v1/contacts': typeof ApiV1ContactsRoute
@@ -647,11 +676,13 @@ export interface FileRouteTypes {
     | '/pipeline/$oppId'
     | '/pipeline/trash'
     | '/settings/billing'
+    | '/settings/broadcasts'
     | '/settings/conversions'
     | '/settings/custom-fields'
     | '/settings/integrations'
     | '/settings/invitations'
     | '/settings/members'
+    | '/settings/notifications'
     | '/settings/organization'
     | '/settings/pipelines'
     | '/settings/profile'
@@ -659,6 +690,7 @@ export interface FileRouteTypes {
     | '/settings/social'
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
+    | '/api/public/push-receipt'
     | '/api/public/wf-tick'
     | '/api/public/wh-tick'
     | '/api/v1/contacts'
@@ -708,11 +740,13 @@ export interface FileRouteTypes {
     | '/pipeline/$oppId'
     | '/pipeline/trash'
     | '/settings/billing'
+    | '/settings/broadcasts'
     | '/settings/conversions'
     | '/settings/custom-fields'
     | '/settings/integrations'
     | '/settings/invitations'
     | '/settings/members'
+    | '/settings/notifications'
     | '/settings/organization'
     | '/settings/pipelines'
     | '/settings/profile'
@@ -720,6 +754,7 @@ export interface FileRouteTypes {
     | '/settings/social'
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
+    | '/api/public/push-receipt'
     | '/api/public/wf-tick'
     | '/api/public/wh-tick'
     | '/api/v1/contacts'
@@ -773,11 +808,13 @@ export interface FileRouteTypes {
     | '/_authenticated/pipeline/$oppId'
     | '/_authenticated/pipeline/trash'
     | '/_authenticated/settings/billing'
+    | '/_authenticated/settings/broadcasts'
     | '/_authenticated/settings/conversions'
     | '/_authenticated/settings/custom-fields'
     | '/_authenticated/settings/integrations'
     | '/_authenticated/settings/invitations'
     | '/_authenticated/settings/members'
+    | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/organization'
     | '/_authenticated/settings/pipelines'
     | '/_authenticated/settings/profile'
@@ -785,6 +822,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/social'
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
+    | '/api/public/push-receipt'
     | '/api/public/wf-tick'
     | '/api/public/wh-tick'
     | '/api/v1/contacts'
@@ -810,6 +848,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   ApiPublicCmpTickRoute: typeof ApiPublicCmpTickRoute
   ApiPublicMetaWebhookRoute: typeof ApiPublicMetaWebhookRoute
+  ApiPublicPushReceiptRoute: typeof ApiPublicPushReceiptRoute
   ApiPublicWfTickRoute: typeof ApiPublicWfTickRoute
   ApiPublicWhTickRoute: typeof ApiPublicWhTickRoute
   ApiV1ContactsRoute: typeof ApiV1ContactsRoute
@@ -1032,6 +1071,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWfTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/push-receipt': {
+      id: '/api/public/push-receipt'
+      path: '/api/public/push-receipt'
+      fullPath: '/api/public/push-receipt'
+      preLoaderRoute: typeof ApiPublicPushReceiptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/meta-webhook': {
       id: '/api/public/meta-webhook'
       path: '/api/public/meta-webhook'
@@ -1081,6 +1127,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsOrganizationRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/notifications': {
+      id: '/_authenticated/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/members': {
       id: '/_authenticated/settings/members'
       path: '/members'
@@ -1114,6 +1167,13 @@ declare module '@tanstack/react-router' {
       path: '/conversions'
       fullPath: '/settings/conversions'
       preLoaderRoute: typeof AuthenticatedSettingsConversionsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/broadcasts': {
+      id: '/_authenticated/settings/broadcasts'
+      path: '/broadcasts'
+      fullPath: '/settings/broadcasts'
+      preLoaderRoute: typeof AuthenticatedSettingsBroadcastsRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/settings/billing': {
@@ -1326,11 +1386,13 @@ const AuthenticatedPipelineRouteWithChildren =
 
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsBillingRoute: typeof AuthenticatedSettingsBillingRoute
+  AuthenticatedSettingsBroadcastsRoute: typeof AuthenticatedSettingsBroadcastsRoute
   AuthenticatedSettingsConversionsRoute: typeof AuthenticatedSettingsConversionsRoute
   AuthenticatedSettingsCustomFieldsRoute: typeof AuthenticatedSettingsCustomFieldsRoute
   AuthenticatedSettingsIntegrationsRoute: typeof AuthenticatedSettingsIntegrationsRoute
   AuthenticatedSettingsInvitationsRoute: typeof AuthenticatedSettingsInvitationsRoute
   AuthenticatedSettingsMembersRoute: typeof AuthenticatedSettingsMembersRoute
+  AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSettingsOrganizationRoute: typeof AuthenticatedSettingsOrganizationRoute
   AuthenticatedSettingsPipelinesRoute: typeof AuthenticatedSettingsPipelinesRoute
   AuthenticatedSettingsProfileRoute: typeof AuthenticatedSettingsProfileRoute
@@ -1341,6 +1403,7 @@ interface AuthenticatedSettingsRouteChildren {
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsBillingRoute: AuthenticatedSettingsBillingRoute,
+  AuthenticatedSettingsBroadcastsRoute: AuthenticatedSettingsBroadcastsRoute,
   AuthenticatedSettingsConversionsRoute: AuthenticatedSettingsConversionsRoute,
   AuthenticatedSettingsCustomFieldsRoute:
     AuthenticatedSettingsCustomFieldsRoute,
@@ -1348,6 +1411,8 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
     AuthenticatedSettingsIntegrationsRoute,
   AuthenticatedSettingsInvitationsRoute: AuthenticatedSettingsInvitationsRoute,
   AuthenticatedSettingsMembersRoute: AuthenticatedSettingsMembersRoute,
+  AuthenticatedSettingsNotificationsRoute:
+    AuthenticatedSettingsNotificationsRoute,
   AuthenticatedSettingsOrganizationRoute:
     AuthenticatedSettingsOrganizationRoute,
   AuthenticatedSettingsPipelinesRoute: AuthenticatedSettingsPipelinesRoute,
@@ -1425,6 +1490,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   ApiPublicCmpTickRoute: ApiPublicCmpTickRoute,
   ApiPublicMetaWebhookRoute: ApiPublicMetaWebhookRoute,
+  ApiPublicPushReceiptRoute: ApiPublicPushReceiptRoute,
   ApiPublicWfTickRoute: ApiPublicWfTickRoute,
   ApiPublicWhTickRoute: ApiPublicWhTickRoute,
   ApiV1ContactsRoute: ApiV1ContactsRoute,

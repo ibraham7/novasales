@@ -152,6 +152,19 @@ export async function performAssignment(params: {
     },
   });
 
+  if (params.toUserId && params.action !== "unassign") {
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifyAssignment({
+        organizationId,
+        actorUserId: actorId,
+        toUserId: params.toUserId!,
+        entityId: lead.id,
+        contactId: lead.contact_id,
+        url: opp?.id ? `/pipeline/${opp.id}` : "/leads",
+      }),
+    );
+  }
+
   // Send welcome (best-effort) — only when we have a new owner.
   // Hard-capped so a slow WhatsApp gateway can never stall the assignment.
   if (params.toUserId && (params.sendWelcome ?? true)) {

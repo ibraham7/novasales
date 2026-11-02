@@ -16,6 +16,8 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
     prefix: "/settings/profile",
     label: "الملف الشخصي",
   },
+  { prefix: "/settings/notifications", label: "الإشعارات" },
+  { prefix: "/settings/broadcasts", label: "إرسال إشعارات", anyOf: ["org.manage"] },
   {
     prefix: "/settings/organization",
     label: "إعدادات المؤسسة",

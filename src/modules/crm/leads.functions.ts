@@ -271,6 +271,21 @@ async function saveLead(data: any, editing: boolean) {
     _input: { ...data, customFields: fields },
   });
   if (error) throw leadError(error);
+  if (!editing) {
+    const leadId = typeof result === "string" ? result : (result?.id ?? result?.lead_id ?? null);
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifyNewCustomer({
+        organizationId: access.organizationId,
+        actorUserId: access.userId,
+        entityId: leadId ?? crypto.randomUUID(),
+        name: data.contactName,
+        contactId: data.contactId,
+        ownerUserId: data.ownerUserId,
+        departmentId: data.departmentId,
+        source: data.source,
+      }),
+    );
+  }
   return result;
 }
 export const createLead = createServerFn({ method: "POST" })
