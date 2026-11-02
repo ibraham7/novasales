@@ -66,6 +66,11 @@ export const createTask = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
+    if (row.assignee_user_id) {
+      void import("@/modules/notifications/events.server").then((m) =>
+        m.notifyTaskAssigned({ organizationId, actorUserId: userId, taskId: row.id, title: row.title, assigneeUserId: row.assignee_user_id, entityType: row.entity_type, entityId: row.entity_id }),
+      );
+    }
     return row;
   });
 
@@ -84,7 +89,7 @@ export const updateTask = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
     const db = supabaseAdmin as any;
-    const { organizationId } = await getWorkspace();
+    const { organizationId, userId } = await getWorkspace();
     const patch: Record<string, unknown> = {};
     if (data.title !== undefined) patch.title = data.title;
     if (data.description !== undefined) patch.description = data.description;
@@ -97,6 +102,13 @@ export const updateTask = createServerFn({ method: "POST" })
     if (data.assigneeUserId !== undefined) patch.assignee_user_id = data.assigneeUserId;
     const { error } = await db.from("crm_tasks").update(patch).eq("id", data.taskId).eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
+    if (data.assigneeUserId) {
+      const { data: task } = await db.from("crm_tasks").select("id,title,entity_type,entity_id").eq("id", data.taskId).eq("organization_id", organizationId).maybeSingle();
+      if (task)
+        void import("@/modules/notifications/events.server").then((m) =>
+          m.notifyTaskAssigned({ organizationId, actorUserId: userId, taskId: task.id, title: task.title, assigneeUserId: data.assigneeUserId!, entityType: task.entity_type, entityId: task.entity_id }),
+        );
+    }
     return { ok: true };
   });
 

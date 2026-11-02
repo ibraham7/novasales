@@ -345,6 +345,18 @@ export const createSalesOrder = createServerFn({
       throw new Error(reserveError.message);
     }
 
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifySaleCreated({
+        organizationId,
+        actorUserId: userId,
+        orderId: order.id,
+        salesRepUserId: order.sales_rep_user_id,
+        departmentId: order.department_id,
+        total: order.total,
+        currency: order.currency,
+      }),
+    );
+
     return order;
   });
 
@@ -383,6 +395,9 @@ export const cancelSalesOrder = createServerFn({
       _cancelled_by: userId,
     });
     if (error) throw new Error(error.message);
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifySaleStatus({ organizationId, actorUserId: userId, orderId: data.orderId, status: "cancelled", salesRepUserId: order.sales_rep_user_id, departmentId: order.department_id }),
+    );
     return { ok: true };
   });
 
@@ -425,6 +440,9 @@ export const deleteSalesOrder = createServerFn({
       _deleted_by: userId,
     });
     if (error) throw new Error(error.message);
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifySaleStatus({ organizationId, actorUserId: userId, orderId: data.orderId, status: "deleted", salesRepUserId: order.sales_rep_user_id, departmentId: order.department_id }),
+    );
     return { ok: true };
   });
 
@@ -524,6 +542,10 @@ export const confirmSalesOrder = createServerFn({
     if (error) {
       throw new Error(error.message);
     }
+
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifySaleStatus({ organizationId, actorUserId: userId, orderId: data.orderId, status: "confirmed", salesRepUserId: order.sales_rep_user_id, departmentId: order.department_id }),
+    );
 
     return {
       ok: true,

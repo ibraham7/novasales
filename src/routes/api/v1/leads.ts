@@ -84,6 +84,15 @@ export const Route = createFileRoute("/api/v1/leads")({
               payload: { lead: eventLead, contact },
             });
           } catch (e) { console.error("[api/v1/leads] publishEvent failed", e); }
+          void import("@/modules/notifications/events.server").then((m) =>
+            m.notifyNewCustomer({
+              organizationId: auth.caller.organizationId,
+              entityId: lead.id,
+              name: parsed.data.contactName,
+              departmentId: parsed.data.departmentId ?? null,
+              source: parsed.data.source ?? "API",
+            }),
+          );
           const res = json({ data: lead }, { status: 201 });
           await logRequest(auth.caller, request, 201, Date.now() - started);
           return res;

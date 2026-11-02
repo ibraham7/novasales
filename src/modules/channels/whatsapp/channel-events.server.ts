@@ -515,6 +515,17 @@ async function ensureOpportunity(
             aggregate_id: oppId,
             payload: { contact_id: contactId, source: "whatsapp_inbound" },
           });
+          void import("@/modules/notifications/events.server").then((m) =>
+            m.notifyNewCustomer({
+              organizationId: orgId,
+              entityId: oppId!,
+              contactId,
+              ownerUserId: ownerUserId ?? null,
+              departmentId: accountDepartmentId ?? null,
+              source: "واتساب",
+              url: `/pipeline/${oppId}`,
+            }),
+          );
         }
       }
     } else {

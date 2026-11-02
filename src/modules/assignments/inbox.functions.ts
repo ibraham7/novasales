@@ -170,6 +170,17 @@ export const assignOpportunity = createServerFn({ method: "POST" })
       });
     }
 
+    void import("@/modules/notifications/events.server").then((m) =>
+      m.notifyAssignment({
+        organizationId,
+        actorUserId: actorId,
+        toUserId: member.user_id,
+        entityId: opp.id,
+        contactId: opp.contact_id,
+        url: `/pipeline/${opp.id}`,
+      }),
+    );
+
     // Contact for template rendering
     const { data: contact } = await db
       .from("crm_contacts")

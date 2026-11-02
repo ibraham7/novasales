@@ -1,5 +1,7 @@
 import { usePlatformSettings } from "@/modules/superadmin/use-platform-settings";
 import { RealtimeNotifications } from "@/components/realtime-notifications";
+import { PushSync } from "@/components/notifications/push-sync";
+import { forgetThisDevice } from "@/lib/push-device";
 
 import {
   Link,
@@ -261,6 +263,9 @@ export function AppShell({
 
     await qc.cancelQueries();
 
+    // This device stops getting the account's notifications before the session ends.
+    await forgetThisDevice();
+
     qc.clear();
 
     await supabase.auth.signOut();
@@ -417,7 +422,10 @@ export function AppShell({
       dir="rtl"
     >
       {accessReady ? (
-        <RealtimeNotifications />
+        <>
+          <RealtimeNotifications />
+          <PushSync />
+        </>
       ) : null}
 
       {/* Desktop sidebar */}

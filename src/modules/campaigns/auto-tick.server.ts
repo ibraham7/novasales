@@ -26,6 +26,12 @@ export function startCampaignTicker() {
       if (sent) console.log(`[conversions] sent ${sent} to Meta`);
     } catch (error) {
       console.error("[conversions] run failed", error instanceof Error ? error.message : error);
+    }
+    try {
+      const { notifyDueTasks } = await import("@/modules/notifications/events.server");
+      await notifyDueTasks();
+    } catch (error) {
+      console.error("[push] due tasks failed", error instanceof Error ? error.message : error);
     } finally {
       running = false;
     }

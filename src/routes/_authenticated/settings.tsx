@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { Building2, User, Users, Mail, Shield, KanbanSquare, ListPlus, CreditCard, Plug, Share2 } from "lucide-react";
+import { Building2, User, Users, Mail, Shield, KanbanSquare, ListPlus, CreditCard, Plug, Share2, Bell, Megaphone } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyPermissions } from "@/modules/identity";
@@ -20,6 +20,8 @@ export const Route = createFileRoute("/_authenticated/settings")({
 const TABS = [
   { to: "/settings/organization", icon: Building2, label: "المؤسسة" },
   { to: "/settings/profile", icon: User, label: "الملف الشخصي" },
+  { to: "/settings/notifications", icon: Bell, label: "الإشعارات" },
+  { to: "/settings/broadcasts", icon: Megaphone, label: "إرسال إشعارات" },
   { to: "/settings/members", icon: Users, label: "الأعضاء" },
   { to: "/settings/invitations", icon: Mail, label: "الدعوات" },
   { to: "/settings/pipelines", icon: KanbanSquare, label: "قنوات المبيعات" },
