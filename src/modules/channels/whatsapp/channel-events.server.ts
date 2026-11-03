@@ -394,6 +394,13 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
 
   await ensureOpportunity(db, ctx, { phone, sessionId, fromMe });
 
+  // A reply to an outbound campaign (or a request to stop) is recorded in the background.
+  if (!fromMe) {
+    void import("@/modules/marketing/outbound-core")
+      .then((m) => m.handleInboundReply(db, { organizationId: orgId, phone, text: msg.text ?? "" }))
+      .catch((e) => console.warn("[outbound] reply tracking failed", e instanceof Error ? e.message : e));
+  }
+
   if (fetchProfilePicture) {
     await (fetchProfilePicture as () => Promise<void>)().catch((e) =>
       console.warn("[WA_WEBHOOK] profile picture fetch failed", e),

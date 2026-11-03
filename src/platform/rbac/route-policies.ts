@@ -71,6 +71,7 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
     anyOf: ["automation.view", "wf.workflows.manage"],
   },
 
+  { prefix: "/marketing", label: "التسويق", anyOf: ["cmp.campaigns.manage"] },
   {
     prefix: "/campaigns",
     label: "الحملات",

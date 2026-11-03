@@ -77,7 +77,7 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
       if (!account) continue;
       // Messages are spread over the minute with a random gap, never sent in one burst.
       const pacing = campaignPacing(c.throttle_per_minute);
-      const batch = await checked<any[]>(
+      let batch = await checked<any[]>(
         db.rpc("cmp_claim_recipients", {
           p_id: c.id,
           p_org: org,
@@ -85,6 +85,28 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
           p_limit: pacing.batch,
         }),
       );
+      // Numbers on the organization's «do not send» list are skipped, in every kind of campaign.
+      const { blockedPhones } = await import("@/modules/marketing/outbound-core");
+      let blocked = new Set<string>();
+      try {
+        blocked = await blockedPhones(db, org, batch.map((r) => r.phone));
+      } catch (e) {
+        // Outbound campaigns must never send without this check; the regular campaigns keep working
+        // even before the marketing tables exist.
+        if (c.kind === "outbound") throw e;
+        console.warn("[campaigns] do-not-send check skipped", e instanceof Error ? e.message : e);
+      }
+      if (blocked.size) {
+        await checked(
+          db
+            .from("cmp_recipients")
+            .update({ status: "skipped", error: "ضمن قائمة لا ترسل" })
+            .in("id", batch.filter((r) => blocked.has(r.phone)).map((r) => r.id))
+            .eq("organization_id", org)
+            .eq("status", "sending"),
+        );
+        batch = batch.filter((r) => !blocked.has(r.phone));
+      }
       const started = Date.now();
       const requeue = (ids: string[]) =>
         ids.length
@@ -185,6 +207,19 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
         if (result.ok) {
           processed++;
           sentHere++;
+          // An outbound business that was approved is now «contacted».
+          if (r.ob_prospect_id) {
+            try {
+              await db
+                .from("ob_prospects")
+                .update({ status: "contacted", updated_at: new Date().toISOString() })
+                .eq("id", r.ob_prospect_id)
+                .eq("organization_id", org)
+                .eq("status", "approved");
+            } catch {
+              /* the message was sent; the status can be fixed later */
+            }
+          }
         }
       }
       if (waiting) {

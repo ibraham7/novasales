@@ -18,6 +18,7 @@ import {
   Menu,
   MessagesSquare,
   Megaphone,
+  Target,
   Package,
   Settings,
   Shield,
@@ -159,6 +160,15 @@ const NAV = [
     anyOf: [
       "automation.view",
       "wf.workflows.manage",
+    ],
+  },
+
+  {
+    to: "/marketing",
+    icon: Target,
+    label: "التسويق",
+    anyOf: [
+      "cmp.campaigns.manage",
     ],
   },
 
