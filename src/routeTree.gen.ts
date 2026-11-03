@@ -20,6 +20,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedProductsRouteImport } from './routes/_authenticated/products'
 import { Route as AuthenticatedPipelineRouteImport } from './routes/_authenticated/pipeline'
 import { Route as AuthenticatedPerformanceRouteImport } from './routes/_authenticated/performance'
+import { Route as AuthenticatedMarketingRouteImport } from './routes/_authenticated/marketing'
 import { Route as AuthenticatedLeadsRouteImport } from './routes/_authenticated/leads'
 import { Route as AuthenticatedInstancesRouteImport } from './routes/_authenticated/instances'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
@@ -131,6 +132,11 @@ const AuthenticatedPerformanceRoute =
     path: '/performance',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedMarketingRoute = AuthenticatedMarketingRouteImport.update({
+  id: '/marketing',
+  path: '/marketing',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedLeadsRoute = AuthenticatedLeadsRouteImport.update({
   id: '/leads',
   path: '/leads',
@@ -450,6 +456,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof AuthenticatedInboxRoute
   '/instances': typeof AuthenticatedInstancesRoute
   '/leads': typeof AuthenticatedLeadsRoute
+  '/marketing': typeof AuthenticatedMarketingRoute
   '/performance': typeof AuthenticatedPerformanceRoute
   '/pipeline': typeof AuthenticatedPipelineRouteWithChildren
   '/products': typeof AuthenticatedProductsRoute
@@ -515,6 +522,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof AuthenticatedInboxRoute
   '/instances': typeof AuthenticatedInstancesRoute
   '/leads': typeof AuthenticatedLeadsRoute
+  '/marketing': typeof AuthenticatedMarketingRoute
   '/performance': typeof AuthenticatedPerformanceRoute
   '/pipeline': typeof AuthenticatedPipelineRouteWithChildren
   '/products': typeof AuthenticatedProductsRoute
@@ -583,6 +591,7 @@ export interface FileRoutesById {
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/instances': typeof AuthenticatedInstancesRoute
   '/_authenticated/leads': typeof AuthenticatedLeadsRoute
+  '/_authenticated/marketing': typeof AuthenticatedMarketingRoute
   '/_authenticated/performance': typeof AuthenticatedPerformanceRoute
   '/_authenticated/pipeline': typeof AuthenticatedPipelineRouteWithChildren
   '/_authenticated/products': typeof AuthenticatedProductsRoute
@@ -652,6 +661,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/instances'
     | '/leads'
+    | '/marketing'
     | '/performance'
     | '/pipeline'
     | '/products'
@@ -717,6 +727,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/instances'
     | '/leads'
+    | '/marketing'
     | '/performance'
     | '/pipeline'
     | '/products'
@@ -784,6 +795,7 @@ export interface FileRouteTypes {
     | '/_authenticated/inbox'
     | '/_authenticated/instances'
     | '/_authenticated/leads'
+    | '/_authenticated/marketing'
     | '/_authenticated/performance'
     | '/_authenticated/pipeline'
     | '/_authenticated/products'
@@ -936,6 +948,13 @@ declare module '@tanstack/react-router' {
       path: '/performance'
       fullPath: '/performance'
       preLoaderRoute: typeof AuthenticatedPerformanceRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/marketing': {
+      id: '/_authenticated/marketing'
+      path: '/marketing'
+      fullPath: '/marketing'
+      preLoaderRoute: typeof AuthenticatedMarketingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/leads': {
@@ -1436,6 +1455,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
   AuthenticatedInstancesRoute: typeof AuthenticatedInstancesRoute
   AuthenticatedLeadsRoute: typeof AuthenticatedLeadsRoute
+  AuthenticatedMarketingRoute: typeof AuthenticatedMarketingRoute
   AuthenticatedPerformanceRoute: typeof AuthenticatedPerformanceRoute
   AuthenticatedPipelineRoute: typeof AuthenticatedPipelineRouteWithChildren
   AuthenticatedProductsRoute: typeof AuthenticatedProductsRoute
@@ -1462,6 +1482,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
   AuthenticatedInstancesRoute: AuthenticatedInstancesRoute,
   AuthenticatedLeadsRoute: AuthenticatedLeadsRoute,
+  AuthenticatedMarketingRoute: AuthenticatedMarketingRoute,
   AuthenticatedPerformanceRoute: AuthenticatedPerformanceRoute,
   AuthenticatedPipelineRoute: AuthenticatedPipelineRouteWithChildren,
   AuthenticatedProductsRoute: AuthenticatedProductsRoute,
