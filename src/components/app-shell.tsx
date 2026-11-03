@@ -36,7 +36,9 @@ import {
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getMarketingAccess } from "@/modules/marketing/marketing.functions";
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -248,6 +250,16 @@ export function AppShell({
     permissions,
   );
 
+  // The marketing page is limited to named accounts for now; the server decides.
+  const marketingAccessFn = useServerFn(getMarketingAccess);
+  const marketingAccess = useQuery({
+    queryKey: ["marketing-access"],
+    queryFn: () => marketingAccessFn(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const marketingAllowed = marketingAccess.data?.allowed === true;
+
   const items = isSuperAdmin
     ? [
       {
@@ -256,14 +268,16 @@ export function AppShell({
         label: "لوحة المشرف",
         anyOf: null as any,
       },
+      ...NAV.filter((item) => item.to === "/marketing" && marketingAllowed),
     ]
     : NAV.filter(
       (item) =>
-        item.anyOf === null ||
+        (item.to !== "/marketing" || marketingAllowed) &&
+        (item.anyOf === null ||
         hasAnyPermission(
           perms,
           item.anyOf,
-        ),
+        )),
     );
 
   async function signOut() {

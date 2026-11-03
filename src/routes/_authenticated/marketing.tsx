@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Plus, Target } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Lock, Plus, Target } from "lucide-react";
+import { getMarketingAccess } from "@/modules/marketing/marketing.functions";
 import { CampaignWizard } from "@/components/marketing/campaign-wizard";
 import { CampaignsTab } from "@/components/marketing/campaigns-tab";
 import { ManualProspectDialog } from "@/components/marketing/manual-prospect-dialog";
@@ -17,6 +20,21 @@ export const Route = createFileRoute("/_authenticated/marketing")({
 });
 
 function MarketingPage() {
+  const accessFn = useServerFn(getMarketingAccess);
+  const access = useQuery({ queryKey: ["marketing-access"], queryFn: () => accessFn(), staleTime: 5 * 60_000, retry: false });
+  if (access.isPending) return <div className="p-6 text-sm text-muted-foreground">جارٍ التحميل...</div>;
+  if (!access.data?.allowed)
+    return (
+      <div className="mx-auto max-w-md space-y-2 p-10 text-center" dir="rtl">
+        <Lock className="mx-auto h-8 w-8 text-muted-foreground" />
+        <h1 className="text-lg font-bold">هذه الصفحة غير متاحة حالياً</h1>
+        <p className="text-sm text-muted-foreground">صفحة التسويق قيد التجهيز ومتاحة لحسابات محددة فقط.</p>
+      </div>
+    );
+  return <MarketingContent />;
+}
+
+function MarketingContent() {
   const [tab, setTab] = useState("discover");
   const [focusSearchId, setFocusSearchId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
