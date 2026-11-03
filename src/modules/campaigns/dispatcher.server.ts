@@ -87,7 +87,15 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
       );
       // Numbers on the organization's «do not send» list are skipped, in every kind of campaign.
       const { blockedPhones } = await import("@/modules/marketing/outbound-core");
-      const blocked = await blockedPhones(db, org, batch.map((r) => r.phone));
+      let blocked = new Set<string>();
+      try {
+        blocked = await blockedPhones(db, org, batch.map((r) => r.phone));
+      } catch (e) {
+        // Outbound campaigns must never send without this check; the regular campaigns keep working
+        // even before the marketing tables exist.
+        if (c.kind === "outbound") throw e;
+        console.warn("[campaigns] do-not-send check skipped", e instanceof Error ? e.message : e);
+      }
       if (blocked.size) {
         await checked(
           db
