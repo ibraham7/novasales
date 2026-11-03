@@ -23,6 +23,7 @@ async function access() {
   const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const a = await requireAnyPermission(["cmp.campaigns.manage"]);
+  await (await import("./gate.server")).assertMarketingUser(a.userId);
   return { userId: a.userId, organizationId: a.organizationId, db: supabaseAdmin as any };
 }
 
@@ -144,4 +145,12 @@ export const listMarketingSearches = createServerFn({ method: "GET" }).handler(a
     .limit(20);
   if (error) throw new Error(error.message);
   return data ?? [];
+});
+
+/** Used by the sidebar: whether the signed-in user may see the marketing page at all. */
+export const getMarketingAccess = createServerFn({ method: "GET" }).handler(async () => {
+  const { getWorkspace } = await import("@/platform/workspace/workspace.server");
+  const { canUseMarketing } = await import("./gate.server");
+  const { userId } = await getWorkspace();
+  return { allowed: await canUseMarketing(userId) };
 });

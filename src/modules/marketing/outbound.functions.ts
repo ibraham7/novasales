@@ -12,6 +12,7 @@ async function access(mode: Mode = "manage") {
   const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const a = await requireAnyPermission([mode === "send" ? "cmp.campaigns.send" : mode === "owner" ? "org.manage" : "cmp.campaigns.manage"]);
+  await (await import("./gate.server")).assertMarketingUser(a.userId);
   return { userId: a.userId, organizationId: a.organizationId, db: supabaseAdmin as any };
 }
 

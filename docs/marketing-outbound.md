@@ -47,3 +47,11 @@
 
 ## ما لم يُبنَ بعد
 إرسال قوالب واتساب الرسمي (Cloud API)، إثراء المواقع (إيميل/سوشال)، البريد، إنستغرام، مهمة تنظيف بيانات Google المنتهية، وربط جهة الاتصال بالـCRM عند «استيراد» يدوي.
+
+## Who can open the page (temporary limit)
+
+The marketing page and every marketing server call are limited to the accounts listed in
+`MARKETING_ALLOWED_EMAILS` (comma-separated login emails, set in the server `.env`). Empty or missing
+means nobody can open it. The email is read from the auth service on the server. To open it to
+everyone later, remove the `assertMarketingUser` call from `access()` in `marketing.functions.ts` and
+`outbound.functions.ts`, and the `marketingAllowed` condition in `app-shell.tsx`.
