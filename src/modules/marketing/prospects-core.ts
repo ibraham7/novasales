@@ -14,7 +14,7 @@ const CHUNK = 100;
 const chunks = <T>(items: T[], size = CHUNK) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 
 const COLUMNS =
-  "id,name,category,address,city,country,phone_raw,phone_e164,phone_kind,website,maps_url,rating,ratings_count,business_status,status,notes,search_id,created_at,updated_at,expires_at";
+  "id,name,category,address,city,country,phone_raw,phone_e164,phone_kind,website,maps_url,rating,ratings_count,business_status,status,notes,search_id,created_at,updated_at,expires_at,emails,socials,site_whatsapp,enrich_status,enriched_at,enrich_error";
 
 export type SaveInput = {
   organizationId: string;

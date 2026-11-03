@@ -6,6 +6,7 @@ import { DEFAULT_PRICE_PER_1000_REQUESTS_USD, PLACES_MAX_RESULTS, estimateCostUs
 import { MANUAL_STATUSES, PROSPECT_STATUSES } from "./statuses";
 
 const searchLimiter = createRateLimiter(6, 60_000);
+const enrichLimiter = createRateLimiter(4, 60_000);
 const DEFAULT_MONTHLY_REQUESTS = 300;
 
 const searchSchema = z.object({
@@ -133,6 +134,17 @@ export const updateMarketingProspects = createServerFn({ method: "POST" })
     const { organizationId, db } = await access();
     const { updateProspects } = await import("./prospects-core");
     return { changed: await updateProspects(db, organizationId, data) };
+  });
+
+/** Reads each selected business's own website for emails, social pages and a WhatsApp link. */
+export const enrichMarketingProspects = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(25) }).parse(data))
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access();
+    if (!enrichLimiter.allow(userId)) throw new Error("عمليات إثراء كثيرة خلال دقيقة؛ انتظر قليلاً");
+    const { createPageFetcher } = await import("./site-fetch.server");
+    const { enrichProspects } = await import("./enrich-core");
+    return enrichProspects(db, organizationId, data.ids, createPageFetcher());
   });
 
 export const listMarketingSearches = createServerFn({ method: "GET" }).handler(async () => {
