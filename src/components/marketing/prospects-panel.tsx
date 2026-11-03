@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, Search, Star } from "lucide-react";
-import { listMarketingProspects, listMarketingSearches, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
+import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, Search, Sparkles, Star } from "lucide-react";
+import { enrichMarketingProspects, listMarketingProspects, listMarketingSearches, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { PROSPECT_STATUS_LABELS, PROSPECT_STATUSES, type ManualStatus } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const listFn = useServerFn(listMarketingProspects);
   const searchesFn = useServerFn(listMarketingSearches);
   const updateFn = useServerFn(updateMarketingProspects);
+  const enrichFn = useServerFn(enrichMarketingProspects);
 
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -88,6 +89,15 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
     onSuccess: (r, status) => {
       toast.success(`تم تحديث ${r.changed} جهة إلى «${PROSPECT_STATUS_LABELS[status]}»`);
       setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const enrich = useMutation({
+    mutationFn: () => enrichFn({ data: { ids: [...selected].slice(0, 25) } }),
+    onSuccess: (r) => {
+      toast.success(`قُرئ ${r.done} موقع: بريد عند ${r.withEmail}، حسابات عند ${r.withSocial}، واتساب عند ${r.withWhatsapp}${r.failed ? ` · تعذّر ${r.failed}` : ""}${r.noWebsite ? ` · بلا موقع ${r.noWebsite}` : ""}`);
       qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -191,6 +201,10 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                 {b.label}
               </Button>
             ))}
+            <Button size="sm" variant="outline" disabled={enrich.isPending} onClick={() => enrich.mutate()}>
+              {enrich.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="ml-1 h-3.5 w-3.5" />}
+              إثراء من المواقع{selected.size > 25 ? " (أول 25)" : ""}
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
               إلغاء التحديد
             </Button>
@@ -264,9 +278,13 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {r.website ? (
-                        <a href={r.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                          <Globe className="h-3.5 w-3.5" /> فتح
-                        </a>
+                        <div className="flex flex-col items-start gap-0.5">
+                          <a href={r.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                            <Globe className="h-3.5 w-3.5" /> فتح
+                          </a>
+                          {r.emails?.length ? <Badge variant="outline" className="text-[10px]">بريد</Badge> : null}
+                          {r.site_whatsapp ? <Badge variant="outline" className="text-[10px]">واتساب</Badge> : null}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

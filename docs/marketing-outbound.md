@@ -55,3 +55,17 @@ The marketing page and every marketing server call are limited to the accounts l
 means nobody can open it. The email is read from the auth service on the server. To open it to
 everyone later, remove the `assertMarketingUser` call from `access()` in `marketing.functions.ts` and
 `outbound.functions.ts`, and the `marketingAllowed` condition in `app-shell.tsx`.
+
+## Site enrichment (emails, social pages, WhatsApp)
+
+Select businesses in the table and press «إثراء من المواقع» (up to 25 per press), or open one business and
+press «إثراء من الموقع». The server reads the business's own public website (home page plus up to two
+contact/about pages) and stores:
+
+- `emails` (up to 5, the site's own domain first), `socials` (instagram, facebook, tiktok, linkedin, x, youtube),
+  `site_whatsapp` (from wa.me / api.whatsapp.com links), `enrich_status` (done / failed / no_website), `enriched_at`.
+
+Safety: only http(s) on default ports; internal hosts, private IPs and redirects to them are refused (checked before
+each request, at each redirect, and on the DNS answer); 8 s timeout, 1 MB cap, HTML only, 3 redirects max; 4 presses
+per minute per user. Only information the business publishes itself is read. Migration:
+`20261105120000_marketing_enrichment.sql` (additive columns). Nothing is sent from this step.
