@@ -83,6 +83,10 @@ function buildMessage(data: any): NormalizedMessage | null {
   const altJid = [key.remoteJidAlt, key.senderPn, data?.senderPn, data?.remoteJidAlt].find(
     (v): v is string => typeof v === "string" && v.endsWith("@s.whatsapp.net"),
   );
+  if (remoteJid.endsWith("@lid") && !key.fromMe) {
+    // Diagnostic (no message text): which fields did the provider send next to a hidden id?
+    console.warn("[evolution] hidden-id message", JSON.stringify({ key, dataFields: Object.keys(data ?? {}) }));
+  }
   const altDigits = altJid ? altJid.split("@")[0]!.replace(/\D/g, "") : "";
 
   return {
