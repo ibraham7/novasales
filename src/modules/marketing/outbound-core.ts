@@ -298,13 +298,15 @@ export async function handleInboundReply(db: any, input: { organizationId: strin
   }
   if (!recipient && input.jid) {
     const recent = new Date(now.getTime() - HIDDEN_ID_WINDOW_DAYS * 86_400_000).toISOString();
-    const waiting = await find((q) => q.gte("sent_at", recent).is("replied_at", null).is("reply_jid", null).limit(2));
+    const waiting = await find((q) => q.gte("sent_at", recent).is("replied_at", null).is("reply_jid", null).limit(50));
     if (waiting.error) return fail(waiting.error);
-    if (waiting.data?.length === 1) {
-      recipient = waiting.data[0];
+    // The same business may have been messaged by several campaigns: it is still one candidate.
+    const businesses = new Set((waiting.data ?? []).map((r: any) => r.ob_prospect_id));
+    if (businesses.size === 1) {
+      recipient = waiting.data[0]; // newest first
       await db.from("cmp_recipients").update({ reply_jid: input.jid }).eq("id", recipient.id).eq("organization_id", input.organizationId);
-    } else if (waiting.data?.length > 1) {
-      await logEvent(db, input.organizationId, null, "reply_unmatched", "jid", input.jid, { candidates: "many", optOut: isOptOutMessage(input.text) });
+    } else if (businesses.size > 1) {
+      await logEvent(db, input.organizationId, null, "reply_unmatched", "jid", input.jid, { candidates: businesses.size, optOut: isOptOutMessage(input.text) });
     }
   }
   if (!recipient) return { matched: false as const };
