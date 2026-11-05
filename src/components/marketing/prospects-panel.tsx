@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, Search, Sparkles, Star, Trash2 } from "lucide-react";
-import { deleteMarketingProspects, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
+import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, Search, Sparkles, Star, Trash2, UserPlus } from "lucide-react";
+import { deleteMarketingProspects, enrichMarketingProspects, promoteMarketingProspects, listMarketingProspects, listMarketingSearches, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { PROSPECT_STATUS_LABELS, PROSPECT_STATUSES, type ManualStatus } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const updateFn = useServerFn(updateMarketingProspects);
   const enrichFn = useServerFn(enrichMarketingProspects);
   const deleteFn = useServerFn(deleteMarketingProspects);
+  const promoteFn = useServerFn(promoteMarketingProspects);
 
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -89,6 +90,20 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
     mutationFn: (status: ManualStatus) => updateFn({ data: { ids: [...selected], status } }),
     onSuccess: (r, status) => {
       toast.success(`تم تحديث ${r.changed} جهة إلى «${PROSPECT_STATUS_LABELS[status]}»`);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const promote = useMutation({
+    mutationFn: () => promoteFn({ data: { ids: [...selected].slice(0, 50) } }),
+    onSuccess: (r) => {
+      const done = r.promoted + r.linked;
+      const skipped = [r.already && `${r.already} منقولة سابقاً`, r.blocked && `${r.blocked} ألغت الاشتراك`, r.noPhone && `${r.noPhone} بلا رقم`, r.notReady && `${r.notReady} لم تعتمد بعد`].filter(Boolean).join(" · ");
+      if (done) toast.success(`نُقلت ${done} جهة إلى العملاء المحتملين${r.linked ? ` (${r.linked} كانت موجودة بالـCRM وارتبطت بها)` : ""}${skipped ? ` · ${skipped}` : ""}`);
+      else toast.error(skipped || "لم تُنقل أي جهة");
+      if (r.failed.length) toast.error(`تعذّر نقل ${r.failed.length}: ${r.failed[0]!.error}`);
       setSelected(new Set());
       qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
     },
@@ -215,6 +230,10 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
             <Button size="sm" variant="outline" disabled={enrich.isPending} onClick={() => enrich.mutate()}>
               {enrich.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="ml-1 h-3.5 w-3.5" />}
               إثراء من المواقع{selected.size > 25 ? " (أول 25)" : ""}
+            </Button>
+            <Button size="sm" variant="outline" disabled={promote.isPending} onClick={() => promote.mutate()}>
+              {promote.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="ml-1 h-3.5 w-3.5" />}
+              نقل إلى العملاء المحتملين
             </Button>
             <Button
               size="sm"

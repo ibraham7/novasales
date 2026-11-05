@@ -144,6 +144,25 @@ export const deleteMarketingProspects = createServerFn({ method: "POST" })
     return { deleted: await deleteProspects(db, organizationId, data.ids) };
   });
 
+/** Moves replied / interested / approved businesses to the CRM as leads, owned by whoever moves them. */
+export const promoteMarketingProspects = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(50) }).parse(data))
+  .handler(async ({ data }) => {
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { userId, organizationId, db } = await access();
+    // The CRM decides who may create leads; the check happens inside its own function too.
+    await requireAnyPermission(["crm.leads.create"]);
+    const { promoteProspects } = await import("./promote-core");
+    const { logEvent } = await import("./outbound-core");
+    const result = await promoteProspects(db, organizationId, data.ids, async (input) => {
+      const { data: lead, error } = await db.rpc("crm_save_lead_atomic", { _org: organizationId, _actor: userId, _lead: null, _input: input });
+      if (error) throw new Error(/[\u0600-\u06ff]/.test(error.message ?? "") ? error.message : "تعذر إنشاء العميل المحتمل");
+      return lead;
+    });
+    await logEvent(db, organizationId, userId, "promoted_to_crm", "prospect", null, { ...result, failed: result.failed.length });
+    return result;
+  });
+
 /** Reads each selected business's own website for emails, social pages and a WhatsApp link. */
 export const enrichMarketingProspects = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(25) }).parse(data))

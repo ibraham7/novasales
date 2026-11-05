@@ -9,7 +9,7 @@ export const PROSPECT_STATUS_LABELS = {
   replied: "رد على الرسالة",
   interested: "مهتم",
   not_interested: "غير مهتم",
-  converted: "تحوّل إلى فرصة بيع",
+  converted: "نُقل إلى العملاء المحتملين",
   opted_out: "ألغى الاشتراك",
   invalid: "غير صالح",
 } as const;
