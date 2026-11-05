@@ -268,6 +268,21 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
   return { campaignId: campaign.id as string, recipients: audience.eligible.length, excluded: audience.excluded };
 }
 
+/** Campaign states that can no longer send. Anything else must be cancelled first. */
+export const DELETABLE_CAMPAIGN_STATUSES = ["draft", "completed", "cancelled", "failed"];
+
+/** Deletes a finished outbound campaign with its recipients (and its own message template). Regular campaigns are never touched. */
+export async function deleteOutboundCampaign(db: any, organizationId: string, campaignId: string) {
+  const { data: campaign, error } = await db.from("cmp_campaigns").select("id,status,template_id").eq("organization_id", organizationId).eq("id", campaignId).eq("kind", "outbound").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!campaign) throw new Error("الحملة غير موجودة");
+  if (!DELETABLE_CAMPAIGN_STATUSES.includes(campaign.status)) throw new Error("ألغِ الحملة أولاً ثم احذفها");
+  const { error: deleteError } = await db.from("cmp_campaigns").delete().eq("organization_id", organizationId).eq("id", campaignId);
+  if (deleteError) throw new Error(deleteError.message);
+  // Its message template belongs to it alone; a failure here leaves a harmless orphan.
+  if (campaign.template_id) await db.from("cmp_templates").delete().eq("organization_id", organizationId).eq("id", campaign.template_id);
+}
+
 /* ----------------------------------- replies ----------------------------------- */
 
 /**

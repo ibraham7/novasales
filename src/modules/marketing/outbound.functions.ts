@@ -169,6 +169,16 @@ export const listOutboundCampaigns = createServerFn({ method: "GET" }).handler(a
   return (campaigns ?? []).map((c: any) => ({ ...c, stats: stats.get(c.id) ?? { total: 0, queued: 0, sent: 0, delivered: 0, read: 0, failed: 0, skipped: 0, replied: 0 } }));
 });
 
+export const deleteOutboundCampaignFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access("manage");
+    const { deleteOutboundCampaign, logEvent } = await import("./outbound-core");
+    await deleteOutboundCampaign(db, organizationId, data.id);
+    await logEvent(db, organizationId, userId, "campaign_deleted", "campaign", data.id);
+    return { ok: true };
+  });
+
 export const listSuppressions = createServerFn({ method: "GET" }).handler(async () => {
   const { organizationId, db } = await access("manage");
   const { data, error } = await db.from("ob_suppressions").select("id,identifier,reason,source,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(500);

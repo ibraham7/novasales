@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fakeDb } from "./helpers/fake-db.ts";
 import { isOptOutMessage, normalizeOptOutText } from "../src/modules/marketing/optout.ts";
 import {
-  addManualProspect, addSuppression, blockedPhones, removeSuppression, createOutboundCampaign, handleInboundReply, previewAudience, type AccountInfo, type CampaignInput,
+  addManualProspect, addSuppression, blockedPhones, deleteOutboundCampaign, removeSuppression, createOutboundCampaign, handleInboundReply, previewAudience, type AccountInfo, type CampaignInput,
 } from "../src/modules/marketing/outbound-core.ts";
 
 const UNIQUE = { ob_prospects: ["organization_id", "provider", "external_id"], ob_suppressions: ["organization_id", "channel", "identifier"] };
@@ -168,4 +168,14 @@ test("removing a number from the list lets its business be approved again", asyn
   await removeSuppression(db, ORG, db.tables.ob_suppressions[0].id);
   assert.equal(db.tables.ob_suppressions.length, 0);
   assert.equal(db.tables.ob_prospects[0].status, "review");
+});
+
+test("a finished outbound campaign can be deleted; a running or regular one cannot", async () => {
+  const camp = (id: string, status: string, kind = "outbound") => ({ id, organization_id: ORG, status, kind, template_id: `t-${id}` });
+  const db = fakeDb({ cmp_campaigns: [camp("done", "completed"), camp("live", "running"), camp("reg", "completed", "retention")], cmp_templates: [{ id: "t-done", organization_id: ORG }] }, UNIQUE);
+  await assert.rejects(() => deleteOutboundCampaign(db, ORG, "live"), /ألغِ الحملة أولاً/);
+  await assert.rejects(() => deleteOutboundCampaign(db, ORG, "reg"), /غير موجودة/);
+  await deleteOutboundCampaign(db, ORG, "done");
+  assert.deepEqual(db.tables.cmp_campaigns.map((c: any) => c.id), ["live", "reg"]);
+  assert.equal(db.tables.cmp_templates.length, 0);
 });
