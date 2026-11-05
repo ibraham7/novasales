@@ -79,3 +79,13 @@ test("filters become database filters, and the search term cannot break out of t
   assert.ok(!or.includes("),status"), or);
   assert.equal(safeTerm("a%b_c,(d)*\"e'f\\g"), "a b c d e f g");
 });
+
+test("businesses can be deleted, except those still waiting in a campaign", async () => {
+  const { deleteProspects } = await import("../src/modules/marketing/prospects-core.ts");
+  const row = (id: string) => ({ id, organization_id: "org-1", name: id });
+  const db = fakeDb({ ob_prospects: [row("a"), row("b"), { ...row("c"), organization_id: "org-2" }], cmp_recipients: [{ id: "r1", organization_id: "org-1", ob_prospect_id: "b", status: "queued" }] });
+  await assert.rejects(() => deleteProspects(db, "org-1", ["a", "b"]), /لم ينته إرسالها/);
+  assert.equal(db.tables.ob_prospects.length, 3);
+  assert.equal(await deleteProspects(db, "org-1", ["a", "c"]), 1);
+  assert.deepEqual(db.tables.ob_prospects.map((r: any) => r.id), ["b", "c"]);
+});

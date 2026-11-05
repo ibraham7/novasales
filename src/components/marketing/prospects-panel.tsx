@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, Search, Sparkles, Star } from "lucide-react";
-import { enrichMarketingProspects, listMarketingProspects, listMarketingSearches, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
+import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, Search, Sparkles, Star, Trash2 } from "lucide-react";
+import { deleteMarketingProspects, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { PROSPECT_STATUS_LABELS, PROSPECT_STATUSES, type ManualStatus } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const searchesFn = useServerFn(listMarketingSearches);
   const updateFn = useServerFn(updateMarketingProspects);
   const enrichFn = useServerFn(enrichMarketingProspects);
+  const deleteFn = useServerFn(deleteMarketingProspects);
 
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -88,6 +89,16 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
     mutationFn: (status: ManualStatus) => updateFn({ data: { ids: [...selected], status } }),
     onSuccess: (r, status) => {
       toast.success(`تم تحديث ${r.changed} جهة إلى «${PROSPECT_STATUS_LABELS[status]}»`);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => deleteFn({ data: { ids: [...selected] } }),
+    onSuccess: (r) => {
+      toast.success(`حُذفت ${r.deleted} جهة نهائياً`);
       setSelected(new Set());
       qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
     },
@@ -204,6 +215,18 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
             <Button size="sm" variant="outline" disabled={enrich.isPending} onClick={() => enrich.mutate()}>
               {enrich.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="ml-1 h-3.5 w-3.5" />}
               إثراء من المواقع{selected.size > 25 ? " (أول 25)" : ""}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (window.confirm(`حذف ${selected.size} جهة نهائياً؟ لا يمكن التراجع. (أرقام «لا ترسل» تبقى محفوظة)`)) remove.mutate();
+              }}
+            >
+              {remove.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="ml-1 h-3.5 w-3.5" />}
+              حذف نهائي
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
               إلغاء التحديد

@@ -136,6 +136,14 @@ export const updateMarketingProspects = createServerFn({ method: "POST" })
     return { changed: await updateProspects(db, organizationId, data) };
   });
 
+export const deleteMarketingProspects = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }).parse(data))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access();
+    const { deleteProspects } = await import("./prospects-core");
+    return { deleted: await deleteProspects(db, organizationId, data.ids) };
+  });
+
 /** Reads each selected business's own website for emails, social pages and a WhatsApp link. */
 export const enrichMarketingProspects = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(25) }).parse(data))
