@@ -14,6 +14,8 @@ export const DEFAULT_MAX_RECIPIENTS = 200;
 export const DEFAULT_MAX_THROTTLE = 10;
 /** A reply counts for a message sent in the last days. */
 export const REPLY_WINDOW_DAYS = 14;
+/** A hidden id is only guessed for a business messaged this recently (a long id carries no number to check). */
+export const HIDDEN_ID_WINDOW_DAYS = 3;
 
 export type OutboundSettings = { allow_unofficial: boolean; optout_footer: string };
 
@@ -262,37 +264,63 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
  * days, the reply is recorded; if the text is a request to stop, the number goes on the «do not
  * send» list. Anything else (a customer, an old chat) returns quickly.
  */
-export async function handleInboundReply(db: any, input: { organizationId: string; phone: string; text: string; now?: Date }) {
+export async function handleInboundReply(db: any, input: { organizationId: string; phone: string; text: string; jid?: string; now?: Date }) {
   const now = input.now ?? new Date();
   const since = new Date(now.getTime() - REPLY_WINDOW_DAYS * 86_400_000).toISOString();
-  const { data, error } = await db
-    .from("cmp_recipients")
-    .select("id,ob_prospect_id,campaign_id,replied_at,sent_at")
-    .eq("organization_id", input.organizationId)
-    .eq("phone", input.phone)
-    .not("ob_prospect_id", "is", null)
-    .in("status", ["sent", "delivered", "read"])
-    .gte("sent_at", since)
-    .order("sent_at", { ascending: false })
-    .limit(1);
-  if (error) {
+  const find = (apply: (q: any) => any) =>
+    apply(
+      db
+        .from("cmp_recipients")
+        .select("id,ob_prospect_id,campaign_id,replied_at,sent_at,phone")
+        .eq("organization_id", input.organizationId)
+        .not("ob_prospect_id", "is", null)
+        .in("status", ["sent", "delivered", "read"])
+        .gte("sent_at", since)
+        .order("sent_at", { ascending: false }),
+    );
+  const fail = (error: any) => {
     if (MISSING_TABLE.has(error.code) || error.code === "42703") return { matched: false as const };
     throw new Error(error.message);
+  };
+
+  // WhatsApp may hide a sender's number behind a long id (@lid). Such an id is matched to a business
+  // it was learned for, or else to the one business that is still waiting for an answer.
+  let recipient: any = null;
+  if (input.jid) {
+    const known = await find((q) => q.eq("reply_jid", input.jid).limit(1));
+    if (known.error) return fail(known.error);
+    recipient = known.data?.[0] ?? null;
   }
-  const recipient = data?.[0];
+  if (!recipient) {
+    const byPhone = await find((q) => q.eq("phone", input.phone).limit(1));
+    if (byPhone.error) return fail(byPhone.error);
+    recipient = byPhone.data?.[0] ?? null;
+  }
+  if (!recipient && input.jid) {
+    const recent = new Date(now.getTime() - HIDDEN_ID_WINDOW_DAYS * 86_400_000).toISOString();
+    const waiting = await find((q) => q.gte("sent_at", recent).is("replied_at", null).is("reply_jid", null).limit(2));
+    if (waiting.error) return fail(waiting.error);
+    if (waiting.data?.length === 1) {
+      recipient = waiting.data[0];
+      await db.from("cmp_recipients").update({ reply_jid: input.jid }).eq("id", recipient.id).eq("organization_id", input.organizationId);
+    } else if (waiting.data?.length > 1) {
+      await logEvent(db, input.organizationId, null, "reply_unmatched", "jid", input.jid, { candidates: "many", optOut: isOptOutMessage(input.text) });
+    }
+  }
   if (!recipient) return { matched: false as const };
+  const phone: string = recipient.phone ?? input.phone;
 
   const stamp = now.toISOString();
   if (!recipient.replied_at) await db.from("cmp_recipients").update({ replied_at: stamp }).eq("id", recipient.id).eq("organization_id", input.organizationId);
 
   if (isOptOutMessage(input.text)) {
-    await addSuppression(db, input.organizationId, input.phone, { source: "keyword", reason: `طلب الإيقاف: ${input.text.slice(0, 40)}` });
-    await logEvent(db, input.organizationId, null, "opt_out", "prospect", recipient.ob_prospect_id, { phone: input.phone, campaignId: recipient.campaign_id });
+    await addSuppression(db, input.organizationId, phone, { source: "keyword", reason: `طلب الإيقاف: ${input.text.slice(0, 40)}` });
+    await logEvent(db, input.organizationId, null, "opt_out", "prospect", recipient.ob_prospect_id, { phone, campaignId: recipient.campaign_id });
     return { matched: true as const, optOut: true as const };
   }
 
   const patch: Record<string, unknown> = { status: "replied", updated_at: stamp };
-  const { data: point } = await db.from("crm_contact_points").select("contact_id").eq("organization_id", input.organizationId).eq("identifier", input.phone).limit(1);
+  const { data: point } = await db.from("crm_contact_points").select("contact_id").eq("organization_id", input.organizationId).eq("identifier", phone).limit(1);
   if (point?.[0]?.contact_id) patch.promoted_contact_id = point[0].contact_id;
   // Only a business still waiting for an answer becomes «replied»; later stages are set by people.
   await db.from("ob_prospects").update(patch).eq("organization_id", input.organizationId).eq("id", recipient.ob_prospect_id).in("status", ["approved", "contacted"]);
