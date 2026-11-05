@@ -141,9 +141,10 @@ export async function updateProspects(db: any, organizationId: string, input: { 
   if (input.notes !== undefined) patch.notes = input.notes || null;
   let changed = 0;
   for (const part of chunks([...new Set(input.ids)])) {
-    // Businesses that already started a conversation are not moved back by hand.
+    // Businesses that replied, are interested or opted out are not moved by hand. A business that was
+    // only messaged («contacted») can be approved again for another campaign.
     let query = db.from("ob_prospects").update(patch).eq("organization_id", organizationId).in("id", part);
-    if (input.status) query = query.in("status", ["new", "review", "qualified", "excluded", "approved", "invalid"]);
+    if (input.status) query = query.in("status", ["new", "review", "qualified", "excluded", "approved", "contacted", "invalid"]);
     const { data, error } = await query.select("id");
     if (error) throw new Error(error.message);
     changed += (data ?? []).length;
