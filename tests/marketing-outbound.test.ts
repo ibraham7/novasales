@@ -155,3 +155,8 @@ test("a hidden id is never guessed when several businesses are waiting", async (
   assert.equal(db.tables.ob_suppressions?.length ?? 0, 0);
   assert.equal(db.tables.ob_events.at(-1).event_type, "reply_unmatched");
 });
+
+test("a business messaged by two campaigns is still one candidate for a hidden id", async () => {
+  const db = fakeDb({ cmp_recipients: [sentTo(), sentTo({ id: "r2", campaign_id: "c2", sent_at: "2026-11-04T10:00:00Z" })], ob_prospects: [prospect("p1", { status: "contacted" })] }, UNIQUE);
+  assert.deepEqual(await handleInboundReply(db, { organizationId: ORG, phone: "7615211896949", jid: "7615211896949", text: "مرحبا", now: NOW }), { matched: true, optOut: false });
+});
