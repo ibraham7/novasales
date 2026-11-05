@@ -190,9 +190,8 @@ export const removeSuppressionNumber = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     const { userId, organizationId, db } = await access("manage");
-    const { logEvent } = await import("./outbound-core");
-    const { error } = await db.from("ob_suppressions").delete().eq("organization_id", organizationId).eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { logEvent, removeSuppression } = await import("./outbound-core");
+    await removeSuppression(db, organizationId, data.id);
     await logEvent(db, organizationId, userId, "suppression_removed", "suppression", data.id);
     return { ok: true };
   });

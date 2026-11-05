@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fakeDb } from "./helpers/fake-db.ts";
 import { isOptOutMessage, normalizeOptOutText } from "../src/modules/marketing/optout.ts";
 import {
-  addManualProspect, addSuppression, blockedPhones, createOutboundCampaign, handleInboundReply, previewAudience, type AccountInfo, type CampaignInput,
+  addManualProspect, addSuppression, blockedPhones, removeSuppression, createOutboundCampaign, handleInboundReply, previewAudience, type AccountInfo, type CampaignInput,
 } from "../src/modules/marketing/outbound-core.ts";
 
 const UNIQUE = { ob_prospects: ["organization_id", "provider", "external_id"], ob_suppressions: ["organization_id", "channel", "identifier"] };
@@ -159,4 +159,13 @@ test("a hidden id is never guessed when several businesses are waiting", async (
 test("a business messaged by two campaigns is still one candidate for a hidden id", async () => {
   const db = fakeDb({ cmp_recipients: [sentTo(), sentTo({ id: "r2", campaign_id: "c2", sent_at: "2026-11-04T10:00:00Z" })], ob_prospects: [prospect("p1", { status: "contacted" })] }, UNIQUE);
   assert.deepEqual(await handleInboundReply(db, { organizationId: ORG, phone: "7615211896949", jid: "7615211896949", text: "مرحبا", now: NOW }), { matched: true, optOut: false });
+});
+
+test("removing a number from the list lets its business be approved again", async () => {
+  const db = fakeDb({ ob_prospects: [prospect("p1", { status: "contacted", phone_e164: "905320000001" })] }, UNIQUE);
+  await addSuppression(db, ORG, "905320000001", { source: "keyword" });
+  assert.equal(db.tables.ob_prospects[0].status, "opted_out");
+  await removeSuppression(db, ORG, db.tables.ob_suppressions[0].id);
+  assert.equal(db.tables.ob_suppressions.length, 0);
+  assert.equal(db.tables.ob_prospects[0].status, "review");
 });

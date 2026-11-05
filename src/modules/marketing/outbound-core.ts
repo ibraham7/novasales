@@ -58,6 +58,17 @@ export async function addSuppression(db: any, organizationId: string, rawPhone: 
   return e164;
 }
 
+/** Takes a number off the list. A business that was set to «opted_out» because of it goes back to «review»: it can be approved again by hand. */
+export async function removeSuppression(db: any, organizationId: string, id: string) {
+  const { data, error: readError } = await db.from("ob_suppressions").select("identifier").eq("organization_id", organizationId).eq("id", id).maybeSingle();
+  if (readError) throw new Error(readError.message);
+  const { error } = await db.from("ob_suppressions").delete().eq("organization_id", organizationId).eq("id", id);
+  if (error) throw new Error(error.message);
+  if (data?.identifier) {
+    await db.from("ob_prospects").update({ status: "review", updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("phone_e164", data.identifier).eq("status", "opted_out");
+  }
+}
+
 /* ------------------------------ manual entry ------------------------------ */
 
 /** Adds a business by hand (the team's own test numbers, a list from elsewhere). It has no Google data, so it never expires. */
