@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link } from "@tanstack/react-router";
-import { Megaphone, Pause, Play, Plus, XCircle } from "lucide-react";
-import { listOutboundCampaigns } from "@/modules/marketing/outbound.functions";
+import { Megaphone, Pause, Play, Plus, Trash2, XCircle } from "lucide-react";
+import { deleteOutboundCampaignFn, listOutboundCampaigns } from "@/modules/marketing/outbound.functions";
 import { controlCampaign } from "@/modules/campaigns";
 import { askConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/lib/toast";
@@ -27,10 +27,20 @@ export function CampaignsTab({ onNew }: { onNew: () => void }) {
   const qc = useQueryClient();
   const listFn = useServerFn(listOutboundCampaigns);
   const controlFn = useServerFn(controlCampaign);
+  const deleteFn = useServerFn(deleteOutboundCampaignFn);
   const q = useQuery({ queryKey: ["outbound-campaigns"], queryFn: () => listFn(), refetchInterval: 20_000 });
   const control = useMutation({
     mutationFn: (v: { id: string; action: "pause" | "resume" | "cancel" }) => controlFn({ data: v }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["outbound-campaigns"] }),
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("حُذفت الحملة");
+      qc.invalidateQueries({ queryKey: ["outbound-campaigns"] });
+    },
     onError: (error: Error) => toast.error(error.message),
   });
 
@@ -97,6 +107,19 @@ export function CampaignsTab({ onNew }: { onNew: () => void }) {
                     }}
                   >
                     <XCircle className="ml-1 h-3.5 w-3.5" /> إلغاء
+                  </Button>
+                )}
+                {["draft", "completed", "cancelled", "failed"].includes(c.status) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    disabled={remove.isPending}
+                    onClick={async () => {
+                      if (await askConfirm({ title: "حذف الحملة نهائياً؟", description: "تُحذف الحملة وقائمة مستلميها وسجل ردودهم. أرقام «لا ترسل» تبقى. لا يمكن التراجع.", confirmLabel: "حذف", destructive: true })) remove.mutate(c.id);
+                    }}
+                  >
+                    <Trash2 className="ml-1 h-3.5 w-3.5" /> حذف
                   </Button>
                 )}
                 <Link to="/campaigns/$id" params={{ id: c.id }} className="mr-auto text-xs text-primary hover:underline">
