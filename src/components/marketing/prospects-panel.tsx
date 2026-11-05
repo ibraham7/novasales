@@ -253,18 +253,18 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
+                  <TableHead className="w-10 text-start">
                     <Checkbox
                       aria-label="تحديد كل الصفحة"
                       checked={allOnPage}
                       onCheckedChange={(v) => setSelected(v === true ? new Set([...selected, ...rows.map((r) => r.id)]) : new Set([...selected].filter((id) => !rows.some((r) => r.id === id))))}
                     />
                   </TableHead>
-                  <TableHead>الجهة</TableHead>
-                  <TableHead>الهاتف</TableHead>
-                  <TableHead className="hidden md:table-cell">الموقع</TableHead>
-                  <TableHead className="hidden sm:table-cell">التقييم</TableHead>
-                  <TableHead>الحالة</TableHead>
+                  <TableHead className="text-start">الجهة</TableHead>
+                  <TableHead className="w-44 text-start">الهاتف</TableHead>
+                  <TableHead className="hidden w-28 text-start md:table-cell">الموقع</TableHead>
+                  <TableHead className="hidden w-28 text-start sm:table-cell">التقييم</TableHead>
+                  <TableHead className="w-32 text-start">الحالة</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -282,14 +282,14 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                         })}
                       />
                     </TableCell>
-                    <TableCell className="max-w-[16rem]">
+                    <TableCell className="max-w-[16rem] text-start">
                       <div className="truncate font-medium">{r.name}</div>
                       <div className="truncate text-xs text-muted-foreground">{[r.category, r.address].filter(Boolean).join(" · ")}</div>
                     </TableCell>
                     <TableCell>
                       {r.phone_raw ? (
                         <div className="flex flex-col items-start gap-0.5">
-                          <span dir="ltr" className="whitespace-nowrap text-sm">
+                          <span dir="ltr" className="whitespace-nowrap text-sm tabular-nums">
                             {r.phone_raw}
                           </span>
                           {r.phone_kind === "mobile" && <Badge variant="outline" className="text-[10px]">جوال</Badge>}
