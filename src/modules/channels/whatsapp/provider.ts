@@ -134,6 +134,8 @@ export interface NormalizedMessage {
   externalId: string | null;
   peer: string; // remoteJid أو ما يعادله
   identifier: string; // أرقام فقط
+  /** الرقم الحقيقي عندما يصل المعرّف بصيغة @lid (إن أرسله المزوّد) — لتتبع ردود الحملات فقط. */
+  altIdentifier?: string;
   fromMe: boolean;
   text: string;
   mediaKind: MediaKind | null;

@@ -21,6 +21,8 @@ function buildMessage(data: any): NormalizedMessage | null {
     fromMe?: boolean;
     id?: string;
     participant?: string;
+    remoteJidAlt?: string;
+    senderPn?: string;
   };
   const remoteJid = key.remoteJid;
   if (!remoteJid) return null;
@@ -77,8 +79,15 @@ function buildMessage(data: any): NormalizedMessage | null {
   const profilePicUrl =
     data?.profilePicUrl ?? data?.profilePictureUrl ?? data?.contact?.profilePicUrl ?? data?.contact?.profilePictureUrl ?? null;
 
+  // A hidden (@lid) id carries no phone number; Evolution may attach the real one next to it.
+  const altJid = [key.remoteJidAlt, key.senderPn, data?.senderPn, data?.remoteJidAlt].find(
+    (v): v is string => typeof v === "string" && v.endsWith("@s.whatsapp.net"),
+  );
+  const altDigits = altJid ? altJid.split("@")[0]!.replace(/\D/g, "") : "";
+
   return {
     externalId,
+    altIdentifier: remoteJid.endsWith("@lid") && altDigits ? altDigits : undefined,
     peer: remoteJid,
     identifier: remoteJid.split("@")[0] ?? "",
     fromMe: Boolean(key.fromMe),

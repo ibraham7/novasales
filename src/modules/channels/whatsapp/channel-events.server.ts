@@ -397,7 +397,7 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
   // A reply to an outbound campaign (or a request to stop) is recorded in the background.
   if (!fromMe) {
     void import("@/modules/marketing/outbound-core")
-      .then((m) => m.handleInboundReply(db, { organizationId: orgId, phone, text: msg.text ?? "" }))
+      .then((m) => m.handleInboundReply(db, { organizationId: orgId, phone: msg.altIdentifier ?? phone, text: msg.text ?? "" }))
       .catch((e) => console.warn("[outbound] reply tracking failed", e instanceof Error ? e.message : e));
   }
 
