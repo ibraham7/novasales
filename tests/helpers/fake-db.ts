@@ -111,7 +111,7 @@ export function fakeDb(seed: Record<string, any[]> = {}, unique: Record<string, 
       if (this.op === "delete") {
         const hit = new Set(this.matches());
         tables[this.table] = rows.filter((r) => !hit.has(r));
-        return { data: [], error: null };
+        return { data: [...hit].map((r) => ({ ...r })), error: null };
       }
       const inserted: any[] = [];
       for (const row of this.payload) {

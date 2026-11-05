@@ -151,3 +151,23 @@ export async function updateProspects(db: any, organizationId: string, input: { 
   }
   return changed;
 }
+
+/**
+ * Permanently deletes businesses. One that is still waiting in a campaign that has not finished
+ * sending is refused, so a campaign never loses people mid-way. «Do not send» numbers stay.
+ */
+export async function deleteProspects(db: any, organizationId: string, ids: string[]) {
+  const unique = [...new Set(ids)];
+  for (const part of chunks(unique)) {
+    const { data, error } = await db.from("cmp_recipients").select("id").eq("organization_id", organizationId).in("ob_prospect_id", part).in("status", ["queued", "sending"]).limit(1);
+    if (error && !["PGRST205", "42P01", "42703"].includes(error.code)) throw new Error(error.message);
+    if ((data ?? []).length > 0) throw new Error("بين الجهات المحددة جهة داخل حملة لم ينته إرسالها؛ أوقف الحملة أو انتظر انتهاءها");
+  }
+  let deleted = 0;
+  for (const part of chunks(unique)) {
+    const { data, error } = await db.from("ob_prospects").delete().eq("organization_id", organizationId).in("id", part).select("id");
+    if (error) throw new Error(error.message);
+    deleted += (data ?? []).length;
+  }
+  return deleted;
+}
