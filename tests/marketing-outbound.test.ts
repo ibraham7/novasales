@@ -138,3 +138,20 @@ test("a business that already moved on is not pulled back to «replied»", async
   await handleInboundReply(db, { organizationId: ORG, phone: "905320000001", text: "شكراً", now: NOW });
   assert.equal(db.tables.ob_prospects[0].status, "interested");
 });
+
+test("a reply from a hidden WhatsApp id is matched to the one business waiting for an answer, and «stop» blocks its real number", async () => {
+  const db = fakeDb({ cmp_recipients: [sentTo()], ob_prospects: [prospect("p1", { status: "contacted", phone_e164: "905320000001" })] }, UNIQUE);
+  const hello = await handleInboundReply(db, { organizationId: ORG, phone: "7615211896949", jid: "7615211896949", text: "مرحبا", now: NOW });
+  assert.deepEqual(hello, { matched: true, optOut: false });
+  assert.equal(db.tables.cmp_recipients[0].reply_jid, "7615211896949");
+  const stop = await handleInboundReply(db, { organizationId: ORG, phone: "7615211896949", jid: "7615211896949", text: "إيقاف", now: NOW });
+  assert.deepEqual(stop, { matched: true, optOut: true });
+  assert.deepEqual([...(await blockedPhones(db, ORG, ["905320000001"]))], ["905320000001"]);
+});
+
+test("a hidden id is never guessed when several businesses are waiting", async () => {
+  const db = fakeDb({ cmp_recipients: [sentTo(), sentTo({ id: "r2", ob_prospect_id: "p2", phone: "905320000002" })], ob_prospects: [prospect("p1"), prospect("p2")] }, UNIQUE);
+  assert.deepEqual(await handleInboundReply(db, { organizationId: ORG, phone: "7615211896949", jid: "7615211896949", text: "إيقاف", now: NOW }), { matched: false });
+  assert.equal(db.tables.ob_suppressions?.length ?? 0, 0);
+  assert.equal(db.tables.ob_events.at(-1).event_type, "reply_unmatched");
+});
