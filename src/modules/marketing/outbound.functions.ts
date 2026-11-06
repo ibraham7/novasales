@@ -180,6 +180,14 @@ export const deleteOutboundCampaignFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getOutboundReport = createServerFn({ method: "GET" })
+  .inputValidator((data: unknown) => z.object({ days: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30) }).parse(data ?? {}))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access("manage");
+    const { buildOutboundReport } = await import("./report-core");
+    return buildOutboundReport(db, organizationId, data.days);
+  });
+
 export const listSuppressions = createServerFn({ method: "GET" }).handler(async () => {
   const { organizationId, db } = await access("manage");
   const { data, error } = await db.from("ob_suppressions").select("id,identifier,reason,source,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(500);
