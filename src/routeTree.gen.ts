@@ -41,6 +41,7 @@ import { Route as ApiV1LeadsRouteImport } from './routes/api/v1/leads'
 import { Route as ApiV1ContactsRouteImport } from './routes/api/v1/contacts'
 import { Route as ApiPublicWhTickRouteImport } from './routes/api/public/wh-tick'
 import { Route as ApiPublicWfTickRouteImport } from './routes/api/public/wf-tick'
+import { Route as ApiPublicResendWebhookRouteImport } from './routes/api/public/resend-webhook'
 import { Route as ApiPublicPushReceiptRouteImport } from './routes/api/public/push-receipt'
 import { Route as ApiPublicMetaWebhookRouteImport } from './routes/api/public/meta-webhook'
 import { Route as ApiPublicCmpTickRouteImport } from './routes/api/public/cmp-tick'
@@ -73,6 +74,7 @@ import { Route as AuthenticatedAdminOrganizationsRouteImport } from './routes/_a
 import { Route as AuthenticatedAdminNumbersRouteImport } from './routes/_authenticated/admin.numbers'
 import { Route as AuthenticatedAdminLogsRouteImport } from './routes/_authenticated/admin.logs'
 import { Route as AuthenticatedAutomationIdIndexRouteImport } from './routes/_authenticated/automation.$id.index'
+import { Route as ApiPublicUnsubscribeTokenRouteImport } from './routes/api/public/unsubscribe.$token'
 import { Route as ApiPublicEvolutionWebhookTokenRouteImport } from './routes/api/public/evolution-webhook.$token'
 import { Route as AuthenticatedAutomationIdRunsRouteImport } from './routes/_authenticated/automation.$id.runs'
 import { Route as AuthenticatedAdminOrganizationsIdRouteImport } from './routes/_authenticated/admin.organizations_.$id'
@@ -239,6 +241,11 @@ const ApiPublicWhTickRoute = ApiPublicWhTickRouteImport.update({
 const ApiPublicWfTickRoute = ApiPublicWfTickRouteImport.update({
   id: '/api/public/wf-tick',
   path: '/api/public/wf-tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicResendWebhookRoute = ApiPublicResendWebhookRouteImport.update({
+  id: '/api/public/resend-webhook',
+  path: '/api/public/resend-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicPushReceiptRoute = ApiPublicPushReceiptRouteImport.update({
@@ -426,6 +433,12 @@ const AuthenticatedAutomationIdIndexRoute =
     path: '/automation/$id/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiPublicUnsubscribeTokenRoute =
+  ApiPublicUnsubscribeTokenRouteImport.update({
+    id: '/api/public/unsubscribe/$token',
+    path: '/api/public/unsubscribe/$token',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicEvolutionWebhookTokenRoute =
   ApiPublicEvolutionWebhookTokenRouteImport.update({
     id: '/api/public/evolution-webhook/$token',
@@ -503,6 +516,7 @@ export interface FileRoutesByFullPath {
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
   '/api/public/push-receipt': typeof ApiPublicPushReceiptRoute
+  '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
   '/api/public/wh-tick': typeof ApiPublicWhTickRoute
   '/api/v1/contacts': typeof ApiV1ContactsRoute
@@ -517,6 +531,7 @@ export interface FileRoutesByFullPath {
   '/admin/organizations/$id': typeof AuthenticatedAdminOrganizationsIdRoute
   '/automation/$id/runs': typeof AuthenticatedAutomationIdRunsRoute
   '/api/public/evolution-webhook/$token': typeof ApiPublicEvolutionWebhookTokenRoute
+  '/api/public/unsubscribe/$token': typeof ApiPublicUnsubscribeTokenRoute
   '/automation/$id/': typeof AuthenticatedAutomationIdIndexRoute
   '/api/public/wa-webhook/$provider/$token': typeof ApiPublicWaWebhookProviderTokenRoute
 }
@@ -569,6 +584,7 @@ export interface FileRoutesByTo {
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
   '/api/public/push-receipt': typeof ApiPublicPushReceiptRoute
+  '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
   '/api/public/wh-tick': typeof ApiPublicWhTickRoute
   '/api/v1/contacts': typeof ApiV1ContactsRoute
@@ -583,6 +599,7 @@ export interface FileRoutesByTo {
   '/admin/organizations/$id': typeof AuthenticatedAdminOrganizationsIdRoute
   '/automation/$id/runs': typeof AuthenticatedAutomationIdRunsRoute
   '/api/public/evolution-webhook/$token': typeof ApiPublicEvolutionWebhookTokenRoute
+  '/api/public/unsubscribe/$token': typeof ApiPublicUnsubscribeTokenRoute
   '/automation/$id': typeof AuthenticatedAutomationIdIndexRoute
   '/api/public/wa-webhook/$provider/$token': typeof ApiPublicWaWebhookProviderTokenRoute
 }
@@ -640,6 +657,7 @@ export interface FileRoutesById {
   '/api/public/cmp-tick': typeof ApiPublicCmpTickRoute
   '/api/public/meta-webhook': typeof ApiPublicMetaWebhookRoute
   '/api/public/push-receipt': typeof ApiPublicPushReceiptRoute
+  '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
   '/api/public/wf-tick': typeof ApiPublicWfTickRoute
   '/api/public/wh-tick': typeof ApiPublicWhTickRoute
   '/api/v1/contacts': typeof ApiV1ContactsRoute
@@ -654,6 +672,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/organizations_/$id': typeof AuthenticatedAdminOrganizationsIdRoute
   '/_authenticated/automation/$id/runs': typeof AuthenticatedAutomationIdRunsRoute
   '/api/public/evolution-webhook/$token': typeof ApiPublicEvolutionWebhookTokenRoute
+  '/api/public/unsubscribe/$token': typeof ApiPublicUnsubscribeTokenRoute
   '/_authenticated/automation/$id/': typeof AuthenticatedAutomationIdIndexRoute
   '/api/public/wa-webhook/$provider/$token': typeof ApiPublicWaWebhookProviderTokenRoute
 }
@@ -711,6 +730,7 @@ export interface FileRouteTypes {
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
     | '/api/public/push-receipt'
+    | '/api/public/resend-webhook'
     | '/api/public/wf-tick'
     | '/api/public/wh-tick'
     | '/api/v1/contacts'
@@ -725,6 +745,7 @@ export interface FileRouteTypes {
     | '/admin/organizations/$id'
     | '/automation/$id/runs'
     | '/api/public/evolution-webhook/$token'
+    | '/api/public/unsubscribe/$token'
     | '/automation/$id/'
     | '/api/public/wa-webhook/$provider/$token'
   fileRoutesByTo: FileRoutesByTo
@@ -777,6 +798,7 @@ export interface FileRouteTypes {
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
     | '/api/public/push-receipt'
+    | '/api/public/resend-webhook'
     | '/api/public/wf-tick'
     | '/api/public/wh-tick'
     | '/api/v1/contacts'
@@ -791,6 +813,7 @@ export interface FileRouteTypes {
     | '/admin/organizations/$id'
     | '/automation/$id/runs'
     | '/api/public/evolution-webhook/$token'
+    | '/api/public/unsubscribe/$token'
     | '/automation/$id'
     | '/api/public/wa-webhook/$provider/$token'
   id:
@@ -847,6 +870,7 @@ export interface FileRouteTypes {
     | '/api/public/cmp-tick'
     | '/api/public/meta-webhook'
     | '/api/public/push-receipt'
+    | '/api/public/resend-webhook'
     | '/api/public/wf-tick'
     | '/api/public/wh-tick'
     | '/api/v1/contacts'
@@ -861,6 +885,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/organizations_/$id'
     | '/_authenticated/automation/$id/runs'
     | '/api/public/evolution-webhook/$token'
+    | '/api/public/unsubscribe/$token'
     | '/_authenticated/automation/$id/'
     | '/api/public/wa-webhook/$provider/$token'
   fileRoutesById: FileRoutesById
@@ -874,6 +899,7 @@ export interface RootRouteChildren {
   ApiPublicCmpTickRoute: typeof ApiPublicCmpTickRoute
   ApiPublicMetaWebhookRoute: typeof ApiPublicMetaWebhookRoute
   ApiPublicPushReceiptRoute: typeof ApiPublicPushReceiptRoute
+  ApiPublicResendWebhookRoute: typeof ApiPublicResendWebhookRoute
   ApiPublicWfTickRoute: typeof ApiPublicWfTickRoute
   ApiPublicWhTickRoute: typeof ApiPublicWhTickRoute
   ApiV1ContactsRoute: typeof ApiV1ContactsRoute
@@ -881,6 +907,7 @@ export interface RootRouteChildren {
   ApiV1MeRoute: typeof ApiV1MeRoute
   ApiV1OpportunitiesRoute: typeof ApiV1OpportunitiesRoute
   ApiPublicEvolutionWebhookTokenRoute: typeof ApiPublicEvolutionWebhookTokenRoute
+  ApiPublicUnsubscribeTokenRoute: typeof ApiPublicUnsubscribeTokenRoute
   ApiPublicWaWebhookProviderTokenRoute: typeof ApiPublicWaWebhookProviderTokenRoute
 }
 
@@ -1110,6 +1137,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWfTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/resend-webhook': {
+      id: '/api/public/resend-webhook'
+      path: '/api/public/resend-webhook'
+      fullPath: '/api/public/resend-webhook'
+      preLoaderRoute: typeof ApiPublicResendWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/push-receipt': {
       id: '/api/public/push-receipt'
       path: '/api/public/push-receipt'
@@ -1334,6 +1368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAutomationIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/public/unsubscribe/$token': {
+      id: '/api/public/unsubscribe/$token'
+      path: '/api/public/unsubscribe/$token'
+      fullPath: '/api/public/unsubscribe/$token'
+      preLoaderRoute: typeof ApiPublicUnsubscribeTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/evolution-webhook/$token': {
       id: '/api/public/evolution-webhook/$token'
       path: '/api/public/evolution-webhook/$token'
@@ -1533,6 +1574,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCmpTickRoute: ApiPublicCmpTickRoute,
   ApiPublicMetaWebhookRoute: ApiPublicMetaWebhookRoute,
   ApiPublicPushReceiptRoute: ApiPublicPushReceiptRoute,
+  ApiPublicResendWebhookRoute: ApiPublicResendWebhookRoute,
   ApiPublicWfTickRoute: ApiPublicWfTickRoute,
   ApiPublicWhTickRoute: ApiPublicWhTickRoute,
   ApiV1ContactsRoute: ApiV1ContactsRoute,
@@ -1540,6 +1582,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1MeRoute: ApiV1MeRoute,
   ApiV1OpportunitiesRoute: ApiV1OpportunitiesRoute,
   ApiPublicEvolutionWebhookTokenRoute: ApiPublicEvolutionWebhookTokenRoute,
+  ApiPublicUnsubscribeTokenRoute: ApiPublicUnsubscribeTokenRoute,
   ApiPublicWaWebhookProviderTokenRoute: ApiPublicWaWebhookProviderTokenRoute,
 }
 export const routeTree = rootRouteImport

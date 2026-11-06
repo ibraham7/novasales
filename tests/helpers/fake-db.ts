@@ -13,6 +13,7 @@ export function fakeDb(seed: Record<string, any[]> = {}, unique: Record<string, 
     private table: string;
     private filters: ((row: any) => boolean)[] = [];
     private described: [string, string, unknown][] = [];
+    private max?: number;
     private op: "select" | "upsert" | "update" | "delete" | "insert" = "select";
     private payload: any;
     private options: any;
@@ -40,6 +41,12 @@ export function fakeDb(seed: Record<string, any[]> = {}, unique: Record<string, 
     gte(c: string, v: number | string) {
       return this.add("gte", c, v, (r) => r[c] != null && r[c] >= v);
     }
+    lt(c: string, v: number | string) {
+      return this.add("lt", c, v, (r) => r[c] != null && r[c] < v);
+    }
+    lte(c: string, v: number | string) {
+      return this.add("lte", c, v, (r) => r[c] != null && r[c] <= v);
+    }
     is(c: string, v: unknown) {
       return this.add("is", c, v, (r) => (v === null ? r[c] == null : r[c] === v));
     }
@@ -60,7 +67,8 @@ export function fakeDb(seed: Record<string, any[]> = {}, unique: Record<string, 
     order() {
       return this;
     }
-    limit() {
+    limit(n?: number) {
+      this.max = n;
       return this;
     }
     range(from: number, to: number) {
@@ -101,7 +109,8 @@ export function fakeDb(seed: Record<string, any[]> = {}, unique: Record<string, 
       const rows = tables[this.table];
       if (this.op === "select") {
         const hit = this.matches();
-        return { data: hit.slice(this.rangeFrom, this.rangeTo + 1).map((r) => ({ ...r })), count: hit.length, error: null };
+        const page = hit.slice(this.rangeFrom, this.rangeTo + 1);
+        return { data: (this.max != null ? page.slice(0, this.max) : page).map((r) => ({ ...r })), count: hit.length, error: null };
       }
       if (this.op === "update") {
         const hit = this.matches();

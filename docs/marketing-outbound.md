@@ -69,3 +69,17 @@ Safety: only http(s) on default ports; internal hosts, private IPs and redirects
 each request, at each redirect, and on the DNS answer); 8 s timeout, 1 MB cap, HTML only, 3 redirects max; 4 presses
 per minute per user. Only information the business publishes itself is read. Migration:
 `20261105120000_marketing_enrichment.sql` (additive columns). Nothing is sent from this step.
+
+## Email campaigns
+
+Cold email to the businesses whose site gave an email (see enrichment). Sent through Resend; everything else is ours.
+
+**Server settings (`.env`)** — nothing is sent until all of these exist:
+- `RESEND_API_KEY`, `EMAIL_FROM` (e.g. `NovaSales <hello@your-domain.com>`; the domain must be verified in Resend: SPF, DKIM, and ideally DMARC).
+- `PUBLIC_APP_URL` (the unsubscribe link needs it).
+- `RESEND_WEBHOOK_SECRET` and a Resend webhook pointing at `/api/public/resend-webhook` for delivered / bounced / complained.
+- Optional: `EMAIL_REPLY_TO`, `EMAIL_DAILY_CAP` (default 100 emails per organization per day; raise it slowly as the domain warms up).
+
+**What it does:** the final approval (same three confirmations as WhatsApp) creates a campaign and one row per recipient; the minute timer sends each running campaign's per-minute limit, never above the daily cap. Every email carries the sender's name, an unsubscribe link and the one-click `List-Unsubscribe` headers. Pressing the link, a bounce or a complaint puts the address on the do-not-send list (channel `email`); a complaint also stops the business. Addresses on the list are skipped at send time too. A send that never finished is not retried automatically.
+
+Tables: `ob_email_campaigns`, `ob_email_messages` (migration `20261110120000`, server-only).
