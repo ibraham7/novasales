@@ -132,8 +132,11 @@ export const updateMarketingProspects = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { organizationId, db } = await access();
-    const { updateProspects } = await import("./prospects-core");
-    return { changed: await updateProspects(db, organizationId, data) };
+    const { updateProspects, countStillStopped } = await import("./prospects-core");
+    const changed = await updateProspects(db, organizationId, data);
+    // Said out loud, so «0 updated» is never a mystery.
+    const stopped = data.status && changed < data.ids.length ? await countStillStopped(db, organizationId, data.ids) : 0;
+    return { changed, stopped };
   });
 
 export const deleteMarketingProspects = createServerFn({ method: "POST" })
