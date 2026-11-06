@@ -66,7 +66,15 @@ export async function removeSuppression(db: any, organizationId: string, id: str
   const { error } = await db.from("ob_suppressions").delete().eq("organization_id", organizationId).eq("id", id);
   if (error) throw new Error(error.message);
   if (data?.identifier) {
-    await db.from("ob_prospects").update({ status: "review", updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("phone_e164", data.identifier).eq("status", "opted_out");
+    const patch = { status: "review", updated_at: new Date().toISOString() };
+    if (String(data.identifier).includes("@")) {
+      // An email address: the businesses that listed it as one of their emails.
+      const { data: stopped } = await db.from("ob_prospects").select("id,emails").eq("organization_id", organizationId).eq("status", "opted_out").limit(5000);
+      const ids = (stopped ?? []).filter((p: any) => Array.isArray(p.emails) && p.emails.some((e: unknown) => String(e).trim().toLowerCase() === data.identifier)).map((p: any) => p.id);
+      if (ids.length) await db.from("ob_prospects").update(patch).eq("organization_id", organizationId).in("id", ids).eq("status", "opted_out");
+    } else {
+      await db.from("ob_prospects").update(patch).eq("organization_id", organizationId).eq("phone_e164", data.identifier).eq("status", "opted_out");
+    }
   }
 }
 

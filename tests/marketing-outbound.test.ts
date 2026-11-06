@@ -201,3 +201,9 @@ test("without a site address the message keeps only the keyword", async () => {
   assert.equal(db.tables.cmp_recipients[0].stop_token, undefined);
   assert.doesNotMatch(db.tables.cmp_templates[0].body, /stop_link/);
 });
+
+test("removing an email address from the list lets the business that owns it be approved again", async () => {
+  const db = fakeDb({ ob_prospects: [prospect("p1", { status: "opted_out", emails: ["Info@Clinic.com"] }), prospect("p2", { status: "opted_out", emails: ["other@x.com"] })], ob_suppressions: [{ id: "s1", organization_id: ORG, channel: "email", identifier: "info@clinic.com" }] }, UNIQUE);
+  await removeSuppression(db, ORG, "s1");
+  assert.deepEqual(db.tables.ob_prospects.map((p: any) => p.status), ["review", "opted_out"]);
+});

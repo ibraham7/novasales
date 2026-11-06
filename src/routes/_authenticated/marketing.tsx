@@ -10,6 +10,7 @@ import { ManualProspectDialog } from "@/components/marketing/manual-prospect-dia
 import { ProspectsPanel } from "@/components/marketing/prospects-panel";
 import { SearchCard } from "@/components/marketing/search-card";
 import { SettingsTab } from "@/components/marketing/settings-tab";
+import { EmailTab } from "@/components/marketing/email-tab";
 import { ReportsTab } from "@/components/marketing/reports-tab";
 import { SuppressionsTab } from "@/components/marketing/suppressions-tab";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,7 @@ function MarketingContent() {
         <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="discover">اكتشاف العملاء</TabsTrigger>
           <TabsTrigger value="campaigns">الحملات</TabsTrigger>
+          <TabsTrigger value="email">الإيميل</TabsTrigger>
           <TabsTrigger value="reports">التقارير</TabsTrigger>
           <TabsTrigger value="suppressions">لا ترسل</TabsTrigger>
           <TabsTrigger value="settings">الإعدادات</TabsTrigger>
@@ -75,6 +77,9 @@ function MarketingContent() {
         </TabsContent>
         <TabsContent value="campaigns">
           <CampaignsTab onNew={() => setWizardOpen(true)} />
+        </TabsContent>
+        <TabsContent value="email">
+          <EmailTab />
         </TabsContent>
         <TabsContent value="reports">
           <ReportsTab />
