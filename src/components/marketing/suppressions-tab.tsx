@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const SOURCE_LABEL: Record<string, string> = { manual: "أُضيف يدوياً", keyword: "ردّ بكلمة إيقاف", import: "استيراد" };
+const SOURCE_LABEL: Record<string, string> = { manual: "أُضيف يدوياً", keyword: "ردّ بكلمة إيقاف", import: "استيراد", link: "ضغط رابط الإيقاف" };
 
 /** Numbers that must never be messaged by any campaign. */
 export function SuppressionsTab() {

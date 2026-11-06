@@ -3,6 +3,7 @@
  * happens when a business replies. The database and the account lookup are passed in, so all of
  * it is tested without Supabase.
  */
+import { randomBytes } from "node:crypto";
 import { DEFAULT_OPTOUT_FOOTER, isOptOutMessage } from "./optout.ts";
 import { prospectPhone } from "./phone.ts";
 
@@ -45,7 +46,7 @@ export async function blockedPhones(db: any, organizationId: string, phones: str
   return blocked;
 }
 
-export async function addSuppression(db: any, organizationId: string, rawPhone: string, info: { source: "manual" | "keyword" | "import"; reason?: string; userId?: string | null; dial?: string }) {
+export async function addSuppression(db: any, organizationId: string, rawPhone: string, info: { source: "manual" | "keyword" | "import" | "link"; reason?: string; userId?: string | null; dial?: string }) {
   const { e164 } = prospectPhone(rawPhone, info.dial ?? "");
   if (!e164) throw new Error("الرقم غير صالح؛ اكتبه بصيغة دولية مثل +905321234567");
   const { error } = await db.from("ob_suppressions").upsert(
@@ -168,6 +169,8 @@ export type CampaignDeps = {
   now?: () => Date;
   maxRecipients?: number;
   maxThrottle?: number;
+  /** Site address, e.g. https://sales.example.com. With it each message carries a private stop link; without it only the keyword works. */
+  stopBaseUrl?: string;
 };
 
 /**
@@ -207,9 +210,10 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
   if (audience.eligible.length > maxRecipients) throw new Error(`الحد الأقصى ${maxRecipients} مستلماً للحملة الواحدة؛ اختر عدداً أقل`);
 
   const throttle = Math.max(1, Math.min(Math.floor(input.throttlePerMinute) || 1, maxThrottle));
+  const stopBase = deps.stopBaseUrl?.replace(/\/$/, "") || "";
   const { data: template, error: templateError } = await db
     .from("cmp_templates")
-    .insert({ organization_id: input.organizationId, name: `Outbound: ${input.name}`.slice(0, 120), body: `${body}\n\n${settings.optout_footer}`, variables: vars.length ? ["name"] : [], created_by: input.userId })
+    .insert({ organization_id: input.organizationId, name: `Outbound: ${input.name}`.slice(0, 120), body: `${body}\n\n${settings.optout_footer}${stopBase ? "\nأو اضغط الرابط: {{stop_link}}" : ""}`, variables: [...(vars.length ? ["name"] : []), ...(stopBase ? ["stop_link"] : [])], created_by: input.userId })
     .select("id,version")
     .single();
   if (templateError || !template) throw new Error("تعذر حفظ نص الرسالة");
@@ -254,7 +258,10 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
 
   for (const part of chunks(audience.eligible)) {
     const { error } = await db.from("cmp_recipients").insert(
-      part.map((p) => ({ organization_id: input.organizationId, campaign_id: campaign.id, contact_id: null, ob_prospect_id: p.id, phone: p.phone, variables: { name: p.name }, status: "queued" })),
+      part.map((p) => {
+        const token = stopBase ? newStopToken() : null;
+        return { organization_id: input.organizationId, campaign_id: campaign.id, contact_id: null, ob_prospect_id: p.id, phone: p.phone, variables: { name: p.name, ...(token ? { stop_link: `${stopBase}/stop/${token}` } : {}) }, ...(token ? { stop_token: token } : {}), status: "queued" };
+      }),
     );
     if (error) {
       // A half-built campaign must never run.
@@ -266,6 +273,28 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
   }
   await logEvent(db, input.organizationId, input.userId, "campaign_approved", "campaign", campaign.id, snapshot);
   return { campaignId: campaign.id as string, recipients: audience.eligible.length, excluded: audience.excluded };
+}
+
+/** A private, unguessable token for one recipient's stop link. */
+export const newStopToken = () => randomBytes(18).toString("base64url");
+
+/**
+ * Someone pressed the stop link of a message. The number goes on the «do not send» list whatever
+ * id WhatsApp used for their reply. An unknown token changes nothing.
+ */
+export async function handleStopLink(db: any, token: string, now = new Date()) {
+  if (!/^[\w-]{20,40}$/.test(token)) return { ok: false as const };
+  const { data, error } = await db.from("cmp_recipients").select("id,organization_id,ob_prospect_id,campaign_id,phone").eq("stop_token", token).limit(1);
+  if (error) {
+    if (MISSING_TABLE.has(error.code) || error.code === "42703") return { ok: false as const };
+    throw new Error(error.message);
+  }
+  const recipient = data?.[0];
+  if (!recipient) return { ok: false as const };
+  await addSuppression(db, recipient.organization_id, recipient.phone, { source: "link", reason: "ضغط رابط الإيقاف" });
+  await db.from("cmp_recipients").update({ replied_at: now.toISOString() }).eq("id", recipient.id).eq("organization_id", recipient.organization_id).is("replied_at", null);
+  await logEvent(db, recipient.organization_id, null, "opt_out", "prospect", recipient.ob_prospect_id, { phone: recipient.phone, campaignId: recipient.campaign_id, via: "link" });
+  return { ok: true as const };
 }
 
 /** Campaign states that can no longer send. Anything else must be cancelled first. */
