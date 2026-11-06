@@ -21,6 +21,13 @@ export function startCampaignTicker() {
       console.error("[campaigns] run failed", error instanceof Error ? error.message : error);
     }
     try {
+      const { tickEmailCampaigns } = await import("@/modules/marketing/email-send.server");
+      const { processed } = await tickEmailCampaigns();
+      if (processed) console.log(`[email] sent ${processed}`);
+    } catch (error) {
+      console.error("[email] run failed", error instanceof Error ? error.message : error);
+    }
+    try {
       const { deliverMetaConversions } = await import("@/modules/integrations/meta-capi.server");
       const { sent } = await deliverMetaConversions();
       if (sent) console.log(`[conversions] sent ${sent} to Meta`);

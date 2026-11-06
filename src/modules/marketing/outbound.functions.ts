@@ -214,3 +214,88 @@ export const removeSuppressionNumber = createServerFn({ method: "POST" })
     await logEvent(db, organizationId, userId, "suppression_removed", "suppression", data.id);
     return { ok: true };
   });
+
+/* ---------------------------------- email ---------------------------------- */
+
+export const getEmailStatus = createServerFn({ method: "GET" }).handler(async () => {
+  await access("manage");
+  const { emailConfig } = await import("./email-send.server");
+  const c = emailConfig();
+  return { configured: c.configured && Boolean(process.env.PUBLIC_APP_URL), from: c.from ?? null, dailyCap: Number(process.env.EMAIL_DAILY_CAP) || 100 };
+});
+
+export const previewEmailAudience = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ prospectIds: z.array(z.string().uuid()).max(5000).optional() }).parse(data ?? {}))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access("manage");
+    const { emailAudience } = await import("./email-core");
+    const a = await emailAudience(db, organizationId, data.prospectIds);
+    return { total: a.eligible.length, approved: a.approved, excluded: a.excluded, sample: a.eligible.slice(0, 8) };
+  });
+
+export const approveEmailCampaign = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        name: z.string().trim().min(2, "اكتب اسم الحملة").max(200),
+        subject: z.string().trim().min(1, "اكتب عنوان الرسالة").max(200),
+        body: z.string().trim().min(1, "اكتب نص الرسالة").max(5000),
+        prospectIds: z.array(z.string().uuid()).max(5000).optional(),
+        scheduledAt: z.string().max(40).optional().nullable(),
+        throttlePerMinute: z.number().int().min(1).max(60).default(10),
+        acknowledgments: z.object({ b2b: z.boolean(), optOut: z.boolean(), review: z.boolean() }),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access("send");
+    if (!approveLimiter.allow(userId)) throw new Error("محاولات اعتماد كثيرة خلال دقيقة؛ انتظر قليلاً");
+    const { createEmailCampaign } = await import("./email-core");
+    const { emailConfig } = await import("./email-send.server");
+    const c = emailConfig();
+    return createEmailCampaign(db, { configured: c.configured, from: c.from, stopBaseUrl: process.env.PUBLIC_APP_URL }, { ...data, organizationId, userId });
+  });
+
+export const listEmailCampaigns = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId, db } = await access("manage");
+  const { data: campaigns, error } = await db
+    .from("ob_email_campaigns")
+    .select("id,name,subject,status,scheduled_at,started_at,finished_at,throttle_per_minute,error,created_at,approved_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw new Error(error.message);
+  const ids = (campaigns ?? []).map((c: any) => c.id);
+  const stats = new Map<string, Record<string, number>>();
+  if (ids.length) {
+    const { data: rows } = await db.from("ob_email_messages").select("campaign_id,status,replied_at").eq("organization_id", organizationId).in("campaign_id", ids).limit(20000);
+    for (const r of rows ?? []) {
+      const s = stats.get(r.campaign_id) ?? { total: 0, queued: 0, sent: 0, delivered: 0, bounced: 0, complained: 0, failed: 0, skipped: 0, unsubscribed: 0 };
+      s.total++;
+      if (r.status === "sending") s.queued++;
+      else s[r.status] = (s[r.status] ?? 0) + 1;
+      if (r.replied_at) s.unsubscribed++;
+      stats.set(r.campaign_id, s);
+    }
+  }
+  const empty = { total: 0, queued: 0, sent: 0, delivered: 0, bounced: 0, complained: 0, failed: 0, skipped: 0, unsubscribed: 0 };
+  return (campaigns ?? []).map((c: any) => ({ ...c, stats: stats.get(c.id) ?? empty }));
+});
+
+export const controlEmailCampaignFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid(), action: z.enum(["pause", "resume", "cancel"]) }).parse(data))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access("send");
+    const { controlEmailCampaign } = await import("./email-core");
+    await controlEmailCampaign(db, organizationId, data.id, data.action);
+    return { ok: true };
+  });
+
+export const deleteEmailCampaignFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access("manage");
+    const { deleteEmailCampaign } = await import("./email-core");
+    await deleteEmailCampaign(db, organizationId, data.id);
+    return { ok: true };
+  });
