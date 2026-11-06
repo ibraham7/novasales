@@ -3,6 +3,7 @@
  * Supabase. Every query is scoped to one organization.
  */
 import type { FoundPlace } from "./google-places.ts";
+import { blockedPhones } from "./outbound-core.ts";
 import { prospectPhone } from "./phone.ts";
 import type { ManualStatus } from "./statuses.ts";
 
@@ -139,17 +140,46 @@ export async function updateProspects(db: any, organizationId: string, input: { 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.status) patch.status = input.status;
   if (input.notes !== undefined) patch.notes = input.notes || null;
+  const movable = ["new", "review", "qualified", "excluded", "approved", "contacted", "invalid"];
   let changed = 0;
   for (const part of chunks([...new Set(input.ids)])) {
-    // Businesses that replied, are interested or opted out are not moved by hand. A business that was
-    // only messaged («contacted») can be approved again for another campaign.
-    let query = db.from("ob_prospects").update(patch).eq("organization_id", organizationId).in("id", part);
-    if (input.status) query = query.in("status", ["new", "review", "qualified", "excluded", "approved", "contacted", "invalid"]);
+    // Businesses that replied, are interested or were moved to the CRM are not moved by hand. A business that
+    // asked to stop stays stopped while its number is on the do-not-send list; once the number is taken off, it can be moved again.
+    let rest = part;
+    if (input.status) {
+      const released = await releasedOptOuts(db, organizationId, part);
+      if (released.length) {
+        const { data, error } = await db.from("ob_prospects").update(patch).eq("organization_id", organizationId).in("id", released).eq("status", "opted_out").select("id");
+        if (error) throw new Error(error.message);
+        changed += (data ?? []).length;
+        rest = part.filter((id) => !released.includes(id));
+      }
+    }
+    if (!rest.length) continue;
+    let query = db.from("ob_prospects").update(patch).eq("organization_id", organizationId).in("id", rest);
+    if (input.status) query = query.in("status", movable);
     const { data, error } = await query.select("id");
     if (error) throw new Error(error.message);
     changed += (data ?? []).length;
   }
   return changed;
+}
+
+/** Of these businesses, those marked «opted out» whose number is no longer on the do-not-send list. */
+async function releasedOptOuts(db: any, organizationId: string, ids: string[]): Promise<string[]> {
+  const { data, error } = await db.from("ob_prospects").select("id,phone_e164").eq("organization_id", organizationId).in("id", ids).eq("status", "opted_out");
+  if (error) throw new Error(error.message);
+  const rows: { id: string; phone_e164: string | null }[] = data ?? [];
+  if (!rows.length) return [];
+  const blocked = await blockedPhones(db, organizationId, rows.map((r) => r.phone_e164 ?? ""));
+  return rows.filter((r) => !r.phone_e164 || !blocked.has(r.phone_e164)).map((r) => r.id);
+}
+
+/** How many of these businesses are stopped for good (their number is still on the do-not-send list). */
+export async function countStillStopped(db: any, organizationId: string, ids: string[]): Promise<number> {
+  const { data, error } = await db.from("ob_prospects").select("id,phone_e164").eq("organization_id", organizationId).in("id", [...new Set(ids)]).eq("status", "opted_out");
+  if (error) throw new Error(error.message);
+  return (data ?? []).length;
 }
 
 /**

@@ -89,3 +89,12 @@ test("businesses can be deleted, except those still waiting in a campaign", asyn
   assert.equal(await deleteProspects(db, "org-1", ["a", "c"]), 1);
   assert.deepEqual(db.tables.ob_prospects.map((r: any) => r.id), ["b", "c"]);
 });
+
+test("a business that asked to stop can be moved again only once its number is off the do-not-send list", async () => {
+  const row = (id: string, phone: string) => ({ id, organization_id: "org-1", name: id, status: "opted_out", phone_e164: phone });
+  const db = fakeDb({ ob_prospects: [row("a", "905320000001"), row("b", "905320000002")], ob_suppressions: [{ organization_id: "org-1", channel: "whatsapp", identifier: "905320000001" }] });
+  const { countStillStopped } = await import("../src/modules/marketing/prospects-core.ts");
+  assert.equal(await updateProspects(db, "org-1", { ids: ["a", "b"], status: "approved" }), 1);
+  assert.deepEqual(db.tables.ob_prospects.map((r: any) => r.status), ["opted_out", "approved"]);
+  assert.equal(await countStillStopped(db, "org-1", ["a", "b"]), 1);
+});

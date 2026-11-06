@@ -89,7 +89,9 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const bulk = useMutation({
     mutationFn: (status: ManualStatus) => updateFn({ data: { ids: [...selected], status } }),
     onSuccess: (r, status) => {
-      toast.success(`تم تحديث ${r.changed} جهة إلى «${PROSPECT_STATUS_LABELS[status]}»`);
+      if (r.changed) toast.success(`تم تحديث ${r.changed} جهة إلى «${PROSPECT_STATUS_LABELS[status]}»`);
+      if (r.stopped) toast.error(`${r.stopped} جهة ألغت اشتراكها ورقمها بقائمة «لا ترسل»؛ احذف الرقم من تبويب «لا ترسل» أولاً لتتمكن من اعتمادها`);
+      else if (!r.changed) toast.error("لم تتغير أي جهة: حالتها الحالية لا تسمح بالتغيير اليدوي");
       setSelected(new Set());
       qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
     },
