@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fakeDb } from "./helpers/fake-db.ts";
 import { isOptOutMessage, normalizeOptOutText } from "../src/modules/marketing/optout.ts";
 import {
-  addManualProspect, addSuppression, blockedPhones, deleteOutboundCampaign, removeSuppression, createOutboundCampaign, handleInboundReply, previewAudience, type AccountInfo, type CampaignInput,
+  addManualProspect, addSuppression, blockedPhones, deleteOutboundCampaign, removeSuppression, createOutboundCampaign, handleInboundReply, handleStopLink, previewAudience, type AccountInfo, type CampaignInput,
 } from "../src/modules/marketing/outbound-core.ts";
 
 const UNIQUE = { ob_prospects: ["organization_id", "provider", "external_id"], ob_suppressions: ["organization_id", "channel", "identifier"] };
@@ -178,4 +178,26 @@ test("a finished outbound campaign can be deleted; a running or regular one cann
   await deleteOutboundCampaign(db, ORG, "done");
   assert.deepEqual(db.tables.cmp_campaigns.map((c: any) => c.id), ["live", "reg"]);
   assert.equal(db.tables.cmp_templates.length, 0);
+});
+
+test("with a site address every recipient gets a private stop link, and pressing it blocks that number", async () => {
+  const db = fakeDb({ ob_prospects: [prospect("1", { status: "approved", phone_e164: "905320000001" }), prospect("2", { status: "approved", phone_e164: "905320000002" })], ...settings() }, UNIQUE);
+  await createOutboundCampaign(db, { ...deps(), stopBaseUrl: "https://sales.example.com/" }, input());
+  assert.match(db.tables.cmp_templates[0].body, /\{\{stop_link\}\}$/);
+  const [a, b] = db.tables.cmp_recipients;
+  assert.match(a.variables.stop_link, /^https:\/\/sales\.example\.com\/stop\/[\w-]{20,}$/);
+  assert.notEqual(a.stop_token, b.stop_token);
+  assert.equal(a.variables.stop_link.endsWith(a.stop_token), true);
+  assert.deepEqual(await handleStopLink(db, "x".repeat(24)), { ok: false });
+  assert.deepEqual(await handleStopLink(db, a.stop_token), { ok: true });
+  assert.deepEqual([...(await blockedPhones(db, ORG, [a.phone, b.phone]))], [a.phone]);
+  assert.equal(db.tables.ob_suppressions.at(-1).source, "link");
+  assert.equal(db.tables.ob_events.at(-1).detail.via, "link");
+});
+
+test("without a site address the message keeps only the keyword", async () => {
+  const db = fakeDb({ ob_prospects: [prospect("1")], ...settings() }, UNIQUE);
+  await createOutboundCampaign(db, deps(), input());
+  assert.equal(db.tables.cmp_recipients[0].stop_token, undefined);
+  assert.doesNotMatch(db.tables.cmp_templates[0].body, /stop_link/);
 });

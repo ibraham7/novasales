@@ -137,6 +137,7 @@ export const approveOutboundCampaign = createServerFn({ method: "POST" })
         },
         maxRecipients: maxRecipients(),
         maxThrottle: maxThrottle(),
+        stopBaseUrl: process.env.PUBLIC_APP_URL,
       },
       { ...data, organizationId, userId },
     );

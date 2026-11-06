@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StopTokenRouteImport } from './routes/stop.$token'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedTeamsRouteImport } from './routes/_authenticated/teams'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
@@ -89,6 +90,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StopTokenRoute = StopTokenRouteImport.update({
+  id: '/stop/$token',
+  path: '/stop/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -465,6 +471,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/teams': typeof AuthenticatedTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/stop/$token': typeof StopTokenRoute
   '/admin/logs': typeof AuthenticatedAdminLogsRoute
   '/admin/numbers': typeof AuthenticatedAdminNumbersRoute
   '/admin/organizations': typeof AuthenticatedAdminOrganizationsRoute
@@ -530,6 +537,7 @@ export interface FileRoutesByTo {
   '/sales': typeof AuthenticatedSalesRoute
   '/teams': typeof AuthenticatedTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/stop/$token': typeof StopTokenRoute
   '/admin/logs': typeof AuthenticatedAdminLogsRoute
   '/admin/numbers': typeof AuthenticatedAdminNumbersRoute
   '/admin/organizations': typeof AuthenticatedAdminOrganizationsRoute
@@ -600,6 +608,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/teams': typeof AuthenticatedTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/stop/$token': typeof StopTokenRoute
   '/_authenticated/admin/logs': typeof AuthenticatedAdminLogsRoute
   '/_authenticated/admin/numbers': typeof AuthenticatedAdminNumbersRoute
   '/_authenticated/admin/organizations': typeof AuthenticatedAdminOrganizationsRoute
@@ -670,6 +679,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/teams'
     | '/invite/$token'
+    | '/stop/$token'
     | '/admin/logs'
     | '/admin/numbers'
     | '/admin/organizations'
@@ -735,6 +745,7 @@ export interface FileRouteTypes {
     | '/sales'
     | '/teams'
     | '/invite/$token'
+    | '/stop/$token'
     | '/admin/logs'
     | '/admin/numbers'
     | '/admin/organizations'
@@ -804,6 +815,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/teams'
     | '/invite/$token'
+    | '/stop/$token'
     | '/_authenticated/admin/logs'
     | '/_authenticated/admin/numbers'
     | '/_authenticated/admin/organizations'
@@ -858,6 +870,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AuthRoute: typeof AuthRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  StopTokenRoute: typeof StopTokenRoute
   ApiPublicCmpTickRoute: typeof ApiPublicCmpTickRoute
   ApiPublicMetaWebhookRoute: typeof ApiPublicMetaWebhookRoute
   ApiPublicPushReceiptRoute: typeof ApiPublicPushReceiptRoute
@@ -892,6 +905,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stop/$token': {
+      id: '/stop/$token'
+      path: '/stop/$token'
+      fullPath: '/stop/$token'
+      preLoaderRoute: typeof StopTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite/$token': {
@@ -1509,6 +1529,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthRoute: AuthRoute,
   InviteTokenRoute: InviteTokenRoute,
+  StopTokenRoute: StopTokenRoute,
   ApiPublicCmpTickRoute: ApiPublicCmpTickRoute,
   ApiPublicMetaWebhookRoute: ApiPublicMetaWebhookRoute,
   ApiPublicPushReceiptRoute: ApiPublicPushReceiptRoute,
