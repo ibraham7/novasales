@@ -9,18 +9,20 @@ const seeded = (seed: number) => {
   return () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296);
 };
 
-test("only active sales members can receive tickets; a department with no sales role falls back to its active members", () => {
+test("sales agents are the users with the sales role who are active, whether or not a department lists them; a department narrows only when it has two or more of them", () => {
   const agents = buildAgents({
     members: [
       { user_id: "sara", department_id: "d1" }, { user_id: "yaser", department_id: "d1" }, { user_id: "boss", department_id: "d1" },
-      { user_id: "huda", department_id: "d2" }, { user_id: "off", department_id: "d2" },
+      { user_id: "huda", department_id: "d2" },
     ],
-    activeUsers: new Set(["sara", "yaser", "boss", "huda"]),
-    salesUsers: new Set(["sara", "yaser", "off"]),
+    activeUsers: new Set(["sara", "yaser", "boss", "huda", "lina"]),
+    salesUsers: new Set(["sara", "yaser", "huda", "lina", "gone"]),
   });
+  assert.deepEqual(agents.all, ["huda", "lina", "sara", "yaser"]);
   assert.deepEqual(agents.byDepartment.get("d1"), ["sara", "yaser"]);
-  assert.deepEqual(agents.byDepartment.get("d2"), ["huda"]);
-  assert.deepEqual(agents.all, ["sara", "yaser"]);
+  assert.equal(agents.byDepartment.has("d2"), false);
+  // nobody has the sales role: the active department members are used
+  assert.deepEqual(buildAgents({ members: [{ user_id: "a", department_id: "d" }, { user_id: "b", department_id: "d" }], activeUsers: new Set(["a"]), salesUsers: new Set() }).all, ["a"]);
 });
 
 test("a customer visits every agent before anyone has them twice, and never goes straight back to the current owner", () => {
@@ -40,7 +42,7 @@ test("a customer visits every agent before anyone has them twice, and never goes
 });
 
 const agents = (): Agents => ({ all: ["sara", "yaser", "huda"], byDepartment: new Map([["d1", ["sara", "yaser"]]]) });
-const ticket = (id: string, extra: Partial<Ticket> = {}): Ticket => ({ id, lead_id: `lead-${id}`, owner_agent_id: null, department_id: null, ...extra });
+const ticket = (id: string, extra: Partial<Ticket> = {}): Ticket => ({ id, lead_id: null, owner_agent_id: null, department_id: null, ...extra });
 
 test("the plan follows each ticket's history, stays inside its department and spreads evenly", () => {
   const tickets = [
@@ -49,7 +51,7 @@ test("the plan follows each ticket's history, stays inside its department and sp
     ...Array.from({ length: 9 }, (_, i) => ticket(`n${i}`)),
     ticket("dept", { department_id: "d1", owner_agent_id: "sara" }),
   ];
-  const history = new Map([["lead-t1", ["yaser", "sara"]], ["lead-t2", ["sara", "yaser"]]]);
+  const history = new Map([["t1", ["yaser", "sara"]], ["t2", ["sara", "yaser"]]]);
   const { moves, unassignable, perAgent } = planRedistribution({ tickets, history, agents: agents(), random: seeded(7) });
   assert.equal(unassignable.length, 0);
   const to = Object.fromEntries(moves.map((m) => [m.ticketId, m.to]));
@@ -68,7 +70,7 @@ test("tickets nobody can take are reported, not forced", () => {
   assert.deepEqual([plan.moves.length, plan.unassignable.length], [0, 1]);
 });
 
-test("applying moves each ticket to the first stage with its new owner, records the history, and is safe to repeat", async () => {
+test("applying moves each ticket to the first stage with its new owner, records its owner history (also for a ticket with no lead), and is safe to repeat", async () => {
   const lost = "stage-lost";
   const db = fakeDb({
     opp_opportunities: [
@@ -77,7 +79,7 @@ test("applying moves each ticket to the first stage with its new owner, records 
       { id: "t3", organization_id: ORG, stage_id: "other", stage: "new", owner_agent_id: "sara", deleted_at: null },
     ],
     crm_leads: [{ id: "l1", organization_id: ORG, owner_user_id: "sara" }, { id: "l2", organization_id: ORG, owner_user_id: "yaser" }],
-    crm_lead_assignments: [],
+    opp_owner_history: [],
     crm_timeline: [],
     domain_events: [],
     msg_messages: [],
@@ -95,10 +97,10 @@ test("applying moves each ticket to the first stage with its new owner, records 
   assert.equal(t2.owner_agent_id, "huda");
   assert.deepEqual([t3.stage_id, t3.owner_agent_id], ["other", "sara"]);
   assert.deepEqual(db.tables.crm_leads.map((l: any) => l.owner_user_id), ["huda", "huda"]);
-  assert.deepEqual(db.tables.crm_lead_assignments.map((h: any) => [h.lead_id, h.from_user_id, h.to_user_id, h.action, h.assigned_by]), [["l1", "sara", "huda", "reassign", "boss"], ["l2", "yaser", "huda", "reassign", "boss"]]);
+  assert.deepEqual(db.tables.opp_owner_history.map((h: any) => [h.opportunity_id, h.from_user_id, h.to_user_id, h.assigned_by]), [["t1", "sara", "huda", "boss"], ["t2", "yaser", "huda", "boss"]]);
   assert.equal(db.tables.crm_timeline.length, 2);
   assert.equal(db.tables.domain_events.length, 0);
   assert.equal(db.tables.msg_messages.length, 0);
   assert.equal((await applyRedistribution(db, { organizationId: ORG, actorId: "boss", lostStageId: lost, first, moves })).moved, 0);
-  assert.equal(db.tables.crm_lead_assignments.length, 2);
+  assert.equal(db.tables.opp_owner_history.length, 2);
 });

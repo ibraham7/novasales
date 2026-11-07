@@ -13,31 +13,34 @@ const CHUNK = 100;
 const chunks = <T>(items: T[], size = CHUNK) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 
 /**
- * Who can receive tickets: active members of a department who are active in the organization and
- * have the sales role. If nobody in a department is marked as sales, all of its active members count.
+ * Who can receive tickets: every user with the sales role who is active in the organization (department
+ * membership is not required, since sales agents are often not listed in a department). If nobody has the
+ * sales role, the active department members count. A ticket with a department goes only to that
+ * department's sales agents when it has at least two of them; otherwise to all sales agents.
  */
 export function buildAgents(input: { members: { user_id: string; department_id: string | null }[]; activeUsers: Set<string>; salesUsers: Set<string> }): Agents {
   const live = input.members.filter((m) => input.activeUsers.has(m.user_id));
-  const byDepartmentAll = new Map<string, Set<string>>();
-  for (const m of live) {
-    if (!m.department_id) continue;
-    const set = byDepartmentAll.get(m.department_id) ?? new Set<string>();
-    set.add(m.user_id);
-    byDepartmentAll.set(m.department_id, set);
-  }
-  const pick = (users: Set<string>) => {
-    const sales = [...users].filter((u) => input.salesUsers.has(u));
-    return (sales.length ? sales : [...users]).sort();
-  };
+  const sales = [...input.salesUsers].filter((u) => input.activeUsers.has(u));
+  const all = (sales.length ? sales : [...new Set(live.map((m) => m.user_id))]).sort();
+  const pool = new Set(all);
   const byDepartment = new Map<string, string[]>();
-  for (const [department, users] of byDepartmentAll) byDepartment.set(department, pick(users));
-  return { all: pick(new Set(live.map((m) => m.user_id))), byDepartment };
+  for (const m of live) {
+    if (!m.department_id || !pool.has(m.user_id)) continue;
+    const list = byDepartment.get(m.department_id) ?? [];
+    if (!list.includes(m.user_id)) list.push(m.user_id);
+    byDepartment.set(m.department_id, list);
+  }
+  for (const [department, list] of byDepartment) {
+    if (list.length < 2) byDepartment.delete(department);
+    else list.sort();
+  }
+  return { all, byDepartment };
 }
 
 /**
  * The agents this ticket has not been through in the current round. A round ends when every
  * candidate has had the ticket; then it starts again, but never with the agent who has it now.
- * `history` is the chronological list of agents the ticket was given to.
+ * `history` is the chronological list of agents the ticket has been with.
  */
 export function eligibleAgents(candidates: string[], history: string[], owner: string | null): string[] {
   if (candidates.length === 0) return [];
@@ -54,7 +57,7 @@ export function eligibleAgents(candidates: string[], history: string[], owner: s
   return others.length ? others : pool;
 }
 
-/** Spreads the tickets over the agents: each one only to an agent still eligible for it, and evenly among them. */
+/** Spreads the tickets over the agents: each one only to an agent still eligible for it, and evenly among them. `history` is keyed by ticket id. */
 export function planRedistribution(input: { tickets: Ticket[]; history: Map<string, string[]>; agents: Agents; random?: () => number }) {
   const random = input.random ?? Math.random;
   const order = [...input.tickets];
@@ -68,7 +71,7 @@ export function planRedistribution(input: { tickets: Ticket[]; history: Map<stri
   for (const t of order) {
     const department = t.department_id ? input.agents.byDepartment.get(t.department_id) : undefined;
     const candidates = department?.length ? department : input.agents.all;
-    const pool = eligibleAgents(candidates, t.lead_id ? input.history.get(t.lead_id) ?? [] : [], t.owner_agent_id);
+    const pool = eligibleAgents(candidates, input.history.get(t.id) ?? [], t.owner_agent_id);
     if (pool.length === 0) {
       unassignable.push(t);
       continue;
@@ -86,7 +89,7 @@ export type FirstStage = { id: string; pipeline_id: string; probability: number 
 
 /**
  * Applies the plan: every ticket goes to the first stage with its new owner, the lead's owner follows,
- * and the move is written to the assignment history (so the next round knows) and to the timeline.
+ * and the move is written to the ticket's owner history (so the next round knows) and to the timeline.
  * It writes no domain event and sends nothing, so no automation can message the customers.
  */
 export async function applyRedistribution(db: any, input: { organizationId: string; actorId: string; lostStageId: string; first: FirstStage; moves: Move[]; now?: Date }) {
@@ -115,10 +118,11 @@ export async function applyRedistribution(db: any, input: { organizationId: stri
       if (leadIds.length) {
         const { error: leadError } = await db.from("crm_leads").update({ owner_user_id: agent }).eq("organization_id", input.organizationId).in("id", leadIds);
         if (leadError) throw new Error(leadError.message);
-        const { error: historyError } = await db.from("crm_lead_assignments").insert(
-          applied
-            .filter((m) => m.leadId)
-            .map((m) => ({ organization_id: input.organizationId, lead_id: m.leadId, opportunity_id: m.ticketId, from_user_id: m.from, to_user_id: agent, action: m.from ? "reassign" : "assign", reason: "إعادة توزيع التذاكر المهملة", strategy: "manual", department_id: m.departmentId, assigned_by: input.actorId })),
+      }
+      if (applied.length) {
+        // The history is per ticket (most tickets have no lead), so the next round knows who had it.
+        const { error: historyError } = await db.from("opp_owner_history").insert(
+          applied.map((m) => ({ organization_id: input.organizationId, opportunity_id: m.ticketId, from_user_id: m.from, to_user_id: agent, reason: "إعادة توزيع التذاكر المهملة", assigned_by: input.actorId })),
         );
         if (historyError) throw new Error(historyError.message);
       }
