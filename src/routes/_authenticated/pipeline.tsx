@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "@/lib/toast";
-import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight } from "lucide-react";
+import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight, Shuffle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,8 @@ import { useMyPermissions } from "@/platform/rbac/use-permission";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { quickAssignOpportunity } from "@/modules/assignments/lead-assignments.functions";
+import { redistributeLostTickets } from "@/modules/assignments/redistribute.functions";
+import { askConfirm } from "@/components/ui/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +64,7 @@ function PipelinePage() {
   const listBoard = useServerFn(listOpportunitiesBoard);
   const move = useServerFn(moveOpportunityToStage);
   const doQuickAssign = useServerFn(quickAssignOpportunity);
+  const doRedistribute = useServerFn(redistributeLostTickets);
 
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [agentFilter, setAgentFilter] = useState<string>("all");
@@ -315,6 +318,39 @@ function PipelinePage() {
   const canManageStages =
     (permsQ.data ?? []).includes("crm.pipelines.manage") || (permsQ.data ?? []).includes("org.manage");
 
+  const canRedistribute = (permsQ.data ?? []).includes("crm.leads.assign");
+  // The abandoned stage: the lost stage, or one named «مهمل». The button lives only there.
+  const redistributeMut = useMutation({
+    mutationFn: async (stage: any) => {
+      const plan = await doRedistribute({ data: { stageId: stage.id, dryRun: true } });
+      if (plan.willMove === 0) {
+        toast.error(plan.tickets === 0 ? `لا توجد تذاكر في مرحلة «${plan.stageName}»` : "لا يوجد مندوبون متاحون لاستلام هذه التذاكر");
+        return null;
+      }
+      const spread = plan.perAgent.slice(0, 6).map((a: any) => `${a.name}: ${a.count}`).join(" · ");
+      const ok = await askConfirm({
+        title: `إعادة توزيع ${plan.willMove} تذكرة؟`,
+        description:
+          `ستنتقل التذاكر من «${plan.stageName}» إلى «${plan.firstStageName}» وتُوزَّع على ${plan.agents} مندوب تقريباً بالتساوي.\n` +
+          `${spread ? `${spread}\n` : ""}` +
+          `كل تذكرة تذهب لمندوب لم تمرّ عليه بعد، ولا ترجع لمندوبها السابق قبل أن تمرّ على الجميع.\n` +
+          `سيُحفظ سجل التوزيع، ويمكنك تكرار هذه الخطوة لاحقاً.\n` +
+          `لن تُرسل أي رسالة للعملاء الآن.` +
+          `${plan.unassignable ? `\n(${plan.unassignable} تذكرة لا مندوب لها وستبقى مكانها)` : ""}` +
+          `${plan.hasMore ? `\n(الحد الأقصى 1000 تذكرة بالمرة؛ كرّر الخطوة للباقي)` : ""}`,
+        confirmLabel: "إعادة التوزيع",
+      });
+      if (!ok) return null;
+      return doRedistribute({ data: { stageId: stage.id, dryRun: false } });
+    },
+    onSuccess: (r) => {
+      if (!r || r.dryRun) return;
+      toast.success(`أُعيد توزيع ${r.moved} تذكرة إلى «${r.firstStageName}»`);
+      qc.invalidateQueries({ queryKey: ["pipeline-board"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const filtered = useMemo(() => {
     // Defense-in-depth: the loader returns one row per opportunity,
     // but never let a duplicated id reach React keys again.
@@ -521,6 +557,8 @@ function PipelinePage() {
               onRename={(name) => renameStageMut.mutate({ stage: s, name })}
               onQualityChange={(level) => qualityMut.mutate({ stage: s, level })}
               onAssign={handleAssign}
+              onRedistribute={canRedistribute && (s.is_lost || /مهمل/.test(s.name ?? "")) ? () => redistributeMut.mutate(s) : undefined}
+              redistributing={redistributeMut.isPending}
               stages={stages}
               onMove={handleMove}
             />
@@ -549,6 +587,8 @@ function KanbanColumn({
   onRename,
   onQualityChange,
   onAssign,
+  onRedistribute,
+  redistributing,
   stages,
   onMove,
 }: {
@@ -566,6 +606,8 @@ function KanbanColumn({
   onRename: (name: string) => void;
   onQualityChange: (level: QualityLevel | null) => void;
   onAssign: (oppId: string, userId: string) => void;
+  onRedistribute?: () => void;
+  redistributing?: boolean;
 }) {
   const [visible, setVisible] = useState(PAGE);
   const shown = useMemo(() => items.slice(0, visible), [items, visible]);
@@ -594,6 +636,11 @@ function KanbanColumn({
         </div>
         <Badge variant="secondary" className="shrink-0">{items.length}</Badge>
       </div>
+      {onRedistribute && (
+        <Button size="sm" variant="outline" className="mb-3 shrink-0" disabled={redistributing || items.length === 0} onClick={onRedistribute}>
+          <Shuffle className="h-3.5 w-3.5 ml-1" /> {redistributing ? "جارٍ التجهيز..." : "إعادة توزيع العملاء"}
+        </Button>
+      )}
       <div className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
         {loading && items.length === 0 ? (
           [0, 1, 2].map((i) => <div key={i} className="h-20 rounded-lg bg-background/60 animate-pulse" />)
