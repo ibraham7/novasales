@@ -58,7 +58,7 @@ export function ConfirmHost() {
             )}
             {request?.title}
           </AlertDialogTitle>
-          {request?.description && <AlertDialogDescription>{request.description}</AlertDialogDescription>}
+          {request?.description && <AlertDialogDescription className="whitespace-pre-line">{request.description}</AlertDialogDescription>}
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-2 sm:justify-start">
           <Button type="button" variant={request?.destructive ? "destructive" : "default"} onClick={() => close(true)} autoFocus>
