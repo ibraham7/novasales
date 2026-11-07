@@ -43,6 +43,10 @@ export const redistributeLostTickets = createServerFn({ method: "POST" })
     if (!stage) throw new Error("المرحلة غير موجودة");
     if (stage.is_won) throw new Error("لا يمكن إعادة توزيع تذاكر مرحلة الفوز");
 
+    // The history table comes from a migration; refuse early, before anything moves, if it is not there yet.
+    const probe = await db.from("opp_owner_history").select("id").limit(1);
+    if (probe.error) throw new Error(["PGRST205", "42P01"].includes(probe.error.code) ? "جدول سجل التوزيع غير موجود؛ شغّل ملف SQL الخاص بإعادة التوزيع في Supabase أولاً" : probe.error.message);
+
     const open = await rows(db.from("crm_pipeline_stages").select("id,name,probability,pipeline_id").eq("pipeline_id", stage.pipeline_id).eq("is_won", false).eq("is_lost", false).neq("id", stage.id).order("ord", { ascending: true }).limit(1));
     const first = open[0];
     if (!first) throw new Error("لا توجد مرحلة مفتوحة في هذا القمع لإعادة التذاكر إليها");
@@ -68,12 +72,17 @@ export const redistributeLostTickets = createServerFn({ method: "POST" })
       salesUsers: new Set([...salesApp, ...salesRbac].map((m) => m.user_id)),
     });
 
+    // The ticket's owners, oldest first: each move records who had it and who got it.
     const history = new Map<string, string[]>();
-    const leadIds = [...new Set(tickets.map((t) => t.lead_id).filter(Boolean))] as string[];
-    for (let i = 0; i < leadIds.length; i += 50) {
-      const part = leadIds.slice(i, i + 50);
-      const list = await readAll(() => db.from("crm_lead_assignments").select("lead_id,to_user_id,assigned_at").eq("organization_id", organizationId).in("lead_id", part).not("to_user_id", "is", null).order("assigned_at", { ascending: true }).order("id"));
-      for (const h of list) history.set(h.lead_id, [...(history.get(h.lead_id) ?? []), h.to_user_id]);
+    const ticketIds = tickets.map((t) => t.id);
+    for (let i = 0; i < ticketIds.length; i += 50) {
+      const part = ticketIds.slice(i, i + 50);
+      const list = await readAll(() => db.from("opp_owner_history").select("opportunity_id,from_user_id,to_user_id,created_at").eq("organization_id", organizationId).in("opportunity_id", part).order("created_at", { ascending: true }).order("id"));
+      for (const h of list) {
+        const seq = history.get(h.opportunity_id) ?? [];
+        for (const user of [h.from_user_id, h.to_user_id]) if (user && seq[seq.length - 1] !== user) seq.push(user);
+        history.set(h.opportunity_id, seq);
+      }
     }
 
     const plan = planRedistribution({ tickets, history, agents });
