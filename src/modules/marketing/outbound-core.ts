@@ -5,6 +5,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { DEFAULT_OPTOUT_FOOTER, isOptOutMessage } from "./optout.ts";
+import { extractVariants, pickVariants, scheduleProblem, type SendSchedule } from "../campaigns/send-schedule.ts";
 import { prospectPhone } from "./phone.ts";
 
 const CHUNK = 100;
@@ -169,6 +170,8 @@ export type CampaignInput = {
   /** ISO time in the future, or empty to start now. */
   scheduledAt?: string | null;
   throttlePerMinute: number;
+  /** Slow sending over the hours of each day (see send-schedule.ts); without it the campaign sends at `throttlePerMinute`. */
+  schedule?: SendSchedule | null;
   acknowledgments: { b2b: boolean; optOut: boolean; review: boolean };
 };
 
@@ -197,6 +200,12 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
   if (body.length > 900) throw new Error("نص الرسالة طويل؛ الحد الأقصى 900 حرف");
   const vars = [...body.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]);
   if (vars.some((v) => v !== "name")) throw new Error("الرسالة تدعم متغير {{name}} فقط حالياً");
+  if (input.schedule) {
+    const problem = scheduleProblem(input.schedule);
+    if (problem) throw new Error(problem);
+  }
+  const wording = extractVariants(body);
+  if (wording.options.some((list) => list.length < 2)) throw new Error("كل خيار {أ|ب} يحتاج كلمتين مختلفتين على الأقل");
   let scheduledAt = now.toISOString();
   if (input.scheduledAt) {
     const time = Date.parse(input.scheduledAt);
@@ -221,7 +230,7 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
   const stopBase = deps.stopBaseUrl?.replace(/\/$/, "") || "";
   const { data: template, error: templateError } = await db
     .from("cmp_templates")
-    .insert({ organization_id: input.organizationId, name: `Outbound: ${input.name}`.slice(0, 120), body: `${body}\n\n${settings.optout_footer}${stopBase ? "\nأو اضغط الرابط: {{stop_link}}" : ""}`, variables: [...(vars.length ? ["name"] : []), ...(stopBase ? ["stop_link"] : [])], created_by: input.userId })
+    .insert({ organization_id: input.organizationId, name: `Outbound: ${input.name}`.slice(0, 120), body: `${wording.body}\n\n${settings.optout_footer}${stopBase ? "\nأو اضغط الرابط: {{stop_link}}" : ""}`, variables: [...(vars.length ? ["name"] : []), ...wording.options.map((_, i) => `spin_${i + 1}`), ...(stopBase ? ["stop_link"] : [])], created_by: input.userId })
     .select("id,version")
     .single();
   if (templateError || !template) throw new Error("تعذر حفظ نص الرسالة");
@@ -236,6 +245,8 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
     excluded: audience.excluded,
     acknowledgments: input.acknowledgments,
     throttlePerMinute: throttle,
+    schedule: input.schedule ?? null,
+    wordingVariants: wording.options.length,
     optOutFooter: settings.optout_footer,
   };
   const { data: campaign, error: campaignError } = await db
@@ -248,6 +259,7 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
       template_version: template.version ?? 1,
       audience_filter: { kind: "outbound", prospects: audience.eligible.length },
       throttle_per_minute: throttle,
+      ...(input.schedule ? { send_schedule: input.schedule } : {}),
       scheduled_at: scheduledAt,
       status: "scheduled",
       audience_ready: true,
@@ -268,7 +280,7 @@ export async function createOutboundCampaign(db: any, deps: CampaignDeps, input:
     const { error } = await db.from("cmp_recipients").insert(
       part.map((p) => {
         const token = stopBase ? newStopToken() : null;
-        return { organization_id: input.organizationId, campaign_id: campaign.id, contact_id: null, ob_prospect_id: p.id, phone: p.phone, variables: { name: p.name, ...(token ? { stop_link: `${stopBase}/stop/${token}` } : {}) }, ...(token ? { stop_token: token } : {}), status: "queued" };
+        return { organization_id: input.organizationId, campaign_id: campaign.id, contact_id: null, ob_prospect_id: p.id, phone: p.phone, variables: { name: p.name, ...pickVariants(wording.options), ...(token ? { stop_link: `${stopBase}/stop/${token}` } : {}) }, ...(token ? { stop_token: token } : {}), status: "queued" };
       }),
     );
     if (error) {

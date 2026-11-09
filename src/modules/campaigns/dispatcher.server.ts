@@ -3,6 +3,7 @@ import { resolveAudience } from "./audience.server";
 import { checked } from "./access.server";
 import { ensureActionsRegistered, getAction } from "@/modules/workflow/actions/registry.server";
 import { campaignPacing, retryDelayMinutes } from "./pacing";
+import { dayStart, daysSince, decideNext, parseSchedule } from "./send-schedule";
 const db = supabaseAdmin as any;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function tickCampaigns(organizationId?: string): Promise<{ processed: number }> {
@@ -75,8 +76,32 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
       const { pickBestAccountForOutreach } = await import("@/modules/risk/risk.server");
       const account = await pickBestAccountForOutreach(org, [c.channel_account_id]);
       if (!account) continue;
+      // A slow schedule (a daily limit inside a window of hours): one message at a time, with a random gap
+      // that spreads the day's messages over the window; outside the window or past the limit the campaign
+      // simply waits for the next opening. Without a schedule: spread over the minute as before.
+      const schedule = parseSchedule(c.send_schedule);
+      let paced: { gapMs: number } | null = null;
+      if (schedule) {
+        const nowAt = new Date();
+        const today = await checked<any[]>(
+          db
+            .from("cmp_recipients")
+            .select("id")
+            .eq("campaign_id", c.id)
+            .eq("organization_id", org)
+            .in("status", ["sent", "delivered", "read"])
+            .gte("sent_at", dayStart(nowAt, schedule.timezone).toISOString())
+            .limit(1001),
+        );
+        const decision = decideNext(schedule, nowAt, today.length, daysSince(new Date(c.started_at ?? c.created_at ?? nowAt), nowAt, schedule.timezone));
+        if (decision.action === "wait") {
+          await checked(db.from("cmp_campaigns").update({ next_batch_at: decision.until.toISOString() }).eq("id", c.id).eq("organization_id", org));
+          continue;
+        }
+        paced = { gapMs: decision.gapMs };
+      }
       // Messages are spread over the minute with a random gap, never sent in one burst.
-      const pacing = campaignPacing(c.throttle_per_minute);
+      const pacing = paced ? { batch: 1, budgetMs: 50000, gapMs: () => 0 } : campaignPacing(c.throttle_per_minute);
       let batch = await checked<any[]>(
         db.rpc("cmp_claim_recipients", {
           p_id: c.id,
@@ -239,6 +264,8 @@ export async function tickCampaigns(organizationId?: string): Promise<{ processe
         );
         continue;
       }
+      if (paced && sentHere)
+        await checked(db.from("cmp_campaigns").update({ next_batch_at: new Date(Date.now() + paced.gapMs).toISOString() }).eq("id", c.id).eq("organization_id", org));
       if (sentHere && c.error)
         await checked(db.from("cmp_campaigns").update({ error: null }).eq("id", c.id).eq("organization_id", org));
       const pending = await checked<any[]>(

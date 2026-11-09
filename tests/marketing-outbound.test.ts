@@ -207,3 +207,25 @@ test("removing an email address from the list lets the business that owns it be 
   await removeSuppression(db, ORG, "s1");
   assert.deepEqual(db.tables.ob_prospects.map((p: any) => p.status), ["review", "opted_out"]);
 });
+
+test("a slow schedule is saved on the campaign, and wording options give each recipient their own words", async () => {
+  const db = fakeDb({ ob_prospects: [prospect("1"), prospect("2"), prospect("3")], ...settings() }, UNIQUE);
+  const schedule = { dailyLimit: 30, windowStart: "10:00", windowEnd: "17:00", timezone: "Europe/Istanbul", ramp: { start: 10, step: 5 } };
+  await createOutboundCampaign(db, deps(), input({ body: "{مرحباً|أهلاً|سلام} {{name}}، عندنا خصم", schedule }));
+  assert.deepEqual(db.tables.cmp_campaigns[0].send_schedule, schedule);
+  assert.equal(db.tables.cmp_campaigns[0].compliance_snapshot.wordingVariants, 1);
+  const [template] = db.tables.cmp_templates;
+  assert.match(template.body, /^\{\{spin_1\}\} \{\{name\}\}، عندنا خصم/);
+  assert.deepEqual(template.variables, ["name", "spin_1"]);
+  for (const r of db.tables.cmp_recipients) assert.ok(["مرحباً", "أهلاً", "سلام"].includes(r.variables.spin_1), r.variables.spin_1);
+});
+
+test("an unusable schedule or a one-word option is refused before anything is written", async () => {
+  const seed = () => fakeDb({ ob_prospects: [prospect("1")], ...settings() }, UNIQUE);
+  const bad = { dailyLimit: 500, windowStart: "10:00", windowEnd: "11:00", timezone: "Europe/Istanbul", ramp: null };
+  const a = seed();
+  await assert.rejects(() => createOutboundCampaign(a, deps(), input({ schedule: bad })), /أقصى/);
+  const b = seed();
+  await assert.rejects(() => createOutboundCampaign(b, deps(), input({ body: "{واحد| } مرحباً" })), /كلمتين/);
+  assert.equal((a.tables.cmp_campaigns?.length ?? 0) + (b.tables.cmp_templates?.length ?? 0), 0);
+});

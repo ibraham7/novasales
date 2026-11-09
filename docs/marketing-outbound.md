@@ -83,3 +83,11 @@ Cold email to the businesses whose site gave an email (see enrichment). Sent thr
 **What it does:** the final approval (same three confirmations as WhatsApp) creates a campaign and one row per recipient; the minute timer sends each running campaign's per-minute limit, never above the daily cap. Every email carries the sender's name, an unsubscribe link and the one-click `List-Unsubscribe` headers. Pressing the link, a bounce or a complaint puts the address on the do-not-send list (channel `email`); a complaint also stops the business. Addresses on the list are skipped at send time too. A send that never finished is not retried automatically.
 
 Tables: `ob_email_campaigns`, `ob_email_messages` (migration `20261110120000`, server-only).
+
+## Slow sending (daily limit, hours, ramp-up, wording options)
+
+A WhatsApp campaign can send like a person instead of in a burst: a **daily limit**, only inside a **window of hours** in a chosen time zone (Turkey by default: 30 a day, 10:00 to 17:00), with a random gap (about ±40 %) that spreads the day's messages over the whole window, never faster than one every 45 seconds. An optional **ramp-up** starts small (10) and adds a few each day (5) up to the limit. When the window closes or the day's limit is reached the campaign waits and continues by itself the next day. The limits are per campaign; the number's own protection (hourly and daily caps by health, the 48 hour observation window) still applies on top.
+
+Wording options: `{مرحباً|أهلاً|السلام عليكم}` in the message gives each recipient one of the options at random, so the messages are not identical. A campaign without a schedule keeps the per-minute behaviour.
+
+Stored in `cmp_campaigns.send_schedule` (migration `20261112120000`, additive). Logic in `src/modules/campaigns/send-schedule.ts`, used by the dispatcher.
