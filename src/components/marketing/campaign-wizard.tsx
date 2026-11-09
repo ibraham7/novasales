@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, Send } from "lucide-react";
 import { approveOutboundCampaign, getOutboundSettings, previewOutbound } from "@/modules/marketing/outbound.functions";
+import { allowanceFor, scheduleProblem, toMinutes, type SendSchedule } from "@/modules/campaigns/send-schedule";
 import { toast } from "@/lib/toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,15 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
   const [body, setBody] = useState("");
   const [accountId, setAccountId] = useState("");
   const [throttle, setThrottle] = useState(5);
+  // Slow sending over the hours of each day is the default; «fast» keeps the per-minute speed.
+  const [paced, setPaced] = useState(true);
+  const [daily, setDaily] = useState(30);
+  const [from, setFrom] = useState("10:00");
+  const [to, setTo] = useState("17:00");
+  const [timezone, setTimezone] = useState("Europe/Istanbul");
+  const [ramp, setRamp] = useState(true);
+  const [rampStart, setRampStart] = useState(10);
+  const [rampStep, setRampStep] = useState(5);
   const [later, setLater] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [ack, setAck] = useState({ review: false, b2b: false, optOut: false });
@@ -55,16 +65,29 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
   const tooMany = eligible > (preview.data?.maxRecipients ?? 200);
   const sample = preview.data?.sample[0]?.name ?? "اسم الجهة";
   const footer = settings.data?.optout_footer ?? "";
-  const shown = useMemo(() => `${body.replace(/\{\{\s*name\s*\}\}/g, sample)}${body ? `\n\n${footer}` : ""}`, [body, sample, footer]);
+  const shown = useMemo(() => `${body.replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, (_m, options: string) => options.split("|")[0]!.trim()).replace(/\{\{\s*name\s*\}\}/g, sample)}${body ? `\n\n${footer}` : ""}`, [body, sample, footer]);
   const minutes = Math.max(1, Math.ceil(eligible / Math.max(1, throttle)));
   const blocked = settings.data && !settings.data.allow_unofficial;
-  const step2Ok = name.trim().length >= 2 && body.trim().length > 0 && !!account && !blocked && (!later || !!scheduledAt);
+  const schedule: SendSchedule | null = paced ? { dailyLimit: daily, windowStart: from, windowEnd: to, timezone, ramp: ramp ? { start: Math.min(rampStart, daily), step: rampStep } : null } : null;
+  const scheduleError = schedule ? scheduleProblem(schedule) : null;
+  // How the day's messages are spread, and how many days the whole list takes.
+  const everyMinutes = schedule ? Math.round(((toMinutes(schedule.windowEnd) - toMinutes(schedule.windowStart)) / Math.max(1, Math.min(daily, schedule.ramp ? allowanceFor(schedule, 99) : daily))) * 10) / 10 : 0;
+  const days = (() => {
+    if (!schedule || !eligible) return 0;
+    let total = 0;
+    for (let d = 0; d < 365; d++) {
+      total += allowanceFor(schedule, d);
+      if (total >= eligible) return d + 1;
+    }
+    return 365;
+  })();
+  const step2Ok = name.trim().length >= 2 && body.trim().length > 0 && !!account && !blocked && (!later || !!scheduledAt) && !scheduleError;
   const allAck = ack.review && ack.b2b && ack.optOut;
 
   const approve = useMutation({
     mutationFn: () =>
       approveFn({
-        data: { name, body, accountId, throttlePerMinute: throttle, scheduledAt: later && scheduledAt ? new Date(scheduledAt).toISOString() : null, acknowledgments: ack },
+        data: { name, body, accountId, throttlePerMinute: throttle, schedule, scheduledAt: later && scheduledAt ? new Date(scheduledAt).toISOString() : null, acknowledgments: ack },
       }),
     onSuccess: (r) => {
       toast.success(`اعتُمدت الحملة لـ ${r.recipients} جهة. ستبدأ بالإرسال ببطء`);
@@ -171,24 +194,82 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
                 <p className="whitespace-pre-wrap">{shown}</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="cw-speed">السرعة</Label>
-                <select id="cw-speed" className={selectClass} value={throttle} onChange={(e) => setThrottle(Number(e.target.value))}>
-                  {speeds.map((v) => (
-                    <option key={v} value={v}>
-                      {v} رسالة بالدقيقة
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cw-when">الموعد</Label>
-                <select id="cw-when" className={selectClass} value={later ? "later" : "now"} onChange={(e) => setLater(e.target.value === "later")}>
-                  <option value="now">ابدأ بعد الاعتماد</option>
-                  <option value="later">في موعد محدد</option>
-                </select>
-              </div>
+            <div className="space-y-2 rounded-lg border p-3">
+              <p className="text-sm font-medium">طريقة الإرسال</p>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="radio" name="cw-mode" className="mt-1" checked={paced} onChange={() => setPaced(true)} />
+                <span>
+                  <b>موزّع على ساعات اليوم (موصى به)</b>
+                  <span className="block text-xs text-muted-foreground">رسالة كل بضع دقائق بفاصل عشوائي، ضمن ساعات محددة وحد يومي، وتكمل في اليوم التالي. أخف على الرقم وأقل خطراً للحظر.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="radio" name="cw-mode" className="mt-1" checked={!paced} onChange={() => setPaced(false)} />
+                <span>
+                  <b>سريع</b>
+                  <span className="block text-xs text-muted-foreground">عدة رسائل بالدقيقة بدون حد يومي. أخطر على الرقم.</span>
+                </span>
+              </label>
+              {paced ? (
+                <div className="grid grid-cols-2 gap-3 pt-1 sm:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="cw-daily">رسائل باليوم</Label>
+                    <Input id="cw-daily" type="number" min={1} max={500} value={daily} onChange={(e) => setDaily(Number(e.target.value))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="cw-from">من الساعة</Label>
+                    <Input id="cw-from" type="time" value={from} onChange={(e) => setFrom(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="cw-to">إلى الساعة</Label>
+                    <Input id="cw-to" type="time" value={to} onChange={(e) => setTo(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="cw-tz">التوقيت</Label>
+                    <select id="cw-tz" className={selectClass} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                      <option value="Europe/Istanbul">تركيا</option>
+                      <option value="Asia/Riyadh">السعودية</option>
+                      <option value="Asia/Dubai">الإمارات</option>
+                      <option value="Asia/Damascus">سوريا</option>
+                      <option value="Africa/Cairo">مصر</option>
+                    </select>
+                  </div>
+                  <label className="col-span-2 flex items-center gap-2 text-sm sm:col-span-4">
+                    <Checkbox checked={ramp} onCheckedChange={(v) => setRamp(v === true)} /> تسخين تدريجي: يبدأ بعدد صغير ويزيد كل يوم حتى الحد اليومي
+                  </label>
+                  {ramp && (
+                    <>
+                      <div className="space-y-1">
+                        <Label htmlFor="cw-rs">يبدأ بـ</Label>
+                        <Input id="cw-rs" type="number" min={1} max={500} value={rampStart} onChange={(e) => setRampStart(Number(e.target.value))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="cw-rp">ويزيد كل يوم</Label>
+                        <Input id="cw-rp" type="number" min={0} max={100} value={rampStep} onChange={(e) => setRampStep(Number(e.target.value))} />
+                      </div>
+                    </>
+                  )}
+                  {scheduleError ? <p className="col-span-2 text-xs text-destructive sm:col-span-4">{scheduleError}</p> : <p className="col-span-2 text-xs text-muted-foreground sm:col-span-4">{"تقريباً رسالة كل " + everyMinutes + " دقيقة في أيام الحد الكامل. لتنويع الصياغة اكتب {أ|ب|ج}، مثل: {مرحباً|أهلاً}."}</p>}
+                </div>
+              ) : (
+                <div className="space-y-1 pt-1">
+                  <Label htmlFor="cw-speed">السرعة</Label>
+                  <select id="cw-speed" className={selectClass} value={throttle} onChange={(e) => setThrottle(Number(e.target.value))}>
+                    {speeds.map((v) => (
+                      <option key={v} value={v}>
+                        {v} رسالة بالدقيقة
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cw-when">الموعد</Label>
+              <select id="cw-when" className={selectClass} value={later ? "later" : "now"} onChange={(e) => setLater(e.target.value === "later")}>
+                <option value="now">ابدأ بعد الاعتماد</option>
+                <option value="later">في موعد محدد</option>
+              </select>
             </div>
             {later && <Input type="datetime-local" aria-label="موعد الإرسال" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />}
           </div>
@@ -200,7 +281,7 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
               <p>
                 <b>{name}</b>
               </p>
-              <p>{eligible} جهة · من الرقم: {account?.name} · {throttle} رسالة بالدقيقة (حوالي {minutes} دقيقة)</p>
+              <p>{eligible} جهة · من الرقم: {account?.name} · {schedule ? `${daily} رسالة باليوم من ${from} إلى ${to}${ramp ? ` (تسخين: ${rampStart} ثم +${rampStep} كل يوم)` : ""}، تنتهي خلال حوالي ${days} ${days === 1 ? "يوم" : "أيام"}` : `${throttle} رسالة بالدقيقة (حوالي ${minutes} دقيقة)`}</p>
               <p>{later && scheduledAt ? `الموعد: ${new Date(scheduledAt).toLocaleString("ar")}` : "تبدأ بعد الاعتماد مباشرة"}</p>
             </div>
             <div className="whitespace-pre-wrap rounded-lg bg-emerald-50 p-3 text-sm dark:bg-emerald-950/30">{shown}</div>

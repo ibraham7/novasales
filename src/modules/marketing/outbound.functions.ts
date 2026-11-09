@@ -119,6 +119,16 @@ export const approveOutboundCampaign = createServerFn({ method: "POST" })
         prospectIds: z.array(z.string().uuid()).max(5000).optional(),
         scheduledAt: z.string().max(40).optional().nullable(),
         throttlePerMinute: z.number().int().min(1).max(60).default(5),
+        schedule: z
+          .object({
+            dailyLimit: z.number().int().min(1).max(500),
+            windowStart: z.string().max(5),
+            windowEnd: z.string().max(5),
+            timezone: z.string().max(60),
+            ramp: z.object({ start: z.number().int().min(1).max(500), step: z.number().int().min(0).max(100) }).nullable(),
+          })
+          .nullable()
+          .optional(),
         acknowledgments: z.object({ b2b: z.boolean(), optOut: z.boolean(), review: z.boolean() }),
       })
       .parse(data),
