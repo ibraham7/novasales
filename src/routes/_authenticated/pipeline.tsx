@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
+import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
 import { getMergedChatForOpportunity } from "@/modules/messaging";
 import { setStageQualityLevel } from "@/modules/integrations/conversions.functions";
 import { QUALITY_LEVELS, QUALITY_LEVEL_KEYS, type QualityLevel } from "@/modules/integrations/conversion-model";
@@ -62,6 +62,7 @@ function PipelinePage() {
   const isDetailRoute = useRouterState({ select: (s) => s.location.pathname.startsWith("/pipeline/") });
   const listMeta = useServerFn(getPipelinePageMeta);
   const listBoard = useServerFn(listOpportunitiesBoard);
+  const listCounts = useServerFn(getBoardStageCounts);
   const move = useServerFn(moveOpportunityToStage);
   const doQuickAssign = useServerFn(quickAssignOpportunity);
   const doRedistribute = useServerFn(redistributeLostTickets);
@@ -83,14 +84,18 @@ function PipelinePage() {
   const membersQ = { ...metaQ, data: metaQ.data?.members };
   // أثناء البحث نجلب كل التذاكر (لا أحدث 500 فقط) حتى تظهر التذاكر القديمة.
   const searching = search.trim().length > 0;
+  // Each stage shows its newest tickets first; «عرض المزيد» raises that stage's limit.
+  const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
+  const loadMore = useCallback((stageId: string) => setStageLimits((l) => ({ ...l, [stageId]: (l[stageId] ?? PER_STAGE) + MORE_STEP })), []);
   const boardQ = useQuery({
-    queryKey: ["pipeline-board", deptFilter, agentFilter, searching],
+    queryKey: ["pipeline-board", deptFilter, agentFilter, searching, searching ? null : stageLimits],
     queryFn: () =>
       listBoard({
         data: {
           ...(deptFilter === "all" ? {} : { departmentId: deptFilter }),
           ...(agentFilter === "all" ? {} : { ownerAgentId: agentFilter }),
           all: searching,
+          ...(searching ? {} : { perStage: PER_STAGE, limits: stageLimits }),
         },
       }),
 
@@ -101,6 +106,21 @@ function PipelinePage() {
     refetchOnWindowFocus: false,
     placeholderData: (prev: any) => prev,
   });
+
+  const countsQ = useQuery({
+    queryKey: ["pipeline-board", "counts", deptFilter, agentFilter],
+    queryFn: () =>
+      listCounts({
+        data: {
+          ...(deptFilter === "all" ? {} : { departmentId: deptFilter }),
+          ...(agentFilter === "all" ? {} : { ownerAgentId: agentFilter }),
+        },
+      }),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (prev: any) => prev,
+  });
+  const stageCounts: Record<string, number> = countsQ.data?.counts ?? {};
 
   useEffect(() => {
     if (!pipelineId && pipesQ.data && pipesQ.data.length > 0) {
@@ -547,6 +567,8 @@ function PipelinePage() {
               key={s.id}
               stage={s}
               items={byStage.get(s.id) ?? []}
+              total={!searching && channelFilter === "all" && !unreadOnly ? stageCounts[s.id] : undefined}
+              onLoadMore={() => loadMore(s.id)}
               loading={boardQ.isLoading && !boardQ.data}
               members={members}
               canManageStages={canManageStages}
@@ -569,7 +591,8 @@ function PipelinePage() {
   );
 }
 
-const PAGE = 20;
+const PER_STAGE = 10;
+const MORE_STEP = 20;
 
 /* One kanban column. Cards are paged so a column holding hundreds of
  * opportunities never renders hundreds of DOM nodes at once — that was the
@@ -577,6 +600,8 @@ const PAGE = 20;
 function KanbanColumn({
   stage,
   items,
+  total,
+  onLoadMore,
   loading,
   members,
   canManageStages,
@@ -594,6 +619,9 @@ function KanbanColumn({
 }: {
   stage: any;
   items: any[];
+  /** All tickets the stage holds (items may be only the newest ones); unset when a filter is active. */
+  total?: number;
+  onLoadMore: () => void;
   loading: boolean;
   members: any[];
   stages: any[];
@@ -609,8 +637,7 @@ function KanbanColumn({
   onRedistribute?: () => void;
   redistributing?: boolean;
 }) {
-  const [visible, setVisible] = useState(PAGE);
-  const shown = useMemo(() => items.slice(0, visible), [items, visible]);
+  const all = total ?? items.length;
 
   return (
     <div
@@ -634,7 +661,7 @@ function KanbanColumn({
           <StageNameEditor stage={stage} canEdit={canManageStages} onRename={onRename} />
           <span className="text-[10px] text-muted-foreground shrink-0">{stage.probability}%</span>
         </div>
-        <Badge variant="secondary" className="shrink-0">{items.length}</Badge>
+        <Badge variant="secondary" className="shrink-0">{all}</Badge>
       </div>
       {onRedistribute && (
         <Button size="sm" variant="outline" className="mb-3 shrink-0" disabled={redistributing || items.length === 0} onClick={onRedistribute}>
@@ -646,17 +673,12 @@ function KanbanColumn({
           [0, 1, 2].map((i) => <div key={i} className="h-20 rounded-lg bg-background/60 animate-pulse" />)
         ) : (
           <>
-            {shown.map((o: any) => (
+            {items.map((o: any) => (
               <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onMove={onMove} />
             ))}
-            {items.length > visible && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-xs"
-                onClick={() => setVisible((v) => v + PAGE)}
-              >
-                عرض المزيد ({items.length - visible})
+            {all > items.length && (
+              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={onLoadMore}>
+                عرض المزيد ({all - items.length})
               </Button>
             )}
             {items.length === 0 && (

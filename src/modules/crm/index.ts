@@ -19,6 +19,7 @@ export {
   listStages,
   getPipelinePageMeta,
   listOpportunitiesBoard,
+  getBoardStageCounts,
   moveOpportunityStage,
 } from "./pipeline.functions";
 
