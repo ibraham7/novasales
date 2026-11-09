@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { sendTarget } from "@/modules/channels/whatsapp/recipient";
 import { z } from "@/lib/validation";
 import { shapeSessionRow } from "./chats.server";
 
@@ -346,7 +347,7 @@ export const sendMessageFn = createServerFn({ method: "POST" })
     const replySnapshot = quote.snapshot;
     const quotedRef = quote.quoted;
 
-    const number = String(sess.peer_identifier).split("@")[0];
+    const number = sendTarget(sess.peer_identifier);
     let externalId: string | null = null;
     let status = "sent";
     let sendError: string | null = null;
@@ -1015,7 +1016,7 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
       base64: data.base64,
       fileBytes: buffer.length,
       mediaUrl: signed,
-      number: String(sess.peer_identifier).split("@")[0],
+      number: sendTarget(sess.peer_identifier),
       quoted: quote.quoted ?? undefined,
       ops,
       risk,
@@ -1184,7 +1185,7 @@ export const editMessageFn = createServerFn({ method: "POST" })
       if (msg.external_id && acc?.external_ref && sess?.peer_identifier) {
         const { opEditMessage } = await import("@/modules/channels/whatsapp/channel-ops.server");
         await opEditMessage(sess.channel_account_id, {
-          number: String(sess.peer_identifier).split("@")[0],
+          number: sendTarget(sess.peer_identifier),
           text: data.text,
           key: { id: msg.external_id, remoteJid: sess.peer_identifier, fromMe: true },
         });
@@ -1458,7 +1459,7 @@ export const forwardMessageFn = createServerFn({ method: "POST" })
           .maybeSingle();
         if (!acc?.external_ref) throw new Error("جلسة الواتساب غير مرتبطة");
 
-        const number = String(peerJid).split("@")[0];
+        const number = sendTarget(peerJid);
         let externalId: string | null = null;
 
         // إعادة التوجيه تمر بحارس المخاطر مثل بقية مسارات الإرسال،

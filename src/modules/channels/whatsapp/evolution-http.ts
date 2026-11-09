@@ -22,7 +22,12 @@ export function providerReason(body: unknown): string | null {
   const text = (v: unknown): string | null => {
     if (typeof v === "string") return v.trim() || null;
     if (Array.isArray(v)) return v.map((x) => text(x)).filter(Boolean).join("؛ ") || null;
-    if (v && typeof v === "object") return text((v as any).message) ?? text((v as any).error);
+    if (v && typeof v === "object") {
+      const o = v as any;
+      // Evolution answers «Bad Request» with the numbers it could not find on WhatsApp.
+      if (o.exists === false) return `الرقم ${String(o.number ?? o.jid ?? "").split("@")[0]} غير مسجّل على واتساب`;
+      return text(o.message) ?? text(o.error);
+    }
     return null;
   };
   if (!body || typeof body !== "object") return typeof body === "string" ? text(body)?.slice(0, 200) ?? null : null;

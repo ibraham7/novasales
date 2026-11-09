@@ -12,3 +12,10 @@ test("the reason is found wherever Evolution puts it", () => {
   assert.equal(providerReason(null), null);
   assert.equal(providerReason({}), null);
 });
+
+test("a number WhatsApp does not know is named in the reason", () => {
+  assert.equal(
+    providerReason({ status: 400, error: "Bad Request", response: { message: [{ jid: "7615211896949@s.whatsapp.net", exists: false, number: "7615211896949" }] } }),
+    "الرقم 7615211896949 غير مسجّل على واتساب",
+  );
+});
