@@ -17,6 +17,19 @@ function getConfig() {
   return { url: url.replace(/\/$/, ""), key };
 }
 
+/** The reason inside Evolution's error body, wherever this version puts it (message, response.message, output.payload.message, error). */
+export function providerReason(body: unknown): string | null {
+  const text = (v: unknown): string | null => {
+    if (typeof v === "string") return v.trim() || null;
+    if (Array.isArray(v)) return v.map((x) => text(x)).filter(Boolean).join("؛ ") || null;
+    if (v && typeof v === "object") return text((v as any).message) ?? text((v as any).error);
+    return null;
+  };
+  if (!body || typeof body !== "object") return typeof body === "string" ? text(body)?.slice(0, 200) ?? null : null;
+  const b = body as any;
+  return (text(b.response?.message) ?? text(b.output?.payload?.message) ?? text(b.message) ?? text(b.error) ?? text(b.response) ?? null)?.slice(0, 300) ?? null;
+}
+
 const DEFAULT_TIMEOUT_MS = 8000;
 
 async function evoFetch(path: string, init: RequestInit = {}, attempt = 0): Promise<unknown> {
@@ -50,11 +63,8 @@ async function evoFetch(path: string, init: RequestInit = {}, attempt = 0): Prom
   }
   if (!res.ok) {
     if (res.status >= 500 && attempt < 1) return evoFetch(path, init, attempt + 1);
-    const msg =
-      (body && typeof body === "object" && "message" in body
-        ? String((body as { message: unknown }).message)
-        : null) ?? `Evolution API خطأ ${res.status}`;
-    throw new Error(msg);
+    const reason = providerReason(body);
+    throw new Error(reason ? `Evolution API خطأ ${res.status}: ${reason}` : `Evolution API خطأ ${res.status}`);
   }
   return body;
 }
