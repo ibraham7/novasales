@@ -74,6 +74,10 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       ownerAgentId: z.string().uuid().optional(),
       /** يجلب كل التذاكر (وليس أحدث 500) — يُستخدم أثناء البحث */
       all: z.boolean().optional(),
+      /** يجلب أحدث N تذكرة فقط من كل مرحلة (الباقي بـ«عرض المزيد») */
+      perStage: z.number().int().min(1).max(200).optional(),
+      /** حدّ خاص بمراحل طلب المستخدم عرض المزيد منها */
+      limits: z.record(z.number().int().min(1).max(500)).optional(),
     }).parse(d ?? {})
   )
   .handler(async ({ data }) => {
@@ -98,17 +102,32 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       if (departmentIds.length === 0) return [];
     }
 
-    let query = db.from("opp_opportunities").select("*")
-      .eq("organization_id", organizationId).is("deleted_at", null)
-      .order("opened_at", { ascending: false }).order("id");
-    if (ownerAgentId) query = query.eq("owner_agent_id", ownerAgentId);
-    if (departmentIds) query = query.in("department_id", departmentIds);
+    const build = () => {
+      let q = db.from("opp_opportunities").select("*")
+        .eq("organization_id", organizationId).is("deleted_at", null)
+        .order("opened_at", { ascending: false }).order("id");
+      if (ownerAgentId) q = q.eq("owner_agent_id", ownerAgentId);
+      if (departmentIds) q = q.in("department_id", departmentIds);
+      return q;
+    };
     const rows: any[] = [];
-    const limit = data.all ? 3000 : 500;
-    for (let offset = 0; offset < limit; offset += 500) {
-      const page = await checkedRows(query.range(offset, Math.min(offset + 499, limit - 1)));
-      rows.push(...page);
-      if (page.length < 500) break;
+    if (data.perStage && !data.all) {
+      // Only the newest few of each stage: a stage with hundreds of tickets no longer loads them all.
+      const stageRows = await checkedRows(
+        db.from("crm_pipeline_stages").select("id, crm_pipelines!inner(organization_id)").eq("crm_pipelines.organization_id", organizationId).limit(200),
+      );
+      const pages = await Promise.all(
+        stageRows.map((st: any) => checkedRows(build().eq("stage_id", st.id).limit(data.limits?.[st.id] ?? data.perStage!))),
+      );
+      for (const page of pages) rows.push(...page);
+    } else {
+      const query = build();
+      const limit = data.all ? 3000 : 500;
+      for (let offset = 0; offset < limit; offset += 500) {
+        const page = await checkedRows(query.range(offset, Math.min(offset + 499, limit - 1)));
+        rows.push(...page);
+        if (page.length < 500) break;
+      }
     }
     if (!rows.length) return [];
     // Contacts, owners and chat links depend only on the opportunities: one parallel round.
@@ -156,6 +175,42 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
   });
 
 
+
+/** How many tickets each stage holds (for the badge and «عرض المزيد»), within what the viewer may see. */
+export const getBoardStageCounts = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) =>
+    z.object({ departmentId: z.string().uuid().optional(), ownerAgentId: z.string().uuid().optional() }).parse(d ?? {})
+  )
+  .handler(async ({ data }) => {
+    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+    const { getWorkspaceAccess, requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { getOpportunityVisibility } = await import("@/platform/rbac/data-scope.server");
+    const db = supabaseAdmin as any;
+    const { organizationId } = await getWorkspace();
+    await requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
+    const access = await getWorkspaceAccess();
+    const visibility = getOpportunityVisibility(access);
+    let ownerAgentId = data.ownerAgentId ?? null;
+    let departmentIds: string[] | null = data.departmentId ? [data.departmentId] : null;
+    if (visibility === "own") {
+      ownerAgentId = access.userId;
+      departmentIds = null;
+    } else if (visibility === "department") {
+      if (data.departmentId && !access.departmentIds.includes(data.departmentId)) return { counts: {} as Record<string, number> };
+      departmentIds = data.departmentId ? [data.departmentId] : access.departmentIds;
+      if (departmentIds.length === 0) return { counts: {} as Record<string, number> };
+    }
+    const counts: Record<string, number> = {};
+    for (let offset = 0; ; offset += 1000) {
+      let q = db.from("opp_opportunities").select("stage_id").eq("organization_id", organizationId).is("deleted_at", null).order("id");
+      if (ownerAgentId) q = q.eq("owner_agent_id", ownerAgentId);
+      if (departmentIds) q = q.in("department_id", departmentIds);
+      const page = await checkedRows(q.range(offset, offset + 999));
+      for (const r of page) if (r.stage_id) counts[r.stage_id] = (counts[r.stage_id] ?? 0) + 1;
+      if (page.length < 1000) break;
+    }
+    return { counts };
+  });
 
 export const moveOpportunityStage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
