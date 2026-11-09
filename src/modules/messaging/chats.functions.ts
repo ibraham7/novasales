@@ -897,192 +897,134 @@ export const sendMediaMessageFn = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-    const { canAccessOpportunityRow, getOpportunityVisibility } =
-      await import("@/platform/rbac/data-scope.server");
+    const [{ getWorkspace, supabaseAdmin }, { requireAnyPermission }, { canAccessOpportunityRow, getOpportunityVisibility }] = await Promise.all([
+      import("@/platform/workspace/workspace.server"),
+      import("@/platform/rbac/rbac.server"),
+      import("@/platform/rbac/data-scope.server"),
+    ]);
     const db = supabaseAdmin as any;
     const { userId, organizationId } = await getWorkspace();
-    const access = await requireAnyPermission(["messaging.send"]);
+    const fileBytes = Buffer.byteLength(data.base64, "base64");
+    const { ensureLimit } = await import("@/modules/billing/entitlements.server");
 
-    const { data: chatLink } = await db
-      .from("crm_opportunity_sessions")
-      .select("opportunity_id")
-      .eq("organization_id", organizationId)
-      .eq("session_ref", data.chatId)
-      .maybeSingle();
-    if (chatLink?.opportunity_id) {
-      const { data: opp } = await db
-        .from("opp_opportunities")
-        .select("owner_agent_id, department_id")
-        .eq("id", chatLink.opportunity_id)
+    // Permission, the linked opportunity, the chat and the storage allowance do not depend on each other:
+    // one parallel round instead of one after another.
+    const [access, chatLinkRes, sessRes] = await Promise.all([
+      requireAnyPermission(["messaging.send"]),
+      db
+        .from("crm_opportunity_sessions")
+        .select("opportunity_id, opp_opportunities(owner_agent_id, department_id, organization_id)")
         .eq("organization_id", organizationId)
-        .maybeSingle();
-      if (!opp || !canAccessOpportunityRow(access, opp))
+        .eq("session_ref", data.chatId)
+        .maybeSingle(),
+      db
+        .from("msg_sessions")
+        .select("id, channel_account_id, peer_identifier, msg_channel_accounts(external_ref, status)")
+        .eq("id", data.chatId)
+        .eq("organization_id", organizationId)
+        .maybeSingle(),
+      ensureLimit("storage_mb", fileBytes / 1048576, organizationId),
+    ]);
+    const chatLink = chatLinkRes?.data;
+    const sess = sessRes?.data;
+    if (chatLink?.opportunity_id) {
+      const embedded = chatLink.opp_opportunities;
+      const opp = Array.isArray(embedded) ? embedded[0] : embedded;
+      if (!opp || opp.organization_id !== organizationId || !canAccessOpportunityRow(access, opp))
         throw new Error("لا تملك صلاحية إرسال في هذه المحادثة");
     } else if (getOpportunityVisibility(access) !== "all") {
       throw new Error("لا تملك صلاحية إرسال في هذه المحادثة");
     }
-
-    const { data: sess } = await db
-      .from("msg_sessions")
-      .select("id, channel_account_id, peer_identifier")
-      .eq("id", data.chatId)
-      .eq("organization_id", organizationId)
-      .maybeSingle();
     if (!sess) throw new Error("المحادثة غير موجودة");
-    const { data: acc } = await db
-      .from("msg_channel_accounts")
-      .select("external_ref, status")
-      .eq("id", sess.channel_account_id)
-      .maybeSingle();
+    const acc = Array.isArray(sess.msg_channel_accounts) ? sess.msg_channel_accounts[0] : sess.msg_channel_accounts;
     if (!acc) throw new Error("جلسة الواتساب غير مرتبطة");
 
-    const { ensureLimit } = await import("@/modules/billing/entitlements.server");
-    await ensureLimit(
-      "storage_mb",
-      Buffer.byteLength(data.base64, "base64") / 1048576,
-      organizationId,
-    );
-    // Upload to private storage for our own playback.
+    const [ops, { resolveAccountProvider }, risk] = await Promise.all([
+      import("@/modules/channels/whatsapp/channel-ops.server"),
+      import("@/modules/channels/whatsapp/registry.server"),
+      import("@/modules/risk/risk.server"),
+    ]);
     const buffer = Buffer.from(data.base64, "base64");
     const safeName = data.fileName.replace(/[^\w.\-]+/g, "_").slice(0, 120) || "file";
     const storagePath = `chat-media/${organizationId}/${data.chatId}/${Date.now()}-${safeName}`;
-    const { error: upErr } = await db.storage
-      .from("crm-files")
-      .upload(storagePath, buffer, { contentType: data.mimeType, upsert: false });
-    if (upErr) throw new Error(`تعذّر رفع الملف: ${upErr.message}`);
     const storedUrl = `crm-files/${storagePath}`;
 
-    // Signed URL for Evolution to fetch (avoids base64 in JSON → 413 Payload Too Large).
-    const { data: signed } = await db.storage
-      .from("crm-files")
-      .createSignedUrl(storagePath, 60 * 60 * 24); // 24h
-    const mediaUrlForEvo = signed?.signedUrl ?? null;
-
-    const ops = await import("@/modules/channels/whatsapp/channel-ops.server");
-    const { resolveAccountProvider } = await import("@/modules/channels/whatsapp/registry.server");
-    const providerRef = await resolveAccountProvider(sess.channel_account_id);
-    if (!providerRef.provider.isConfigured())
-      throw new Error(`محرّك ${providerRef.provider.label} غير مُهيأ.`);
-    const number = String(sess.peer_identifier).split("@")[0];
-
-    // Resolve reply (quoted) for real WhatsApp reply.
-    let replySnapshot: any = null;
-    let quotedRef: any = null;
-    if (data.replyToMessageId) {
-      const q = await buildQuotedFromMessageId(
-        db,
-        organizationId,
-        data.replyToMessageId,
-        sess.peer_identifier,
-      );
-      replySnapshot = q.snapshot;
-      quotedRef = q.quoted;
-    }
-
-    let status = "sent";
-    let externalId: string | null = null;
-    let sendError: string | null = null;
-
-    // The WhatsApp server refuses request bodies over about 1 MB (HTTP 413) and base64 grows a file
-    // by a third, so a larger file goes as its link first instead of failing once before the retry.
-    const RAW_BASE64_LIMIT = 700 * 1024;
-    const preferBase64 = buffer.length <= RAW_BASE64_LIMIT || !mediaUrlForEvo;
-
-    async function trySend(useBase64: boolean) {
-      if (data.kind === "audio") {
-        const audioArg = useBase64 ? data.base64 : (mediaUrlForEvo ?? data.base64);
-        const res: any = await ops.opSendAudioNote(
-          sess.channel_account_id,
-          number,
-          audioArg,
-          quotedRef ?? undefined,
-        );
-        return ops.sentExternalId(res);
-      }
-      const mediaArg = useBase64 ? data.base64 : mediaUrlForEvo;
-      if (!mediaArg) throw new Error("تعذّر تحضير الملف للإرسال");
-      const res: any = await ops.opSendMedia(sess.channel_account_id, number, {
-        mediatype: data.kind,
-        media: mediaArg,
-        mimetype: data.mimeType,
-        fileName: data.fileName,
-        caption: data.caption,
-        quoted: quotedRef ?? undefined,
-      });
-      return ops.sentExternalId(res);
-    }
-
-    const risk = await import("@/modules/risk/risk.server");
-    const guard = await risk.riskGuard({
-      orgId: organizationId,
-      accountId: sess.channel_account_id,
-      source: "manual",
-      peer: sess.peer_identifier,
-    });
-    if (!guard.allowed)
+    // The upload (for our own playback and a link WhatsApp can fetch), the provider, the number's safety
+    // check and the quoted message are independent: one parallel round.
+    const [signed, providerRef, guard, quote] = await Promise.all([
+      (async () => {
+        const { error: upErr } = await db.storage.from("crm-files").upload(storagePath, buffer, { contentType: data.mimeType, upsert: false });
+        if (upErr) throw new Error(`تعذّر رفع الملف: ${upErr.message}`);
+        const { data: link } = await db.storage.from("crm-files").createSignedUrl(storagePath, 60 * 60 * 24); // 24h
+        return link?.signedUrl ?? null;
+      })(),
+      resolveAccountProvider(sess.channel_account_id),
+      risk.riskGuard({ orgId: organizationId, accountId: sess.channel_account_id, source: "manual", peer: sess.peer_identifier }),
+      data.replyToMessageId
+        ? buildQuotedFromMessageId(db, organizationId, data.replyToMessageId, sess.peer_identifier)
+        : Promise.resolve({ quoted: null as any, snapshot: null as any }),
+    ]);
+    if (!providerRef.provider.isConfigured()) throw new Error(`محرّك ${providerRef.provider.label} غير مُهيأ.`);
+    if (!guard.allowed) {
+      void db.storage.from("crm-files").remove([storagePath]);
       throw new Error(guard.message ?? "تم إيقاف الإرسال من هذا الرقم مؤقتاً لحمايته.");
-
-    try {
-      try {
-        externalId = await trySend(preferBase64);
-      } catch (firstErr) {
-        // Fallback: swap strategy (URL ↔ base64) once.
-        console.warn("[sendMedia] first attempt failed, retrying", firstErr);
-        externalId = await trySend(!preferBase64);
-      }
-      await risk.recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id });
-    } catch (e) {
-      status = "failed";
-      sendError = e instanceof Error ? e.message : "فشل الإرسال";
-      await risk.recordHealthEvent({
-        orgId: organizationId,
-        accountId: sess.channel_account_id,
-        eventType: "send_failed",
-        detail: { error: sendError },
-      });
     }
 
     const preview =
       data.caption?.trim() ||
-      (data.kind === "image"
-        ? "📷 صورة"
-        : data.kind === "video"
-          ? "🎬 فيديو"
-          : data.kind === "audio"
-            ? "🎙️ رسالة صوتية"
-            : `📎 ${data.fileName}`);
+      (data.kind === "image" ? "📷 صورة" : data.kind === "video" ? "🎬 فيديو" : data.kind === "audio" ? "🎙️ رسالة صوتية" : `📎 ${data.fileName}`);
 
-    const { data: msg } = await db
-      .from("msg_messages")
-      .insert({
-        organization_id: organizationId,
-        session_id: data.chatId,
-        external_id: externalId,
-        direction: "outbound",
-        message_type: data.kind,
-        content: data.caption ?? null,
-        media_url: storedUrl,
-        media_meta: { file_name: data.fileName, mime_type: data.mimeType, size: buffer.length },
-        status,
-        sent_by_user_id: userId,
-        reply_to_message_id: data.replyToMessageId ?? null,
-        reply_to_snapshot: replySnapshot,
-      })
-      .select()
-      .single();
+    // The message stands in the chat at once as «sending»; handing the file to WhatsApp (the slow, variable
+    // part) finishes in the background and turns it to sent or failed.
+    const [{ data: msg, error: insertError }] = await Promise.all([
+      db
+        .from("msg_messages")
+        .insert({
+          organization_id: organizationId,
+          session_id: data.chatId,
+          external_id: null,
+          direction: "outbound",
+          message_type: data.kind,
+          content: data.caption ?? null,
+          media_url: storedUrl,
+          media_meta: { file_name: data.fileName, mime_type: data.mimeType, size: buffer.length },
+          status: "sending",
+          sent_by_user_id: userId,
+          reply_to_message_id: data.replyToMessageId ?? null,
+          reply_to_snapshot: quote.snapshot,
+        })
+        .select()
+        .single(),
+      db
+        .from("msg_sessions")
+        .update({ last_message_preview: preview.slice(0, 500), last_message_at: new Date().toISOString() })
+        .eq("id", data.chatId),
+    ]);
+    if (insertError || !msg) throw new Error(insertError?.message ?? "تعذر حفظ الرسالة");
 
-    await db
-      .from("msg_sessions")
-      .update({
-        last_message_preview: preview.slice(0, 500),
-        last_message_at: new Date().toISOString(),
-      })
-      .eq("id", data.chatId);
+    const { deliverMedia } = await import("./media-delivery");
+    void deliverMedia({
+      db,
+      organizationId,
+      accountId: sess.channel_account_id,
+      messageId: msg.id,
+      kind: data.kind,
+      fileName: data.fileName,
+      mimeType: data.mimeType,
+      caption: data.caption,
+      base64: data.base64,
+      fileBytes: buffer.length,
+      mediaUrl: signed,
+      number: String(sess.peer_identifier).split("@")[0],
+      quoted: quote.quoted ?? undefined,
+      ops,
+      risk,
+    }).catch(async (error) => {
+      console.error("[sendMedia] background send crashed", error);
+      await db.from("msg_messages").update({ status: "failed" }).eq("id", msg.id).eq("organization_id", organizationId).eq("status", "sending");
+    });
 
-    if (sendError) throw new Error(sendError);
-    return { id: msg?.id, status };
+    return { id: msg.id as string, status: "sending" as const };
   });
 
 /**
