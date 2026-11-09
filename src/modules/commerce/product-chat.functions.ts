@@ -278,17 +278,6 @@ export const sendProductToChatFn = createServerFn({
       ...otherImages.map((url) => ({ url, kind: "image" as const })),
       ...links(product.videos).map((url) => ({ url, kind: "video" as const })),
     ];
-    const mediaSentList: { url: string; kind: "image" | "video"; externalId: string | null }[] = [];
-    let mediaFailed = 0;
-    const outbound: Promise<unknown>[] = [];
-    const countOutbound = () =>
-      // Counting must never turn a message WhatsApp already accepted into a failure.
-      outbound.push(
-        risk
-          .recordOutbound({ orgId: organizationId, accountId: session.channel_account_id })
-          .catch((e) => console.error("[product-chat] recordOutbound failed", e)),
-      );
-
     const sendMedia = async (item: { url: string; kind: "image" | "video" }, text?: string): Promise<any> => {
       if (item.kind === "video" || isOwnStorageUrl(item.url)) {
         // Our storage links (and any video) go as links: the WhatsApp server fetches them itself and
@@ -319,48 +308,6 @@ export const sendProductToChatFn = createServerFn({
       }
     };
 
-    for (const [i, item] of media.entries()) {
-      if (i > 0) await sleep(BETWEEN_MEDIA_MS);
-      try {
-        const response = await sendMedia(item);
-        mediaSentList.push({ ...item, externalId: ops.sentExternalId(response) });
-        countOutbound();
-      } catch (error) {
-        mediaFailed++;
-        console.warn("[product-chat] media failed", item.kind, error instanceof Error ? error.message : error);
-      }
-    }
-
-    // Last message: the main photo with the details; if the photo cannot go, the details alone.
-    let externalId: string | null = null;
-    let coverSent = false;
-    let sendError: string | null = null;
-    try {
-      if (media.length) await sleep(BETWEEN_MEDIA_MS);
-      let response: any = null;
-      if (coverUrl) {
-        try {
-          response = await sendMedia({ url: coverUrl, kind: "image" }, caption);
-          coverSent = true;
-        } catch (error) {
-          console.warn("[product-chat] main photo failed", error instanceof Error ? error.message : error);
-        }
-      }
-      if (!coverSent) response = await ops.opSendText(session.channel_account_id, number, caption);
-      externalId = ops.sentExternalId(response);
-      countOutbound();
-    } catch (error) {
-      sendError = error instanceof Error ? error.message : "فشل إرسال المنتج";
-      await risk.recordHealthEvent({
-        orgId: organizationId,
-        accountId: session.channel_account_id,
-        eventType: "send_failed",
-        detail: { error: sendError, source: "product" },
-      });
-    }
-
-    const status = sendError ? "failed" : "sent";
-
     const productMeta = {
       source: "product",
       product_id: product.id,
@@ -369,109 +316,75 @@ export const sendProductToChatFn = createServerFn({
       price: product.price,
       currency: product.currency,
     };
-    // One insert with increasing times keeps the chat in the order the customer received them.
+    // The message stands in the chat at once as «sending»; one write for it and one for the chat list preview.
     const startedAt = Date.now();
-    const messageInsert = db
-      .from("msg_messages")
-      .insert([
-        ...mediaSentList.map((media, i) => ({
-          organization_id: organizationId,
-          session_id: data.chatId,
-          external_id: media.externalId,
-          direction: "outbound",
-          message_type: media.kind,
-          content: "",
-          media_url: media.url,
-          media_meta: productMeta,
-          status: "sent",
-          sent_by_user_id: userId,
-          created_at: new Date(startedAt + i * 10).toISOString(),
-        })),
-        {
-          organization_id: organizationId,
-          session_id: data.chatId,
-          external_id: externalId,
-          direction: "outbound",
-          message_type: coverSent ? "image" : "text",
-          content: caption,
-          media_url: coverSent ? coverUrl : null,
-          media_meta: productMeta,
-          status,
-          sent_by_user_id: userId,
-          created_at: new Date(startedAt + mediaSentList.length * 10).toISOString(),
-        },
-      ])
-      .select("id, created_at");
-
-    const previewUpdate = db
-      .from("msg_sessions")
-      .update({
-        last_message_preview:
-          `📦 ${product.name} — ${Number(
-            product.price,
-          )} ${product.currency}`,
-
-        last_message_at:
-          new Date().toISOString(),
-      })
-      .eq("id", data.chatId)
-      .eq(
-        "organization_id",
-        organizationId,
-      );
-
-    const interactionInsert = sendError
-      ? Promise.resolve()
-      : db
-        .from(
-          "sales_product_interactions",
-        )
+    const [placeholderRes] = await Promise.all([
+      db
+        .from("msg_messages")
         .insert({
-          organization_id:
-            organizationId,
-
-          product_id: product.id,
-
+          organization_id: organizationId,
           session_id: data.chatId,
-
-          opportunity_id:
-            opportunity?.id ?? null,
-
-          contact_id:
-            opportunity?.contact_id ??
-            null,
-
-          user_id: userId,
-
-          interaction_type: "sent",
-        });
-
-    const [{ data: messages, error: messageError }] =
-      await Promise.all([
-        messageInsert,
-        previewUpdate,
-        interactionInsert,
-        ...outbound,
-      ]);
-
-    if (messageError) {
-      throw new Error(
-        messageError.message,
-      );
+          direction: "outbound",
+          message_type: coverUrl ? "image" : "text",
+          content: caption,
+          media_url: coverUrl ?? null,
+          media_meta: productMeta,
+          status: "sending",
+          sent_by_user_id: userId,
+          created_at: new Date(startedAt + (media.length + 1) * 10).toISOString(),
+        })
+        .select("id")
+        .single(),
+      db
+        .from("msg_sessions")
+        .update({
+          last_message_preview: `📦 ${product.name} — ${Number(product.price)} ${product.currency}`,
+          last_message_at: new Date().toISOString(),
+        })
+        .eq("id", data.chatId)
+        .eq("organization_id", organizationId),
+    ]);
+    if (placeholderRes.error || !placeholderRes.data) {
+      throw new Error(placeholderRes.error?.message ?? "تعذر تجهيز رسالة المنتج");
     }
+    const placeholderId: string = placeholderRes.data.id;
 
-    if (sendError) {
-      throw new Error(sendError);
-    }
+    // The photos, videos and details are sent in the background (the server keeps running after it
+    // answers), so the button answers at once even when WhatsApp is slow or a photo has to be downloaded.
+    const { deliverProduct } = await import("./product-delivery");
+    void deliverProduct({
+      db,
+      organizationId,
+      userId,
+      chatId: data.chatId,
+      accountId: session.channel_account_id,
+      placeholderId,
+      startedAt,
+      media,
+      coverUrl,
+      caption,
+      product,
+      opportunity,
+      ops,
+      number,
+      sendMedia,
+      risk,
+      pauseMs: BETWEEN_MEDIA_MS,
+      sleep,
+    }).catch(async (error) => {
+      console.error("[product-chat] background send crashed", error);
+      await db.from("msg_messages").update({ status: "failed" }).eq("id", placeholderId).eq("organization_id", organizationId).eq("status", "sending");
+    });
 
     return {
       ok: true,
-      messageId: messages?.at(-1)?.id,
-      mediaSent: coverSent || mediaSentList.length > 0,
-      usedTextFallback: !!coverUrl && !coverSent,
+      queued: true,
+      messageId: placeholderId,
+      mediaSent: true,
+      usedTextFallback: false,
       productName: product.name,
-      imagesSent: mediaSentList.filter((m) => m.kind === "image").length + (coverSent ? 1 : 0),
-      videosSent: mediaSentList.filter((m) => m.kind === "video").length,
-      mediaFailed,
+      imagesSent: media.filter((m) => m.kind === "image").length + (coverUrl ? 1 : 0),
+      videosSent: media.filter((m) => m.kind === "video").length,
+      mediaFailed: 0,
     };
   });

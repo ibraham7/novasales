@@ -79,6 +79,15 @@ export function ProductPickerDialog({ chatId }: { chatId: string }) {
     },
 
     onSuccess: (result) => {
+      if (result.queued) {
+        // The server finishes sending in the background; the message is already in the chat as «sending».
+        toast.success("جارٍ إرسال المنتج للعميل… سيظهر بالمحادثة.");
+        setOpen(false);
+        setSearch("");
+        qc.invalidateQueries({ queryKey: ["chat", chatId] });
+        qc.invalidateQueries({ queryKey: ["chats-enriched"] });
+        return;
+      }
       const parts = [
         result.imagesSent ? `${result.imagesSent} ${result.imagesSent === 1 ? "صورة" : "صور"}` : null,
         result.videosSent ? `${result.videosSent} ${result.videosSent === 1 ? "فيديو" : "فيديوهات"}` : null,
