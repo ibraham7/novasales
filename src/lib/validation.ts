@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { explainError } from "./explain-error";
 
 const names: Record<string, string> = {
   name: "الاسم", full_name: "الاسم الكامل", fullName: "الاسم الكامل", contactName: "اسم العميل",
@@ -35,7 +36,5 @@ export function arabicError(error: unknown): string {
   if (/already registered|already exists|duplicate key/i.test(message)) return "هذه البيانات مستخدمة بالفعل؛ أدخل قيمة مختلفة";
   if (/invalid.*email|email.*invalid/i.test(message)) return "أدخل بريدًا إلكترونيًا صحيحًا";
   if (/password.*least|password.*short/i.test(message)) return "كلمة المرور أقصر من الحد المطلوب";
-  if (/fetch|network|timeout/i.test(message)) return "تعذر الاتصال بالخادم؛ تحقق من الإنترنت وحاول مجددًا";
-  if (/[\u0600-\u06ff]/.test(message) && !message.includes('"code"')) return message;
-  return "تعذر إتمام العملية؛ تحقق من البيانات وحاول مجددًا";
+  return explainError(message).friendly;
 }

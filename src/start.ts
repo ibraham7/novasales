@@ -30,6 +30,20 @@ const slowServerFnLog = createMiddleware({ type: "function" }).server(async ({ n
   }
 });
 
+// Log-only: every error a server function throws is written to the server log with the function's name
+// and a short reference, so a failure the manager sees can be traced (grep FN_ERROR). Does not change
+// what the caller receives.
+const functionErrorLog = createMiddleware({ type: "function" }).server(async ({ next, serverFnMeta }) => {
+  try {
+    return await next();
+  } catch (error) {
+    if (error != null && typeof error === "object" && "statusCode" in error) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[FN_ERROR] ${serverFnMeta?.name ?? "unknown"}: ${message.slice(0, 500)}`);
+    throw error;
+  }
+});
+
 // Server functions that change roles, permissions, memberships or departments. After any of them
 // succeeds, cached permissions are dropped so the change applies on the next request.
 const ACCESS_CHANGING_FNS = new Set([
@@ -70,6 +84,6 @@ const clearAccessAfterChanges = createMiddleware({ type: "function" }).server(as
 });
 
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth, slowServerFnLog, clearAccessAfterChanges],
+  functionMiddleware: [attachSupabaseAuth, slowServerFnLog, functionErrorLog, clearAccessAfterChanges],
   requestMiddleware: [errorMiddleware],
 }));

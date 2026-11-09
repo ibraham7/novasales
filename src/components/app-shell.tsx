@@ -33,7 +33,8 @@ import {
   KanbanSquare,
 } from "lucide-react";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { setErrorDetailsAllowed } from "@/lib/explain-error";
 import type { ReactNode } from "react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -249,6 +250,12 @@ export function AppShell({
   const perms = new Set(
     permissions,
   );
+
+  // People who manage the organization see the exact technical reason of a failure, not only the explanation.
+  const managesOrganization = isSuperAdmin || permissions.includes("org.manage");
+  useEffect(() => {
+    setErrorDetailsAllowed(managesOrganization);
+  }, [managesOrganization]);
 
   // The marketing page is limited to named accounts for now; the server decides.
   const marketingAccessFn = useServerFn(getMarketingAccess);
