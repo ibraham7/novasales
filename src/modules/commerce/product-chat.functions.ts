@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { sendTarget } from "@/modules/channels/whatsapp/recipient";
 import { z } from "@/lib/validation";
 import { formatProductCaption } from "./product-caption";
 
@@ -261,9 +262,7 @@ export const sendProductToChatFn = createServerFn({
       );
     }
 
-    const number = String(
-      session.peer_identifier,
-    ).split("@")[0];
+    const number = sendTarget(session.peer_identifier);
 
     const caption =
       formatProductCaption(product, definitionsRes?.data ?? []);
