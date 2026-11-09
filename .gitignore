@@ -32,4 +32,5 @@ dist-ssr
 *.sw?
 
 .env
-.env.local
+.env.localscripts/migrate-supabase/migrate.env
+scripts/migrate-supabase/backup/
