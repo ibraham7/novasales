@@ -97,6 +97,7 @@ export type EmailCampaignInput = {
   prospectIds?: string[];
   scheduledAt?: string | null;
   throttlePerMinute: number;
+  mailboxId?: string | null;
   acknowledgments: { b2b: boolean; optOut: boolean; review: boolean };
 };
 export type EmailCampaignDeps = {
@@ -146,10 +147,11 @@ export async function createEmailCampaign(db: any, deps: EmailCampaignDeps, inpu
     approved: audience.approved,
     excluded: audience.excluded,
     acknowledgments: input.acknowledgments,
+    mailboxId: input.mailboxId ?? null,
   };
   const { data: campaign, error } = await db
     .from("ob_email_campaigns")
-    .insert({ organization_id: input.organizationId, name: name.slice(0, 200), subject, body, status: "scheduled", scheduled_at: scheduledAt, throttle_per_minute: throttle, created_by: input.userId, approved_by: input.userId, approved_at: now.toISOString(), compliance_snapshot: snapshot })
+    .insert({ organization_id: input.organizationId, name: name.slice(0, 200), subject, body, status: "scheduled", scheduled_at: scheduledAt, throttle_per_minute: throttle, mailbox_id: input.mailboxId ?? null, created_by: input.userId, approved_by: input.userId, approved_at: now.toISOString(), compliance_snapshot: snapshot })
     .select("id")
     .single();
   if (error || !campaign) throw new Error("تعذر إنشاء الحملة؛ أعد المحاولة");
@@ -211,7 +213,9 @@ export function renderEmail(input: { subject: string; body: string; name: string
 
 export type SendResult = { ok: true; id: string | null } | { ok: false; error: string; retry?: boolean };
 export type EmailTickDeps = {
-  send: (mail: { to: string; subject: string; text: string; html: string; stopUrl: string }) => Promise<SendResult>;
+  send: (mail: { to: string; subject: string; text: string; html: string; stopUrl: string; organizationId: string; mailboxId: string | null; messageId: string }) => Promise<SendResult>;
+  /** Daily limit of a mailbox (and what it needs to send), or null when it is gone or disabled. */
+  mailboxLimit?: (organizationId: string, mailboxId: string) => Promise<number | null>;
   stopBaseUrl: string;
   orgName: (organizationId: string) => Promise<string>;
   dailyCap?: number;
@@ -233,7 +237,7 @@ export async function runEmailTick(db: any, deps: EmailTickDeps) {
     if (MISSING_TABLE.has(start.error.code)) return { processed };
     throw new Error(start.error.message);
   }
-  const { data: campaigns, error } = await db.from("ob_email_campaigns").select("id,organization_id,subject,body,throttle_per_minute").eq("status", "running").order("created_at").limit(50);
+  const { data: campaigns, error } = await db.from("ob_email_campaigns").select("id,organization_id,subject,body,throttle_per_minute,mailbox_id").eq("status", "running").order("created_at").limit(50);
   if (error) throw new Error(error.message);
 
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
@@ -245,12 +249,30 @@ export async function runEmailTick(db: any, deps: EmailTickDeps) {
     // A send that never finished is not retried automatically: it may have gone out.
     await db.from("ob_email_messages").update({ status: "failed", error: "انقطع التنفيذ؛ تحقق من لوحة المزوّد قبل إعادة الإرسال" }).eq("organization_id", org).eq("campaign_id", c.id).eq("status", "sending").lt("claimed_at", new Date(now.getTime() - STUCK_MINUTES * 60_000).toISOString());
 
-    if (!left.has(org)) {
-      const { data: today, error: todayError } = await db.from("ob_email_messages").select("id").eq("organization_id", org).gte("sent_at", dayStart).limit(cap + 1);
+    const mailbox: string | null = c.mailbox_id ?? null;
+    const key = mailbox ?? org;
+    if (!left.has(key)) {
+      let limit = cap;
+      if (mailbox && deps.mailboxLimit) {
+        const own = await deps.mailboxLimit(org, mailbox);
+        if (own === null) {
+          await db.from("ob_email_campaigns").update({ status: "paused", error: "صندوق البريد محذوف أو معطّل؛ اختر صندوقاً آخر أو أعد تفعيله" }).eq("id", c.id).eq("organization_id", org).eq("status", "running");
+          continue;
+        }
+        limit = own;
+      }
+      let ids: string[] | null = null;
+      if (mailbox) {
+        const { data: camps } = await db.from("ob_email_campaigns").select("id").eq("organization_id", org).eq("mailbox_id", mailbox);
+        ids = (camps ?? []).map((x: any) => x.id);
+      }
+      let q = db.from("ob_email_messages").select("id").eq("organization_id", org).gte("sent_at", dayStart);
+      if (ids) q = q.in("campaign_id", ids);
+      const { data: today, error: todayError } = await q.limit(limit + 1);
       if (todayError) throw new Error(todayError.message);
-      left.set(org, Math.max(0, cap - (today ?? []).length));
+      left.set(key, Math.max(0, limit - (today ?? []).length));
     }
-    const allowed = Math.min(c.throttle_per_minute, left.get(org) ?? 0);
+    const allowed = Math.min(c.throttle_per_minute, left.get(key) ?? 0);
     if (allowed > 0) {
       const { data: queued, error: queuedError } = await db.from("ob_email_messages").select("id").eq("organization_id", org).eq("campaign_id", c.id).eq("status", "queued").order("created_at").limit(allowed);
       if (queuedError) throw new Error(queuedError.message);
@@ -268,16 +290,17 @@ export async function runEmailTick(db: any, deps: EmailTickDeps) {
           }
           const stopUrl = `${deps.stopBaseUrl.replace(/\/$/, "")}/stop/${m.stop_token}`;
           const mail = renderEmail({ subject: c.subject, body: c.body, name: m.name ?? "", sender: names.get(org) || "", stopUrl });
+          const messageId = `${newEmailToken().toLowerCase().replace(/[^a-z0-9]/g, "")}@novasales`;
           let result: SendResult;
           try {
-            result = await deps.send({ to: m.email, ...mail, stopUrl });
+            result = await deps.send({ to: m.email, ...mail, stopUrl, organizationId: org, mailboxId: mailbox, messageId });
           } catch (e) {
             result = { ok: false, error: e instanceof Error ? e.message : "تعذر الإرسال", retry: true };
           }
           if (result.ok) {
-            await db.from("ob_email_messages").update({ status: "sent", sent_at: (deps.now ?? (() => new Date()))().toISOString(), provider_message_id: result.id, error: null }).eq("id", m.id).eq("organization_id", org).eq("status", "sending");
+            await db.from("ob_email_messages").update({ status: "sent", sent_at: (deps.now ?? (() => new Date()))().toISOString(), provider_message_id: result.id, message_id: mailbox ? messageId : null, error: null }).eq("id", m.id).eq("organization_id", org).eq("status", "sending");
             if (m.ob_prospect_id) await db.from("ob_prospects").update({ status: "contacted", updated_at: stamp }).eq("organization_id", org).eq("id", m.ob_prospect_id).eq("status", "approved");
-            left.set(org, (left.get(org) ?? 1) - 1);
+            left.set(key, (left.get(key) ?? 1) - 1);
             processed++;
           } else if (result.retry) {
             // The provider is busy or unreachable: this and the rest of the batch wait for the next run.
