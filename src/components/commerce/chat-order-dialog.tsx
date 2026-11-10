@@ -148,7 +148,7 @@ export function ChatOrderDialog({ chatId, contactId, opportunityId, contactName 
       const first = (products as any[]).find((p) => p.id === lines[0].productId);
 
       if (first && first.currency !== product.currency) {
-        toast.error("لا يمكن إضافة منتجات بعملات مختلفة داخل نفس الطلب");
+        toast.error(`لا يمكن إضافة منتجات بعملات مختلفة داخل نفس الطلب (الأول بعملة ${first.currency || "—"} وهذا بعملة ${product.currency || "—"}). صحّح عملة المنتج من صفحة المنتجات إن كانت خطأ`);
 
         return;
       }
