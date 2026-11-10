@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MailboxesPanel, type MailboxRow } from "@/components/marketing/mailboxes-panel";
 import { Textarea } from "@/components/ui/textarea";
 
 const STATUS: Record<string, string> = { scheduled: "مجدولة", running: "قيد الإرسال", paused: "موقوفة", completed: "مكتملة", cancelled: "ملغاة", failed: "فشلت" };
@@ -29,7 +30,7 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 /** One screen: who receives it, the email, and the final approval. Nothing is sent until the last button. */
-function EmailCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function EmailCampaignDialog({ open, onOpenChange, mailboxes }: { open: boolean; onOpenChange: (open: boolean) => void; mailboxes: MailboxRow[] }) {
   const qc = useQueryClient();
   const previewFn = useServerFn(previewEmailAudience);
   const approveFn = useServerFn(approveEmailCampaign);
@@ -37,6 +38,9 @@ function EmailCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [throttle, setThrottle] = useState(5);
+  const usable = mailboxes.filter((m) => m.status === "active");
+  const [mailboxId, setMailboxId] = useState("");
+  const chosen = mailboxId || usable[0]?.id || "";
   const [later, setLater] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [ack, setAck] = useState({ review: false, b2b: false, optOut: false });
@@ -53,7 +57,7 @@ function EmailCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const allAck = ack.review && ack.b2b && ack.optOut;
 
   const approve = useMutation({
-    mutationFn: () => approveFn({ data: { name, subject, body, throttlePerMinute: throttle, scheduledAt: later && scheduledAt ? new Date(scheduledAt).toISOString() : null, acknowledgments: ack } }),
+    mutationFn: () => approveFn({ data: { name, subject, body, mailboxId: chosen || null, throttlePerMinute: throttle, scheduledAt: later && scheduledAt ? new Date(scheduledAt).toISOString() : null, acknowledgments: ack } }),
     onSuccess: (r) => {
       toast.success(`اعتُمدت الحملة لـ ${r.recipients} جهة. ستبدأ بالإرسال تدريجياً`);
       qc.invalidateQueries({ queryKey: ["email-campaigns"] });
@@ -93,6 +97,16 @@ function EmailCampaignDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         )}
 
         <div className="space-y-3">
+          {usable.length > 0 && (
+            <div className="space-y-1">
+              <Label htmlFor="em-box">يُرسل من صندوق</Label>
+              <select id="em-box" className="w-full rounded-md border bg-background p-2 text-sm" value={chosen} onChange={(e) => setMailboxId(e.target.value)}>
+                {usable.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label} — {m.fromEmail}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="space-y-1">
             <Label htmlFor="em-name">اسم الحملة (لك فقط)</Label>
             <Input id="em-name" value={name} maxLength={200} onChange={(e) => setName(e.target.value)} />
@@ -193,10 +207,11 @@ export function EmailTab() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>الإيميل غير مُعدّ بعد</AlertTitle>
-          <AlertDescription>لم يُضبط مزوّد الإرسال (RESEND_API_KEY) أو عنوان المرسل (EMAIL_FROM) أو عنوان الموقع (PUBLIC_APP_URL) على الخادم. تواصل مع مدير النظام لإكمال الإعداد.</AlertDescription>
+          <AlertDescription>{status.data.siteReady ? "اربط صندوق بريد مؤسستك من القسم أدناه لتبدأ الحملات." : "عنوان الموقع (PUBLIC_APP_URL) غير مضبوط على الخادم؛ تواصل مع مدير النظام."}</AlertDescription>
         </Alert>
       )}
-      {status.data?.from && <p className="text-xs text-muted-foreground">يُرسل من: <span dir="ltr">{status.data.from}</span></p>}
+      {status.data && <MailboxesPanel mailboxes={(status.data.mailboxes ?? []) as MailboxRow[]} encryptionReady={status.data.encryptionReady} canManage />}
+      {status.data?.from && !status.data.mailboxes.length && <p className="text-xs text-muted-foreground">يُرسل من: <span dir="ltr">{status.data.from}</span></p>}
 
       {q.isPending ? (
         <p className="text-sm text-muted-foreground">جارٍ التحميل...</p>
@@ -275,7 +290,7 @@ export function EmailTab() {
           );
         })
       )}
-      <EmailCampaignDialog open={open} onOpenChange={setOpen} />
+      <EmailCampaignDialog open={open} onOpenChange={setOpen} mailboxes={(status.data?.mailboxes ?? []) as MailboxRow[]} />
     </div>
   );
 }

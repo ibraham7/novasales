@@ -228,11 +228,54 @@ export const removeSuppressionNumber = createServerFn({ method: "POST" })
 /* ---------------------------------- email ---------------------------------- */
 
 export const getEmailStatus = createServerFn({ method: "GET" }).handler(async () => {
-  await access("manage");
+  const { organizationId, db } = await access("manage");
   const { emailConfig } = await import("./email-send.server");
   const c = emailConfig();
-  return { configured: c.configured && Boolean(process.env.PUBLIC_APP_URL), from: c.from ?? null, dailyCap: Number(process.env.EMAIL_DAILY_CAP) || 100 };
+  const { listMailboxes } = await import("./mailbox-core");
+  const mailboxes = await listMailboxes(db, organizationId).catch(() => []);
+  const siteReady = Boolean(process.env.PUBLIC_APP_URL);
+  return {
+    configured: siteReady && (c.configured || mailboxes.length > 0),
+    from: c.from ?? null,
+    dailyCap: Number(process.env.EMAIL_DAILY_CAP) || 100,
+    mailboxes: mailboxes.map((m: any) => ({ id: m.id as string, label: m.label as string, fromEmail: m.from_email as string, status: m.status as string, dailyLimit: m.daily_limit as number, lastError: (m.last_error as string | null) ?? null })),
+    encryptionReady: Boolean(process.env.MAILBOX_ENCRYPTION_KEY),
+    siteReady,
+  };
 });
+
+const mailboxSchema = z.object({
+  id: z.string().uuid().optional(),
+  label: z.string().trim().min(1, "اكتب اسماً للصندوق").max(100),
+  fromEmail: z.string().trim().min(5, "اكتب عنوان البريد").max(254),
+  fromName: z.string().trim().max(100).optional().nullable(),
+  smtpHost: z.string().trim().min(3, "اكتب خادم SMTP").max(200),
+  smtpPort: z.number().int().min(1).max(65535),
+  smtpSecurity: z.enum(["ssl", "starttls", "none"]),
+  smtpUser: z.string().trim().min(1, "اكتب اسم المستخدم").max(254),
+  smtpPass: z.string().max(500).optional(),
+  dailyLimit: z.number().int().min(1).max(2000).default(50),
+});
+const saveLimiter = createRateLimiter(10, 60_000);
+
+export const saveMailboxFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => mailboxSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access("owner");
+    if (!saveLimiter.allow(userId)) throw new Error("محاولات كثيرة؛ انتظر دقيقة");
+    const secret = process.env.MAILBOX_ENCRYPTION_KEY?.trim() ?? "";
+    const { saveMailbox } = await import("./mailbox-core");
+    return saveMailbox(db, { secret }, { ...data, organizationId, userId });
+  });
+
+export const deleteMailboxFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access("owner");
+    const { deleteMailbox } = await import("./mailbox-core");
+    await deleteMailbox(db, organizationId, data.id);
+    return { ok: true };
+  });
 
 export const previewEmailAudience = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ prospectIds: z.array(z.string().uuid()).max(5000).optional() }).parse(data ?? {}))
@@ -253,6 +296,7 @@ export const approveEmailCampaign = createServerFn({ method: "POST" })
         prospectIds: z.array(z.string().uuid()).max(5000).optional(),
         scheduledAt: z.string().max(40).optional().nullable(),
         throttlePerMinute: z.number().int().min(1).max(60).default(10),
+        mailboxId: z.string().uuid().optional().nullable(),
         acknowledgments: z.object({ b2b: z.boolean(), optOut: z.boolean(), review: z.boolean() }),
       })
       .parse(data),
@@ -261,9 +305,16 @@ export const approveEmailCampaign = createServerFn({ method: "POST" })
     const { userId, organizationId, db } = await access("send");
     if (!approveLimiter.allow(userId)) throw new Error("محاولات اعتماد كثيرة خلال دقيقة؛ انتظر قليلاً");
     const { createEmailCampaign } = await import("./email-core");
-    const { emailConfig } = await import("./email-send.server");
+    const { emailConfig, mailboxSecret } = await import("./email-send.server");
     const c = emailConfig();
-    return createEmailCampaign(db, { configured: c.configured, from: c.from, stopBaseUrl: process.env.PUBLIC_APP_URL }, { ...data, organizationId, userId });
+    let from = c.from;
+    if (data.mailboxId) {
+      const { loadMailbox } = await import("./mailbox-core");
+      const box = await loadMailbox(db, { secret: mailboxSecret() }, organizationId, data.mailboxId);
+      if (!box) throw new Error("صندوق البريد غير موجود أو معطّل؛ اختر صندوقاً آخر");
+      from = box.fromEmail;
+    }
+    return createEmailCampaign(db, { configured: Boolean(data.mailboxId) || c.configured, from, stopBaseUrl: process.env.PUBLIC_APP_URL }, { ...data, organizationId, userId });
   });
 
 export const listEmailCampaigns = createServerFn({ method: "GET" }).handler(async () => {
