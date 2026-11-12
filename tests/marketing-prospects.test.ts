@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./helpers/fake-db.ts";
 import { listProspects, safeTerm, saveFoundPlaces, updateProspects } from "../src/modules/marketing/prospects-core.ts";
+import { EMPTY_FILTERS, normalizeFilters } from "../src/modules/marketing/filters.ts";
 import type { FoundPlace } from "../src/modules/marketing/google-places.ts";
 
 const UNIQUE = { ob_prospects: ["organization_id", "provider", "external_id"] };
@@ -53,7 +54,7 @@ test("the minimum rating drops businesses below it and those without a rating", 
 
 test("every read and write is scoped to the organization", async () => {
   const db = fakeDb({ ob_prospects: [{ id: "x1", organization_id: "org-1", status: "new" }, { id: "x2", organization_id: "org-2", status: "new" }] }, UNIQUE);
-  const listed = await listProspects(db, "org-1", { sort: "recent", page: 1, pageSize: 25 });
+  const listed = await listProspects(db, "org-1", { ...EMPTY_FILTERS, page: 1, pageSize: 25 });
   assert.deepEqual(listed.rows.map((r: any) => r.id), ["x1"]);
   // A person cannot change another organization's business by sending its id.
   assert.equal(await updateProspects(db, "org-1", { ids: ["x1", "x2"], status: "qualified" }), 1);
@@ -72,7 +73,7 @@ test("a business that already started a conversation is not moved by hand, notes
 
 test("filters become database filters, and the search term cannot break out of the filter", async () => {
   const db = fakeDb({ ob_prospects: [] }, UNIQUE);
-  await listProspects(db, "org-1", { sort: "rating", page: 2, pageSize: 10, statuses: ["new", "approved"], hasPhone: true, mobileOnly: true, hasWebsite: true, minRating: 4, q: "عيادة),status.eq.approved" });
+  await listProspects(db, "org-1", { ...normalizeFilters({ sort: "rating", status: { include: ["new", "approved"] }, hasPhone: true, mobileOnly: true, hasWebsite: true, minRating: 4, q: "عيادة),status.eq.approved" }), page: 2, pageSize: 10 });
   const filters = db.calls.at(-1)!.filters.map(([op, col]) => `${op}:${col}`);
   for (const expected of ["eq:organization_id", "in:status", "not.is:phone_e164", "eq:phone_kind", "not.is:website", "gte:rating", "or:*"]) assert.ok(filters.includes(expected), expected);
   const or = db.calls.at(-1)!.filters.find(([op]) => op === "or")![2] as string;

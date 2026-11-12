@@ -6,6 +6,8 @@ import type { FoundPlace } from "./google-places.ts";
 import { blockedPhones } from "./outbound-core.ts";
 import { prospectPhone } from "./phone.ts";
 import type { ManualStatus } from "./statuses.ts";
+import { applyProspectFilters } from "./filters-query.ts";
+import type { Filters } from "./filters.ts";
 
 export const PROVIDER = "google_places";
 /** Google's data is a cache: it expires after this many days and is refreshed or removed. */
@@ -15,7 +17,7 @@ const CHUNK = 100;
 const chunks = <T>(items: T[], size = CHUNK) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 
 const COLUMNS =
-  "id,name,category,address,city,country,phone_raw,phone_e164,phone_kind,website,maps_url,rating,ratings_count,business_status,status,notes,search_id,created_at,updated_at,expires_at,emails,socials,site_whatsapp,enrich_status,enriched_at,enrich_error";
+  "id,name,category,address,city,country,phone_raw,phone_e164,phone_kind,website,maps_url,rating,ratings_count,business_status,status,notes,search_id,created_at,updated_at,expires_at,emails,socials,site_whatsapp,enrich_status,enriched_at,enrich_error,tech,site_lang";
 
 export type SaveInput = {
   organizationId: string;
@@ -88,37 +90,14 @@ export async function saveFoundPlaces(db: any, input: SaveInput) {
   return { found: input.places.length, kept: kept.length, created: fresh.length, updated: known.size, filteredOut: input.places.length - kept.length };
 }
 
-export type ProspectFilters = {
-  q?: string;
-  statuses?: string[];
-  hasPhone?: boolean;
-  mobileOnly?: boolean;
-  hasWebsite?: boolean;
-  minRating?: number;
-  searchId?: string;
-  sort: "recent" | "rating" | "name";
-  page: number;
-  pageSize: number;
-};
+export type ProspectFilters = Filters & { page: number; pageSize: number };
 
 /** A search term safe to put inside a PostgREST filter. */
 export const safeTerm = (value: string) => value.replace(/[%_,()*"'\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 
 export async function listProspects(db: any, organizationId: string, f: ProspectFilters) {
   let query = db.from("ob_prospects").select(COLUMNS, { count: "exact" }).eq("organization_id", organizationId);
-  if (f.statuses?.length) query = query.in("status", f.statuses);
-  if (f.hasPhone) query = query.not("phone_e164", "is", null);
-  if (f.mobileOnly) query = query.eq("phone_kind", "mobile");
-  if (f.hasWebsite) query = query.not("website", "is", null);
-  if (f.minRating && f.minRating > 0) query = query.gte("rating", f.minRating);
-  if (f.searchId) query = query.eq("search_id", f.searchId);
-  const term = safeTerm(f.q ?? "");
-  if (term) {
-    const digits = term.replace(/\D/g, "");
-    query = query.or(
-      [`name.ilike.%${term}%`, `address.ilike.%${term}%`, `category.ilike.%${term}%`, ...(digits.length >= 3 ? [`phone_e164.ilike.%${digits}%`] : [])].join(","),
-    );
-  }
+  query = applyProspectFilters(query, f);
   query = f.sort === "rating" ? query.order("rating", { ascending: false, nullsFirst: false }) : f.sort === "name" ? query.order("name", { ascending: true }) : query.order("created_at", { ascending: false });
   const from = (f.page - 1) * f.pageSize;
   const { data, error, count } = await query.range(from, from + f.pageSize - 1);

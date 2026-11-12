@@ -7,6 +7,7 @@ import { getMarketingAccess } from "@/modules/marketing/marketing.functions";
 import { CampaignWizard } from "@/components/marketing/campaign-wizard";
 import { CampaignsTab } from "@/components/marketing/campaigns-tab";
 import { ManualProspectDialog } from "@/components/marketing/manual-prospect-dialog";
+import { PeopleTab } from "@/components/marketing/people-tab";
 import { ProspectsPanel } from "@/components/marketing/prospects-panel";
 import { SearchCard } from "@/components/marketing/search-card";
 import { SettingsTab } from "@/components/marketing/settings-tab";
@@ -38,6 +39,7 @@ function MarketingPage() {
 
 function MarketingContent() {
   const [tab, setTab] = useState("discover");
+  const [kind, setKind] = useState("companies");
   const [focusSearchId, setFocusSearchId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -73,7 +75,18 @@ function MarketingContent() {
               إنشاء حملة من المعتمدين
             </Button>
           </div>
-          <ProspectsPanel focusSearchId={focusSearchId} />
+          <Tabs value={kind} onValueChange={setKind} dir="rtl">
+            <TabsList>
+              <TabsTrigger value="companies">الشركات (Companies)</TabsTrigger>
+              <TabsTrigger value="people">الأشخاص (People)</TabsTrigger>
+            </TabsList>
+            <TabsContent value="companies" className="mt-3">
+              <ProspectsPanel focusSearchId={focusSearchId} />
+            </TabsContent>
+            <TabsContent value="people" className="mt-3">
+              <PeopleTab />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
         <TabsContent value="campaigns">
           <CampaignsTab onNew={() => setWizardOpen(true)} />

@@ -113,3 +113,13 @@ test("enrichProspects saves results per organization and marks failures and miss
   assert.deepEqual([p3.enrich_status, p3.enrich_error], ["failed", "الموقع لا يستجيب"]);
   assert.equal(p4.enrich_status, undefined); // another organization's business is never touched
 });
+
+test("technologies and the page language are read from the page source", async () => {
+  const { detectTech, detectLang } = await import("../src/modules/marketing/site-extract.ts");
+  const shop = `<html lang="ar-SA"><script src="https://cdn.shopify.com/s/x.js"></script><script>fbq('init','1')</script><script async src="https://www.googletagmanager.com/gtag/js?id=G-ABC123XYZ"></script></html>`;
+  assert.deepEqual(detectTech(shop).sort(), ["google_analytics", "meta_pixel", "shopify"]);
+  assert.equal(detectLang(shop), "ar");
+  assert.deepEqual(detectTech('<link href="/wp-content/plugins/woocommerce/a.css">').sort(), ["woocommerce", "wordpress"]);
+  assert.deepEqual(detectTech("<html><body>hi</body></html>"), []);
+  assert.equal(detectLang("<html><body></body></html>"), null);
+});

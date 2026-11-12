@@ -135,3 +135,38 @@ export function mergeContacts(parts: SiteContacts[], siteHost: string): SiteCont
   const sorted = [...emails].sort((a, b) => Number(b.endsWith(`@${own}`)) - Number(a.endsWith(`@${own}`))).slice(0, MAX_EMAILS);
   return { emails: sorted, socials, whatsapp, contactLinks: [] };
 }
+
+/* ---------------------- technologies and language of a site ---------------------- */
+
+const TECH_SIGNS: [string, RegExp][] = [
+  ["shopify", /cdn\.shopify\.com|myshopify\.com|Shopify\.theme/i],
+  ["salla", /cdn\.salla\.network|salla\.sa\/|salla-theme|\bsalla\.(?:com|network)/i],
+  ["zid", /cdn\.zid\.store|\bzid\.store|zid\.sa\//i],
+  ["wordpress", /\/wp-content\/|\/wp-includes\/|name=["']generator["'][^>]*WordPress/i],
+  ["woocommerce", /woocommerce|wc-ajax|\/wp-content\/plugins\/woocommerce/i],
+  ["wix", /static\.wixstatic\.com|wix\.com\/|X-Wix-/i],
+  ["squarespace", /static1\.squarespace\.com|squarespace\.com\/|Squarespace/],
+  ["magento", /Magento|\/static\/version\d+\/frontend\/|mage\/cookies/],
+  ["google_analytics", /google-analytics\.com\/(?:analytics|ga)\.js|gtag\/js\?id=(?:G|UA)-|\bUA-\d{4,}-\d+|['"]G-[A-Z0-9]{6,}['"]/],
+  ["google_tag_manager", /googletagmanager\.com\/gtm\.js|GTM-[A-Z0-9]{4,}/],
+  ["google_ads", /googleadservices\.com|gtag\/js\?id=AW-|['"]AW-\d{6,}/],
+  ["meta_pixel", /connect\.facebook\.net\/[^"']*\/fbevents\.js|fbq\(\s*['"]init['"]/],
+  ["tiktok_pixel", /analytics\.tiktok\.com|ttq\.load/],
+  ["hubspot", /js\.hs-scripts\.com|js\.hs-analytics\.net|hbspt\.forms/],
+  ["salesforce", /salesforce\.com|force\.com|pardot\.com|pi\.pardot/i],
+  ["intercom", /widget\.intercom\.io|intercomSettings/],
+];
+
+/** The technologies a page's source gives away (keys of TECHNOLOGIES). */
+export function detectTech(html: string): string[] {
+  const found = TECH_SIGNS.filter(([, re]) => re.test(html)).map(([key]) => key);
+  // WooCommerce always runs on WordPress.
+  if (found.includes("woocommerce") && !found.includes("wordpress")) found.unshift("wordpress");
+  return found;
+}
+
+/** The page language from <html lang="…">, as a two-letter code, or null. */
+export function detectLang(html: string): string | null {
+  const m = /<html[^>]*\slang\s*=\s*["']?([A-Za-z]{2})/i.exec(html.slice(0, 4000));
+  return m ? m[1].toLowerCase() : null;
+}
