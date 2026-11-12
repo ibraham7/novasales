@@ -2,7 +2,7 @@
  * Fills a business's emails, social pages and WhatsApp link from its own public website. The page
  * fetcher and the database are passed in, so this is tested without a network or Supabase.
  */
-import { extractContacts, mergeContacts, type SiteContacts } from "./site-extract.ts";
+import { detectLang, detectTech, extractContacts, mergeContacts, type SiteContacts } from "./site-extract.ts";
 import { normalizeSiteUrl } from "./url-safety.ts";
 
 export type PageFetcherLike = (url: string) => Promise<{ finalUrl: string; html: string }>;
@@ -11,7 +11,9 @@ export const ENRICH_BATCH_MAX = 25;
 const CONCURRENCY = 3;
 
 /** Home page plus up to two contact/about pages of the same site. Only the home page must work. */
-export async function readSite(website: string, fetchPage: PageFetcherLike): Promise<SiteContacts> {
+export type SiteReading = SiteContacts & { tech: string[]; lang: string | null };
+
+export async function readSite(website: string, fetchPage: PageFetcherLike): Promise<SiteReading> {
   const start = normalizeSiteUrl(website);
   if (!start) throw new Error("عنوان الموقع غير صالح أو غير مسموح");
   const home = await fetchPage(start.toString());
@@ -25,7 +27,7 @@ export async function readSite(website: string, fetchPage: PageFetcherLike): Pro
       /* a missing contact page is fine */
     }
   }
-  return mergeContacts(parts, new URL(home.finalUrl).hostname);
+  return { ...mergeContacts(parts, new URL(home.finalUrl).hostname), tech: detectTech(home.html), lang: detectLang(home.html) };
 }
 
 export type EnrichSummary = { requested: number; done: number; failed: number; noWebsite: number; withEmail: number; withSocial: number; withWhatsapp: number };
@@ -51,7 +53,7 @@ export async function enrichProspects(db: any, organizationId: string, ids: stri
       if (found.emails.length) summary.withEmail++;
       if (Object.keys(found.socials).length) summary.withSocial++;
       if (found.whatsapp) summary.withWhatsapp++;
-      await save(row.id, { emails: found.emails, socials: found.socials, site_whatsapp: found.whatsapp, enrich_status: "done", enrich_error: null });
+      await save(row.id, { emails: found.emails, socials: found.socials, site_whatsapp: found.whatsapp, tech: found.tech, site_lang: found.lang, enrich_status: "done", enrich_error: null });
     } catch (e) {
       summary.failed++;
       await save(row.id, { enrich_status: "failed", enrich_error: (e instanceof Error ? e.message : "تعذّر قراءة الموقع").slice(0, 200) });

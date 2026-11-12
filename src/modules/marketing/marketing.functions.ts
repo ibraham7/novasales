@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 import { createRateLimiter } from "@/modules/notifications/rate-limit";
 import { MARKETING_COUNTRY_CODES, countryByCode } from "./countries";
+import { compactFilters, normalizeFilters } from "./filters";
 import { DEFAULT_PRICE_PER_1000_REQUESTS_USD, PLACES_MAX_RESULTS, estimateCostUsd, requestsFor } from "./search-input";
 import { MANUAL_STATUSES, PROSPECT_STATUSES } from "./statuses";
 
@@ -96,27 +97,46 @@ export const runProspectSearch = createServerFn({ method: "POST" })
   });
 
 export const listMarketingProspects = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) =>
-    z
-      .object({
-        q: z.string().max(80).optional(),
-        statuses: z.array(z.enum(PROSPECT_STATUSES)).max(12).optional(),
-        hasPhone: z.boolean().optional(),
-        mobileOnly: z.boolean().optional(),
-        hasWebsite: z.boolean().optional(),
-        minRating: z.number().min(0).max(5).optional(),
-        searchId: z.string().uuid().optional(),
-        sort: z.enum(["recent", "rating", "name"]).default("recent"),
-        page: z.number().int().min(1).max(1000).default(1),
-        pageSize: z.number().int().min(10).max(100).default(25),
-      })
-      .parse(data ?? {}),
-  )
+  .inputValidator((data: unknown) => {
+    const raw: any = data ?? {};
+    return {
+      filters: normalizeFilters(raw.filters),
+      page: z.number().int().min(1).max(1000).default(1).parse(raw.page ?? 1),
+      pageSize: z.number().int().min(10).max(100).default(25).parse(raw.pageSize ?? 25),
+    };
+  })
   .handler(async ({ data }) => {
     const { organizationId, db } = await access();
     const { listProspects, countByStatus } = await import("./prospects-core");
-    const [list, counts] = await Promise.all([listProspects(db, organizationId, data), countByStatus(db, organizationId)]);
+    const [list, counts] = await Promise.all([listProspects(db, organizationId, { ...data.filters, page: data.page, pageSize: data.pageSize }), countByStatus(db, organizationId)]);
     return { ...list, counts };
+  });
+
+export const listSavedSearches = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId, db } = await access();
+  const { data, error } = await db.from("ob_saved_searches").select("id,name,kind,filters,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r: any) => ({ id: r.id as string, name: r.name as string, kind: r.kind as string, filters: normalizeFilters(r.filters) }));
+});
+
+export const saveSearchFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ name: z.string().trim().min(1, "اكتب اسماً للبحث").max(100), filters: z.unknown() }).parse(data))
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access();
+    const filters = compactFilters(normalizeFilters(data.filters));
+    // Saving under an existing name replaces it.
+    const { error } = await db.from("ob_saved_searches").upsert({ organization_id: organizationId, name: data.name, kind: "companies", filters, created_by: userId }, { onConflict: "organization_id,kind,name" });
+    if (error) throw new Error("تعذر حفظ البحث");
+    return { ok: true };
+  });
+
+export const deleteSavedSearchFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access();
+    const { error } = await db.from("ob_saved_searches").delete().eq("organization_id", organizationId).eq("id", data.id);
+    if (error) throw new Error("تعذر حذف البحث");
+    return { ok: true };
   });
 
 export const updateMarketingProspects = createServerFn({ method: "POST" })
