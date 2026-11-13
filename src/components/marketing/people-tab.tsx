@@ -15,7 +15,7 @@ const PEOPLE_FILTERS = [
 
 /** People search needs a person-level data source. Until one is connected the filters are listed, not faked. */
 export function PeopleTab() {
-  const preset = PRESETS[0]!;
+  const preset = PRESETS.find((p) => p.id === "qawsan-sa")!;
   return (
     <div className="grid gap-4 lg:grid-cols-[17rem_1fr]">
       <Card className="h-fit p-4">
