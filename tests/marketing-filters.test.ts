@@ -63,9 +63,17 @@ test("the link format is compact, round-trips, and survives garbage", () => {
   assert.deepEqual([hostile.tech.include, hostile.status.include, hostile.searchId, hostile.minRating, hostile.lang], [["shopify"], [], "", 0, []]);
 });
 
-test("the ready preset targets Saudi Arabia with both spellings of the three cities", () => {
-  const p = PRESETS.find((x) => x.id === "qawsan-sa")!;
-  assert.deepEqual(p.filters.country.include, ["SA"]);
-  assert.ok(["Riyadh", "الرياض", "Jeddah", "جدة", "Dammam", "الدمام"].every((c) => p.filters.city.include.includes(c)));
-  assert.ok(p.needsData.length >= 4);
+test("ready presets: unique, each sets at least one filter, survive the link format, and the clinic one matches medical words", () => {
+  assert.equal(new Set(PRESETS.map((p) => p.id)).size, PRESETS.length);
+  for (const p of PRESETS) {
+    assert.ok(countActiveFilters(p.filters) > 0, p.id);
+    assert.deepEqual(decodeFilters(encodeFilters(p.filters)), p.filters, p.id);
+  }
+  const clinics = PRESETS.find((x) => x.id === "clinics")!;
+  assert.ok(["dent", "clinic", "أسنان"].every((w) => clinics.filters.keywords.include.includes(w)));
+  assert.equal(clinics.filters.operatingOnly, true);
+  const sa = PRESETS.find((x) => x.id === "qawsan-sa")!;
+  assert.deepEqual(sa.filters.country.include, ["SA"]);
+  assert.ok(["Riyadh", "الرياض", "Jeddah", "جدة", "Dammam", "الدمام"].every((c) => sa.filters.city.include.includes(c)));
+  assert.ok(sa.needsData.length >= 4);
 });

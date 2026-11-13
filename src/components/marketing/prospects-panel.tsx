@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Bookmark, ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
 import { deleteMarketingProspects, deleteSavedSearchFn, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, listSavedSearches, promoteMarketingProspects, saveSearchFn, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
-import { EMPTY_FILTERS, PRESETS, countActiveFilters, decodeFilters, encodeFilters, filterChips, type Filters } from "@/modules/marketing/filters";
+import { EMPTY_FILTERS, countActiveFilters, decodeFilters, encodeFilters, filterChips, type Filters } from "@/modules/marketing/filters";
 import { PROSPECT_STATUS_LABELS, type ManualStatus } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FiltersSidebar } from "./filters-sidebar";
+import { PresetsMenu } from "./presets-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ProspectSheet, type ProspectRow } from "./prospect-sheet";
@@ -181,67 +182,15 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
         </div>
         {showFilters && <Card className="max-h-[70vh] overflow-y-auto p-4 lg:hidden">{sidebar}</Card>}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Bookmark className="h-4 w-4 text-muted-foreground" />
-          <select
-            aria-label="البحوث المحفوظة والقوالب"
-            className="rounded-md border bg-background p-1.5 text-sm"
-            value=""
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v) return;
-              const preset = PRESETS.find((p) => `preset:${p.id}` === v);
-              if (preset) {
-                setFilters(preset.filters);
-                toast.success(`طُبّق القالب «${preset.name}». الفلاتر التالية تحتاج مصدر بيانات وستُطبَّق لاحقاً: ${preset.needsData.join(" · ")}`);
-                return;
-              }
-              const found = (saved.data ?? []).find((x: any) => `saved:${x.id}` === v);
-              if (found) setFilters(found.filters);
-            }}
-          >
-            <option value="">استدعاء بحث محفوظ أو قالب…</option>
-            <optgroup label="قوالب جاهزة">
-              {PRESETS.map((p) => (
-                <option key={p.id} value={`preset:${p.id}`}>{p.name}</option>
-              ))}
-            </optgroup>
-            {(saved.data ?? []).length > 0 && (
-              <optgroup label="بحوثي المحفوظة">
-                {(saved.data ?? []).map((x: any) => (
-                  <option key={x.id} value={`saved:${x.id}`}>{x.name}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={activeFilters === 0 || saveSearch.isPending}
-            onClick={() => {
-              const name = window.prompt("اسم البحث المحفوظ؟");
-              if (name?.trim()) saveSearch.mutate(name.trim());
-            }}
-          >
-            حفظ البحث الحالي
-          </Button>
-          {(saved.data ?? []).length > 0 && (
-            <select
-              aria-label="حذف بحث محفوظ"
-              className="rounded-md border bg-background p-1.5 text-sm text-muted-foreground"
-              value=""
-              onChange={(e) => {
-                const found = (saved.data ?? []).find((x: any) => x.id === e.target.value);
-                if (found && window.confirm(`حذف البحث «${found.name}»؟`)) removeSaved.mutate(found.id);
-              }}
-            >
-              <option value="">حذف بحث محفوظ…</option>
-              {(saved.data ?? []).map((x: any) => (
-                <option key={x.id} value={x.id}>{x.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
+        <PresetsMenu
+          current={filters}
+          active={activeFilters > 0}
+          saved={(saved.data ?? []) as { id: string; name: string; filters: Filters }[]}
+          onApply={(f) => setFilters(f)}
+          onSave={(name) => saveSearch.mutate(name)}
+          onDelete={(id) => removeSaved.mutate(id)}
+          saving={saveSearch.isPending}
+        />
 
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -315,7 +264,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10 text-start">
+                  <TableHead className="w-12 text-start [&:has([role=checkbox])]:pr-3">
                     <Checkbox
                       aria-label="تحديد كل الصفحة"
                       checked={allOnPage}
@@ -332,7 +281,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
               <TableBody>
                 {rows.map((r) => (
                   <TableRow key={r.id} className="cursor-pointer" data-state={selected.has(r.id) ? "selected" : undefined} onClick={() => setOpen(r)}>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="[&:has([role=checkbox])]:pr-3" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         aria-label={`تحديد ${r.name}`}
                         checked={selected.has(r.id)}

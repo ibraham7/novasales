@@ -242,13 +242,59 @@ export function decodeFilters(text: string | null | undefined): Filters {
 
 /* ---------------------------------- presets ---------------------------------- */
 
-export type Preset = { id: string; name: string; filters: Filters; needsData: string[] };
+export type Preset = { id: string; name: string; hint: string; filters: Filters; needsData: string[] };
 
-/** Ready searches. Parts that need people/company data are listed in `needsData` and applied once a data source exists. */
+// Words that mark a medical business in its name, category or address (any of them matches).
+const CLINIC_WORDS = ["clinic", "dent", "medical", "clinique", "أسنان", "طبيب", "طبي", "عيادة", "عيادات"];
+
+/** Ready filter sets: one click and the filters are set. Parts that need people/company data are listed in `needsData`. */
 export const PRESETS: Preset[] = [
+  {
+    id: "clinics",
+    name: "العيادات",
+    hint: "اسمها أو تصنيفها عيادة / أسنان / طبيب، تعمل حالياً، ولها هاتف",
+    filters: normalizeFilters({ keywords: { include: CLINIC_WORDS, exclude: [] }, hasPhone: true, operatingOnly: true }),
+    needsData: [],
+  },
+  {
+    id: "clinics-email",
+    name: "عيادات جاهزة للإيميل",
+    hint: "عيادات لها إيميل، لم يُتواصل معها ولا هي في CRM",
+    filters: normalizeFilters({ keywords: { include: CLINIC_WORDS, exclude: [] }, hasEmail: true, excludeContacted: true, excludeInCrm: true }),
+    needsData: [],
+  },
+  {
+    id: "whatsapp-ready",
+    name: "جاهز للتواصل بواتساب",
+    hint: "رقم جوال، تعمل حالياً، لم يُتواصل معها ولا هي في CRM",
+    filters: normalizeFilters({ mobileOnly: true, operatingOnly: true, excludeContacted: true, excludeInCrm: true }),
+    needsData: [],
+  },
+  {
+    id: "email-ready",
+    name: "جاهز للتواصل بالإيميل",
+    hint: "لها إيميل، لم يُتواصل معها ولا هي في CRM",
+    filters: normalizeFilters({ hasEmail: true, excludeContacted: true, excludeInCrm: true }),
+    needsData: [],
+  },
+  {
+    id: "top-rated",
+    name: "الأعلى تقييماً",
+    hint: "تقييم 4.5 فأكثر وأكثر من 100 تقييم",
+    filters: normalizeFilters({ minRating: 4.5, ratingsMin: 100, operatingOnly: true }),
+    needsData: [],
+  },
+  {
+    id: "online-stores",
+    name: "متاجر إلكترونية",
+    hint: "مواقع على Shopify أو Salla أو Zid أو WooCommerce (بعد الإثراء)",
+    filters: normalizeFilters({ tech: { include: ["shopify", "salla", "zid", "woocommerce"], exclude: [] } }),
+    needsData: [],
+  },
   {
     id: "qawsan-sa",
     name: "عملاء قوسان - السعودية",
+    hint: "السعودية: الرياض وجدة والدمام",
     filters: normalizeFilters({
       country: { include: ["SA"], exclude: [] },
       city: { include: ["Riyadh", "الرياض", "Jeddah", "جدة", "Dammam", "الدمام"], exclude: [] },
