@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
+import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, createOpportunityInStage, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
 import { getMergedChatForOpportunity } from "@/modules/messaging";
 import { setStageQualityLevel } from "@/modules/integrations/conversions.functions";
 import { QUALITY_LEVELS, QUALITY_LEVEL_KEYS, type QualityLevel } from "@/modules/integrations/conversion-model";
@@ -339,6 +339,30 @@ function PipelinePage() {
     (permsQ.data ?? []).includes("crm.pipelines.manage") || (permsQ.data ?? []).includes("org.manage");
 
   const canRedistribute = (permsQ.data ?? []).includes("crm.leads.assign");
+  const canAddTicket = ["crm.opportunities.create", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
+  const createTicket = useServerFn(createOpportunityInStage);
+  const [addStage, setAddStage] = useState<any | null>(null);
+  const [addForm, setAddForm] = useState({ name: "", phone: "", title: "", value: "", notes: "" });
+  const addTicketMut = useMutation({
+    mutationFn: () =>
+      createTicket({
+        data: {
+          stageId: addStage.id,
+          name: addForm.name,
+          phone: addForm.phone,
+          ...(addForm.title.trim() ? { title: addForm.title } : {}),
+          ...(addForm.value.trim() && Number.isFinite(Number(addForm.value)) ? { value: Number(addForm.value) } : {}),
+          ...(addForm.notes.trim() ? { notes: addForm.notes } : {}),
+        },
+      }),
+    onSuccess: () => {
+      toast.success(`أُضيفت التذكرة إلى «${addStage?.name}»`);
+      setAddStage(null);
+      setAddForm({ name: "", phone: "", title: "", value: "", notes: "" });
+      qc.invalidateQueries({ queryKey: ["pipeline-board"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "تعذرت إضافة التذكرة"),
+  });
   // The abandoned stage: the lost stage, or one named «مهمل». The button lives only there.
   const redistributeMut = useMutation({
     mutationFn: async (stage: any) => {
@@ -481,6 +505,43 @@ function PipelinePage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) setAddStage(null); }}>
+        <DialogContent dir="rtl">
+          <DialogHeader><DialogTitle>تذكرة جديدة في «{addStage?.name}»</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>اسم العميل</Label>
+              <Input aria-label="اسم العميل" autoFocus value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>رقم الواتساب (مع رمز الدولة)</Label>
+              <Input aria-label="رقم الواتساب" dir="ltr" inputMode="tel" placeholder="9665XXXXXXXX" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
+              <p className="text-xs text-muted-foreground">إذا كان الرقم موجوداً مسبقاً نربط التذكرة بنفس العميل بدون تكرار.</p>
+            </div>
+            <div className="space-y-1">
+              <Label>عنوان التذكرة (اختياري)</Label>
+              <Input aria-label="عنوان التذكرة" value={addForm.title} onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>القيمة (اختياري)</Label>
+              <Input aria-label="القيمة" dir="ltr" inputMode="decimal" value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>ملاحظة (اختياري)</Label>
+              <Input aria-label="ملاحظة" value={addForm.notes} onChange={(e) => setAddForm((f) => ({ ...f, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={addTicketMut.isPending || !addForm.name.trim() || addForm.phone.replace(/\D/g, "").length < 5}
+              onClick={() => addTicketMut.mutate()}
+            >
+              {addTicketMut.isPending ? "جارٍ الإضافة..." : "إضافة التذكرة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Filters bar */}
       <div className="flex items-center gap-2 flex-wrap bg-muted/30 p-2 rounded-lg shrink-0">
         <Input
@@ -572,6 +633,7 @@ function PipelinePage() {
               loading={boardQ.isLoading && !boardQ.data}
               members={members}
               canManageStages={canManageStages}
+              onAdd={canAddTicket ? () => setAddStage(s) : undefined}
               isDragOver={dragOver === s.id}
               onDragOver={() => setDragOver(s.id)}
               onDragLeave={() => setDragOver(null)}
@@ -605,6 +667,7 @@ function KanbanColumn({
   loading,
   members,
   canManageStages,
+  onAdd,
   isDragOver,
   onDragOver,
   onDragLeave,
@@ -627,6 +690,7 @@ function KanbanColumn({
   stages: any[];
   onMove: (oppId: string, stageId: string) => void;
   canManageStages: boolean;
+  onAdd?: () => void;
   isDragOver: boolean;
   onDragOver: () => void;
   onDragLeave: () => void;
@@ -661,7 +725,14 @@ function KanbanColumn({
           <StageNameEditor stage={stage} canEdit={canManageStages} onRename={onRename} />
           <span className="text-[10px] text-muted-foreground shrink-0">{stage.probability}%</span>
         </div>
-        <Badge variant="secondary" className="shrink-0">{all}</Badge>
+        <div className="flex items-center gap-1 shrink-0">
+          <Badge variant="secondary">{all}</Badge>
+          {onAdd && (
+            <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={`إضافة تذكرة في ${stage.name}`} title="إضافة تذكرة" onClick={onAdd}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
       {onRedistribute && (
         <Button size="sm" variant="outline" className="mb-3 shrink-0" disabled={redistributing || items.length === 0} onClick={onRedistribute}>
