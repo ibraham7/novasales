@@ -33,6 +33,12 @@ function SettingsPipelinesPage() {
   const stageFn = useServerFn(upsertStage);
   const stageDelFn = useServerFn(deleteStage);
 
+  // The board reads its own cached copy of the pipelines; refresh both so a change shows up there at once.
+  const refreshPipelines = () => {
+    qc.invalidateQueries({ queryKey: ["pipelines"] });
+    qc.invalidateQueries({ queryKey: ["pipeline-page-meta"] });
+    qc.invalidateQueries({ queryKey: ["pipeline-board"] });
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newPipeOpen, setNewPipeOpen] = useState(false);
   const [newPipeName, setNewPipeName] = useState("");
@@ -50,14 +56,14 @@ function SettingsPipelinesPage() {
       toast.success("تم إنشاء القمع");
       setNewPipeOpen(false);
       setNewPipeName("");
-      qc.invalidateQueries({ queryKey: ["pipelines"] });
+      refreshPipelines();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const setDefaultMut = useMutation({
     mutationFn: (id: string) => updateFn({ data: { pipelineId: id, isDefault: true } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pipelines"] }),
+    onSuccess: () => refreshPipelines(),
   });
 
   const delPipeMut = useMutation({
@@ -65,7 +71,7 @@ function SettingsPipelinesPage() {
     onSuccess: () => {
       toast.success("تم الحذف");
       setSelectedId(null);
-      qc.invalidateQueries({ queryKey: ["pipelines"] });
+      refreshPipelines();
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -86,14 +92,14 @@ function SettingsPipelinesPage() {
       }),
     onSuccess: () => {
       toast.success("تم الحفظ");
-      qc.invalidateQueries({ queryKey: ["pipelines"] });
+      refreshPipelines();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const delStageMut = useMutation({
     mutationFn: (id: string) => stageDelFn({ data: { stageId: id } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pipelines"] }),
+    onSuccess: () => refreshPipelines(),
     onError: (e: Error) => toast.error(e.message),
   });
 

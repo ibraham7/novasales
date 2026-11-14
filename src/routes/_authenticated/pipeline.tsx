@@ -123,7 +123,8 @@ function PipelinePage() {
   const stageCounts: Record<string, number> = countsQ.data?.counts ?? {};
 
   useEffect(() => {
-    if (!pipelineId && pipesQ.data && pipesQ.data.length > 0) {
+    // Also re-pick when the selected pipeline no longer exists (deleted in settings).
+    if (pipesQ.data && pipesQ.data.length > 0 && (!pipelineId || !pipesQ.data.some((p: any) => p.id === pipelineId))) {
       const def = pipesQ.data.find((p: any) => p.is_default) ?? pipesQ.data[0];
       setPipelineId(def.id);
     }
