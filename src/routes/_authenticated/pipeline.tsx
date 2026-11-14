@@ -343,7 +343,9 @@ function PipelinePage() {
   const canAddTicket = ["crm.opportunities.create", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
   const createTicket = useServerFn(createOpportunityInStage);
   const [addStage, setAddStage] = useState<any | null>(null);
+  const [addMore, setAddMore] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", phone: "", title: "", value: "", notes: "" });
+  const addReady = !!addForm.name.trim() && addForm.phone.replace(/\D/g, "").length >= 5;
   const addTicketMut = useMutation({
     mutationFn: () =>
       createTicket({
@@ -359,6 +361,7 @@ function PipelinePage() {
     onSuccess: () => {
       toast.success(`أُضيفت التذكرة إلى «${addStage?.name}»`);
       setAddStage(null);
+      setAddMore(false);
       setAddForm({ name: "", phone: "", title: "", value: "", notes: "" });
       qc.invalidateQueries({ queryKey: ["pipeline-board"] });
     },
@@ -506,40 +509,30 @@ function PipelinePage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) setAddStage(null); }}>
-        <DialogContent dir="rtl">
+      <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) { setAddStage(null); setAddMore(false); } }}>
+        <DialogContent dir="rtl" className="max-w-md">
           <DialogHeader><DialogTitle>تذكرة جديدة في «{addStage?.name}»</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>اسم العميل</Label>
-              <Input aria-label="اسم العميل" autoFocus value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>رقم الواتساب (مع رمز الدولة)</Label>
-              <Input aria-label="رقم الواتساب" dir="ltr" inputMode="tel" placeholder="9665XXXXXXXX" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
-              <p className="text-xs text-muted-foreground">إذا كان الرقم موجوداً مسبقاً نربط التذكرة بنفس العميل بدون تكرار.</p>
-            </div>
-            <div className="space-y-1">
-              <Label>عنوان التذكرة (اختياري)</Label>
-              <Input aria-label="عنوان التذكرة" value={addForm.title} onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>القيمة (اختياري)</Label>
-              <Input aria-label="القيمة" dir="ltr" inputMode="decimal" value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>ملاحظة (اختياري)</Label>
-              <Input aria-label="ملاحظة" value={addForm.notes} onChange={(e) => setAddForm((f) => ({ ...f, notes: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              disabled={addTicketMut.isPending || !addForm.name.trim() || addForm.phone.replace(/\D/g, "").length < 5}
-              onClick={() => addTicketMut.mutate()}
-            >
-              {addTicketMut.isPending ? "جارٍ الإضافة..." : "إضافة التذكرة"}
+          <form
+            className="space-y-3"
+            onSubmit={(e) => { e.preventDefault(); if (addReady && !addTicketMut.isPending) addTicketMut.mutate(); }}
+          >
+            <Input aria-label="اسم العميل" placeholder="اسم العميل" autoFocus value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
+            <Input aria-label="رقم الواتساب" placeholder="رقم الواتساب مع رمز الدولة" dir="ltr" className="text-right" inputMode="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
+            {addMore ? (
+              <div className="space-y-3">
+                <Input aria-label="عنوان التذكرة" placeholder="عنوان التذكرة" value={addForm.title} onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))} />
+                <Input aria-label="القيمة" placeholder="القيمة" dir="ltr" className="text-right" inputMode="decimal" value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} />
+                <Input aria-label="ملاحظة" placeholder="ملاحظة" value={addForm.notes} onChange={(e) => setAddForm((f) => ({ ...f, notes: e.target.value }))} />
+              </div>
+            ) : (
+              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setAddMore(true)}>
+                + خيارات إضافية (عنوان، قيمة، ملاحظة)
+              </button>
+            )}
+            <Button type="submit" className="w-full" disabled={!addReady || addTicketMut.isPending}>
+              {addTicketMut.isPending ? "جارٍ الإضافة..." : "إضافة"}
             </Button>
-          </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
