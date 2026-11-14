@@ -254,3 +254,107 @@ export const moveOpportunityStage = createServerFn({ method: "POST" })
     });
     return { ok: true };
   });
+
+/**
+ * Adds a ticket straight into a chosen stage — for the case where the agent contacted the customer
+ * first. Reuses the contact when the WhatsApp number is already known, so no duplicate is made.
+ */
+export const createOpportunityInStage = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      stageId: z.string().uuid(),
+      name: z.string().trim().min(1, "اكتب اسم العميل").max(120),
+      phone: z.string().trim().min(5, "اكتب رقم هاتف صحيح").max(30),
+      title: z.string().trim().max(200).optional(),
+      value: z.number().finite().min(0).max(1e12).optional(),
+      notes: z.string().trim().max(2000).optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data }) => {
+    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { normalizePhone } = await import("./contacts.server");
+    const db = supabaseAdmin as any;
+    const { organizationId } = await getWorkspace();
+    const access = await requireAnyPermission(["crm.opportunities.create", "opportunities.manage"]);
+
+    const { data: stage } = await db
+      .from("crm_pipeline_stages")
+      .select("id, pipeline_id, probability, is_won, is_lost, crm_pipelines!inner(organization_id)")
+      .eq("id", data.stageId)
+      .eq("crm_pipelines.organization_id", organizationId)
+      .maybeSingle();
+    if (!stage) throw new Error("المرحلة غير موجودة");
+
+    const phone = normalizePhone(data.phone);
+    let contactId: string | null = null;
+    const { data: point } = await db
+      .from("crm_contact_points")
+      .select("contact_id")
+      .eq("organization_id", organizationId)
+      .eq("channel_type", "whatsapp")
+      .eq("identifier", phone)
+      .maybeSingle();
+    if (point?.contact_id) {
+      contactId = point.contact_id;
+    } else {
+      const { data: created, error } = await db
+        .from("crm_contacts")
+        .insert({
+          organization_id: organizationId,
+          display_name: data.name,
+          full_name: data.name,
+          notes: data.notes ?? null,
+          custom_fields: { created_by: access.userId },
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message);
+      contactId = created.id;
+      const { error: pointError } = await db.from("crm_contact_points").insert({
+        organization_id: organizationId,
+        contact_id: contactId,
+        channel_type: "whatsapp",
+        identifier: phone,
+        is_primary: true,
+        verified: false,
+      });
+      if (pointError) {
+        await db.from("crm_contacts").delete().eq("id", contactId);
+        throw new Error(pointError.message);
+      }
+    }
+
+    const { getPublicPlatformSettings } = await import("@/modules/superadmin/settings.functions");
+    const platform = await getPublicPlatformSettings();
+    const terminal = stage.is_won || stage.is_lost;
+    const { data: opp, error } = await db
+      .from("opp_opportunities")
+      .insert({
+        organization_id: organizationId,
+        contact_id: contactId,
+        department_id: access.departmentIds?.[0] ?? null,
+        owner_agent_id: access.userId,
+        pipeline_id: stage.pipeline_id,
+        stage_id: stage.id,
+        stage: stage.is_won ? "won" : stage.is_lost ? "lost" : "new",
+        outcome: stage.is_won ? "won" : stage.is_lost ? "lost" : null,
+        closed_at: terminal ? new Date().toISOString() : null,
+        title: data.title || data.name,
+        source: "outbound_manual",
+        value: data.value ?? 0,
+        currency: platform.default_currency,
+        probability: stage.probability,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    await db.from("domain_events").insert({
+      organization_id: organizationId,
+      event_type: "crm.opportunity.created",
+      aggregate_type: "opportunity",
+      aggregate_id: opp.id,
+      payload: { stage_id: stage.id, source: "outbound_manual" },
+    });
+    return { id: opp.id as string };
+  });
