@@ -84,6 +84,6 @@ test('database failures propagate instead of appearing as an empty board', async
 test('each board card carries its own organization\'s labels, and none when it has no labels', async () => {
   const rows = await setup().listOpportunitiesBoard();
   const one = rows.find(r => r.id === 'one'), two = rows.find(r => r.id === 'two');
-  assert.deepEqual(one.labels.map(({ id, name, color }) => ({ id, name, color })), [{ id: 'label-1', name: 'نوفا سيلز', color: '#0079bf' }]);
-  assert.deepEqual(two.labels, []);
+  assert.equal(JSON.stringify(one.labels.map(({ id, name, color }) => ({ id, name, color }))), JSON.stringify([{ id: 'label-1', name: 'نوفا سيلز', color: '#0079bf' }]));
+  assert.equal(two.labels.length, 0);
 });
