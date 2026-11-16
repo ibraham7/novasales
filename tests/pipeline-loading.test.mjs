@@ -25,6 +25,8 @@ function setup(scope = 'all', failTable) {
     crm_opportunity_sessions: [{ opportunity_id: 'one', organization_id: 'org-a', session_ref: 'session', channel: 'whatsapp' }, { opportunity_id: 'one', organization_id: 'org-b', session_ref: 'foreign-session' }],
     msg_sessions: [{ id: 'session', organization_id: 'org-a', channel_account_id: 'account', unread_count: 2, last_message_preview: 'Hello', last_message_at: '2026-10-09' }],
     msg_channel_accounts: [{ id: 'account', organization_id: 'org-a', display_name: 'WhatsApp' }],
+    opp_labels: [{ id: 'label-1', organization_id: 'org-a', name: 'نوفا سيلز', color: '#0079bf' }, { id: 'label-x', organization_id: 'org-b', name: 'غريب', color: '#000000' }],
+    opp_label_links: [{ opportunity_id: 'one', label_id: 'label-1', organization_id: 'org-a' }, { opportunity_id: 'one', label_id: 'label-x', organization_id: 'org-b' }],
   };
   const db = { from(table) {
     let rows = [...(tables[table] ?? [])];
@@ -77,4 +79,11 @@ test('metadata returns existing pipeline and names only active organization memb
 test('database failures propagate instead of appearing as an empty board', async () => {
   await assert.rejects(setup('all', 'opp_opportunities').listOpportunitiesBoard(), /database unavailable/);
   await assert.rejects(setup('all', 'org_memberships').getPipelinePageMeta(), /database unavailable/);
+});
+
+test('each board card carries its own organization\'s labels, and none when it has no labels', async () => {
+  const rows = await setup().listOpportunitiesBoard();
+  const one = rows.find(r => r.id === 'one'), two = rows.find(r => r.id === 'two');
+  assert.deepEqual(one.labels.map(({ id, name, color }) => ({ id, name, color })), [{ id: 'label-1', name: 'نوفا سيلز', color: '#0079bf' }]);
+  assert.deepEqual(two.labels, []);
 });

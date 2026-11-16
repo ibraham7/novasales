@@ -174,7 +174,7 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       const latest = linked[0];
       const account = accountsById.get(latest?.channel_account_id);
       return {
-        ...o, contact_name: contact?.display_name || contact?.full_name || o.title,
+        ...o, labels: labelsByOpp.get(o.id) ?? [], contact_name: contact?.display_name || contact?.full_name || o.title,
         contact_avatar: contact?.avatar_url, contact_phone: latest?.peer_identifier,
         owner_name: owner?.full_name, owner_avatar: owner?.avatar_url,
         channel: latest?.channel, account_name: account?.display_name,
