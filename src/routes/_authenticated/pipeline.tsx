@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, createOpportunityInStage, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
+import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, createOpportunityInStage, listOppLabels, createOppLabel, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
 import { getMergedChatForOpportunity } from "@/modules/messaging";
 import { setStageQualityLevel } from "@/modules/integrations/conversions.functions";
 import { QUALITY_LEVELS, QUALITY_LEVEL_KEYS, type QualityLevel } from "@/modules/integrations/conversion-model";
@@ -30,6 +30,8 @@ import { Label } from "@/components/ui/label";
 import { quickAssignOpportunity } from "@/modules/assignments/lead-assignments.functions";
 import { redistributeLostTickets } from "@/modules/assignments/redistribute.functions";
 import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
+import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -342,27 +344,33 @@ function PipelinePage() {
   const canRedistribute = (permsQ.data ?? []).includes("crm.leads.assign");
   const canAddTicket = ["crm.opportunities.create", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
   const createTicket = useServerFn(createOpportunityInStage);
+  const labelsFn = useServerFn(listOppLabels);
+  const createLabelFn = useServerFn(createOppLabel);
+  const labelsQ = useQuery({ queryKey: ["opp-labels"], queryFn: () => labelsFn(), staleTime: 60_000 });
+  const createLabelMut = useMutation({
+    mutationFn: (input: { name: string; color: string }) => createLabelFn({ data: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["opp-labels"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
   const [addStage, setAddStage] = useState<any | null>(null);
-  const [addMore, setAddMore] = useState(false);
-  const [addForm, setAddForm] = useState({ name: "", phone: "", title: "", value: "", notes: "" });
-  const addReady = !!addForm.name.trim() && addForm.phone.replace(/\D/g, "").length >= 5;
+  const EMPTY_TICKET = { name: "", phone: "", notes: "", labelIds: [] as string[] };
+  const [addForm, setAddForm] = useState(EMPTY_TICKET);
+  const addReady = !!addForm.name.trim() && (!addForm.phone.trim() || addForm.phone.replace(/\D/g, "").length >= 5);
   const addTicketMut = useMutation({
     mutationFn: () =>
       createTicket({
         data: {
           stageId: addStage.id,
           name: addForm.name,
-          phone: addForm.phone,
-          ...(addForm.title.trim() ? { title: addForm.title } : {}),
-          ...(addForm.value.trim() && Number.isFinite(Number(addForm.value)) ? { value: Number(addForm.value) } : {}),
+          ...(addForm.phone.trim() ? { phone: addForm.phone } : {}),
           ...(addForm.notes.trim() ? { notes: addForm.notes } : {}),
+          ...(addForm.labelIds.length ? { labelIds: addForm.labelIds } : {}),
         },
       }),
     onSuccess: () => {
       toast.success(`أُضيفت التذكرة إلى «${addStage?.name}»`);
       setAddStage(null);
-      setAddMore(false);
-      setAddForm({ name: "", phone: "", title: "", value: "", notes: "" });
+      setAddForm(EMPTY_TICKET);
       qc.invalidateQueries({ queryKey: ["pipeline-board"] });
     },
     onError: (e: any) => toast.error(e?.message ?? "تعذرت إضافة التذكرة"),
@@ -512,26 +520,35 @@ function PipelinePage() {
         />
       )}
 
-      <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) { setAddStage(null); setAddMore(false); } }}>
-        <DialogContent dir="rtl" className="max-w-md">
+      <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) setAddStage(null); }}>
+        <DialogContent dir="rtl" className="max-w-lg">
           <DialogHeader><DialogTitle>تذكرة جديدة في «{addStage?.name}»</DialogTitle></DialogHeader>
           <form
-            className="space-y-3"
+            className="space-y-4"
             onSubmit={(e) => { e.preventDefault(); if (addReady && !addTicketMut.isPending) addTicketMut.mutate(); }}
           >
             <Input aria-label="اسم العميل" placeholder="اسم العميل" autoFocus value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
-            <Input aria-label="رقم الواتساب" placeholder="رقم الواتساب مع رمز الدولة" dir="ltr" className="text-right" inputMode="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
-            {addMore ? (
-              <div className="space-y-3">
-                <Input aria-label="عنوان التذكرة" placeholder="عنوان التذكرة" value={addForm.title} onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))} />
-                <Input aria-label="القيمة" placeholder="القيمة" dir="ltr" className="text-right" inputMode="decimal" value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} />
-                <Input aria-label="ملاحظة" placeholder="ملاحظة" value={addForm.notes} onChange={(e) => setAddForm((f) => ({ ...f, notes: e.target.value }))} />
-              </div>
-            ) : (
-              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setAddMore(true)}>
-                + خيارات إضافية (عنوان، قيمة، ملاحظة)
-              </button>
-            )}
+            <Input aria-label="رقم الواتساب" placeholder="رقم الواتساب مع رمز الدولة (اختياري)" dir="ltr" className="text-right" inputMode="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">الليبلز</Label>
+              <LabelPicker
+                labels={labelsQ.data ?? []}
+                value={addForm.labelIds}
+                onChange={(labelIds) => setAddForm((f) => ({ ...f, labelIds }))}
+                creating={createLabelMut.isPending}
+                onCreate={async (input) => {
+                  try {
+                    return await createLabelMut.mutateAsync(input);
+                  } catch {
+                    return undefined;
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ticket-notes" className="text-xs text-muted-foreground">ملاحظات</Label>
+              <Textarea id="ticket-notes" aria-label="ملاحظات" rows={8} className="min-h-40 resize-y" placeholder="اكتب أي تفاصيل عن العميل أو المحادثة..." value={addForm.notes} onChange={(e) => setAddForm((f) => ({ ...f, notes: e.target.value }))} />
+            </div>
             <Button type="submit" className="w-full" disabled={!addReady || addTicketMut.isPending}>
               {addTicketMut.isPending ? "جارٍ الإضافة..." : "إضافة"}
             </Button>
@@ -817,6 +834,11 @@ const KanbanCard = memo(function KanbanCard({
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
+              {opp.labels?.length > 0 && (
+                <div className="mb-1 flex flex-wrap gap-1">
+                  {opp.labels.map((l: any) => <LabelChip key={l.id} label={l} small />)}
+                </div>
+              )}
               <div className="font-medium text-sm truncate">{opp.contact_name ?? "—"}</div>
               {opp.last_message && (
                 <div className="text-[11px] text-muted-foreground truncate mt-0.5">

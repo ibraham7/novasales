@@ -154,6 +154,18 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       list.push({ ...session, channel: link.channel });
       linkedByOpportunity.set(link.opportunity_id, list);
     }
+    // Labels are decoration: if their tables are not there yet the board still loads.
+    const labelsByOpp = new Map<string, any[]>();
+    try {
+      const links = await readByIds(db, "opp_label_links", "opportunity_id,label_id", rows.map(o => o.id), organizationId, "opportunity_id");
+      const defs = new Map((await readByIds(db, "opp_labels", "id,name,color", links.map(l => l.label_id), organizationId)).map(l => [l.id, l]));
+      for (const link of links) {
+        const def = defs.get(link.label_id);
+        if (def) labelsByOpp.set(link.opportunity_id, [...(labelsByOpp.get(link.opportunity_id) ?? []), def]);
+      }
+    } catch {
+      /* labels not installed yet */
+    }
     return rows.map(o => {
       const contact = contactsById.get(o.contact_id);
       const owner = ownersById.get(o.owner_agent_id);
@@ -264,10 +276,12 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
     z.object({
       stageId: z.string().uuid(),
       name: z.string().trim().min(1, "اكتب اسم العميل").max(120),
-      phone: z.string().trim().min(5, "اكتب رقم هاتف صحيح").max(30),
+      /** Optional: a ticket can be opened before the customer's number is known. */
+      phone: z.string().trim().max(30).optional().refine((v) => !v || v.replace(/\D/g, "").length >= 5, "اكتب رقم هاتف صحيحاً أو اتركه فارغاً"),
       title: z.string().trim().max(200).optional(),
       value: z.number().finite().min(0).max(1e12).optional(),
-      notes: z.string().trim().max(2000).optional(),
+      notes: z.string().trim().max(5000).optional(),
+      labelIds: z.array(z.string().uuid()).max(12).optional(),
     }).parse(d)
   )
   .handler(async ({ data }) => {
@@ -286,15 +300,17 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!stage) throw new Error("المرحلة غير موجودة");
 
-    const phone = normalizePhone(data.phone);
+    const phone = data.phone ? normalizePhone(data.phone) : null;
     let contactId: string | null = null;
-    const { data: point } = await db
-      .from("crm_contact_points")
-      .select("contact_id")
-      .eq("organization_id", organizationId)
-      .eq("channel_type", "whatsapp")
-      .eq("identifier", phone)
-      .maybeSingle();
+    const { data: point } = phone
+      ? await db
+          .from("crm_contact_points")
+          .select("contact_id")
+          .eq("organization_id", organizationId)
+          .eq("channel_type", "whatsapp")
+          .eq("identifier", phone)
+          .maybeSingle()
+      : { data: null };
     if (point?.contact_id) {
       contactId = point.contact_id;
     } else {
@@ -304,14 +320,13 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
           organization_id: organizationId,
           display_name: data.name,
           full_name: data.name,
-          notes: data.notes ?? null,
           custom_fields: { created_by: access.userId },
         })
         .select("id")
         .single();
       if (error) throw new Error(error.message);
       contactId = created.id;
-      const { error: pointError } = await db.from("crm_contact_points").insert({
+      const { error: pointError } = !phone ? { error: null } : await db.from("crm_contact_points").insert({
         organization_id: organizationId,
         contact_id: contactId,
         channel_type: "whatsapp",
@@ -349,6 +364,19 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
+    // The notes go on the ticket itself, where the team reads them.
+    if (data.notes) {
+      const { error: noteError } = await db.from("opp_notes").insert({ organization_id: organizationId, opportunity_id: opp.id, author_id: access.userId, body: data.notes });
+      if (noteError) throw new Error(noteError.message);
+    }
+    if (data.labelIds?.length) {
+      const wanted = [...new Set(data.labelIds)];
+      const valid = await checkedRows(db.from("opp_labels").select("id").eq("organization_id", organizationId).in("id", wanted));
+      if (valid.length) {
+        const { error: linkError } = await db.from("opp_label_links").insert(valid.map((l: any) => ({ opportunity_id: opp.id, label_id: l.id, organization_id: organizationId })));
+        if (linkError) throw new Error(linkError.message);
+      }
+    }
     await db.from("domain_events").insert({
       organization_id: organizationId,
       event_type: "crm.opportunity.created",
@@ -357,4 +385,31 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
       payload: { stage_id: stage.id, source: "outbound_manual" },
     });
     return { id: opp.id as string };
+  });
+
+const LABEL_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+/** The organization's ticket labels. Empty (not an error) until the labels migration has been run. */
+export const listOppLabels = createServerFn({ method: "GET" }).handler(async () => {
+  const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
+  const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+  const db = supabaseAdmin as any;
+  const { organizationId } = await getWorkspace();
+  await requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
+  const { data, error } = await db.from("opp_labels").select("id,name,color").eq("organization_id", organizationId).order("created_at", { ascending: true });
+  if (error) return [] as { id: string; name: string; color: string }[];
+  return (data ?? []) as { id: string; name: string; color: string }[];
+});
+
+export const createOppLabel = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ name: z.string().trim().min(1, "اكتب اسم الليبل").max(40), color: z.string().regex(LABEL_COLOR) }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const db = supabaseAdmin as any;
+    const { organizationId } = await getWorkspace();
+    const access = await requireAnyPermission(["crm.opportunities.create", "crm.opportunities.update", "opportunities.manage", "org.manage"]);
+    const { data: row, error } = await db.from("opp_labels").insert({ organization_id: organizationId, name: data.name, color: data.color, created_by: access.userId }).select("id,name,color").single();
+    if (error) throw new Error(error.code === "23505" ? "يوجد ليبل بهذا الاسم" : ["PGRST205", "42P01"].includes(error.code) ? "شغّل ملف SQL الخاص بالليبلز في Supabase أولاً" : error.message);
+    return row as { id: string; name: string; color: string };
   });

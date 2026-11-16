@@ -22,6 +22,8 @@ export {
   getBoardStageCounts,
   moveOpportunityStage,
   createOpportunityInStage,
+  listOppLabels,
+  createOppLabel,
 } from "./pipeline.functions";
 
 // Pipelines (dynamic)
