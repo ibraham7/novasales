@@ -1,4 +1,5 @@
-// Gives the abandoned tickets a fresh start (see redistribute-core.ts). Sends no message to anyone.
+// Gives the abandoned tickets a fresh start (see redistribute-core.ts). Messages to the customers are
+// sent only when the manager asks for them (queued, then sent slowly inside working hours).
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "@/lib/validation";
 import { createRateLimiter } from "@/modules/notifications/rate-limit";
@@ -23,7 +24,16 @@ async function readAll(make: () => any): Promise<any[]> {
 }
 
 export const redistributeLostTickets = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ stageId: z.string().uuid(), dryRun: z.boolean().default(true) }).parse(d))
+  .inputValidator((d: unknown) =>
+    z.object({
+      stageId: z.string().uuid(),
+      dryRun: z.boolean().default(true),
+      /** When present, every redistributed customer also gets this message from their new agent. */
+      message: z.object({
+        body: z.string().max(1500),
+        schedule: z.object({ dailyLimit: z.number().int(), windowStart: z.string(), windowEnd: z.string(), timezone: z.string(), ramp: z.null().default(null) }),
+      }).optional(),
+    }).parse(d))
   .handler(async ({ data }) => {
     const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
     const { applyOpportunityScope } = await import("@/platform/rbac/data-scope.server");
@@ -52,7 +62,7 @@ export const redistributeLostTickets = createServerFn({ method: "POST" })
     if (!first) throw new Error("لا توجد مرحلة مفتوحة في هذا القمع لإعادة التذاكر إليها");
 
     const query = applyOpportunityScope(
-      db.from("opp_opportunities").select("id,lead_id,owner_agent_id,department_id").eq("organization_id", organizationId).eq("stage_id", stage.id).is("deleted_at", null).order("opened_at", { ascending: true }).order("id").limit(MAX_TICKETS + 1),
+      db.from("opp_opportunities").select("id,lead_id,contact_id,owner_agent_id,department_id").eq("organization_id", organizationId).eq("stage_id", stage.id).is("deleted_at", null).order("opened_at", { ascending: true }).order("id").limit(MAX_TICKETS + 1),
       access,
     );
     const found: any[] = query ? await rows(query) : [];
@@ -93,7 +103,17 @@ export const redistributeLostTickets = createServerFn({ method: "POST" })
     const summary = { stageName: stage.name as string, firstStageName: first.name as string, tickets: tickets.length, willMove: plan.moves.length, unassignable: plan.unassignable.length, agents: agents.all.length, hasMore, perAgent };
     if (data.dryRun) return { dryRun: true as const, ...summary };
 
-    if (plan.moves.length === 0) return { dryRun: false as const, ...summary, moved: 0 };
-    const { moved } = await applyRedistribution(db, { organizationId, actorId: userId, lostStageId: stage.id, first: { id: first.id, pipeline_id: first.pipeline_id, probability: first.probability ?? null }, moves: plan.moves });
-    return { dryRun: false as const, ...summary, moved };
+    if (plan.moves.length === 0) return { dryRun: false as const, ...summary, moved: 0, queued: 0 };
+    const { messageProblem, enqueueSends } = await import("./redistribute-send-core");
+    if (data.message) {
+      const problem = messageProblem(data.message);
+      if (problem) throw new Error(problem);
+    }
+    const { moved, appliedMoves } = await applyRedistribution(db, { organizationId, actorId: userId, lostStageId: stage.id, first: { id: first.id, pipeline_id: first.pipeline_id, probability: first.probability ?? null }, moves: plan.moves });
+    let queued = 0;
+    if (data.message && appliedMoves.length) {
+      const r = await enqueueSends(db, { organizationId, actorId: userId, moves: appliedMoves.map((m) => ({ ticketId: m.ticketId, contactId: m.contactId ?? null, to: m.to })), plan: data.message });
+      queued = r.queued;
+    }
+    return { dryRun: false as const, ...summary, moved, queued };
   });
