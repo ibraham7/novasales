@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
 import { deleteMarketingProspects, deleteSavedSearchFn, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, listSavedSearches, promoteMarketingProspects, saveSearchFn, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { EMPTY_FILTERS, countActiveFilters, decodeFilters, encodeFilters, filterChips, type Filters } from "@/modules/marketing/filters";
 import { PROSPECT_STATUS_LABELS, type ManualStatus } from "@/modules/marketing/statuses";
@@ -294,7 +294,20 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                       />
                     </TableCell>
                     <TableCell className="max-w-[16rem] text-start">
-                      <div className="truncate font-medium">{r.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-medium">{r.name}</span>
+                        {r.enrich_status === "done" && (
+                          <Badge variant="outline" className="shrink-0 gap-0.5 border-emerald-300 bg-emerald-50 text-[10px] text-emerald-700" title="تم إثراء هذه الجهة">
+                            <Check className="h-3 w-3" /> مُثرى
+                          </Badge>
+                        )}
+                        {r.enrich_status === "no_website" && (
+                          <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground" title="جرى الإثراء لكن لا يوجد موقع لقراءته">بلا موقع</Badge>
+                        )}
+                        {r.enrich_status === "failed" && (
+                          <Badge variant="outline" className="shrink-0 border-amber-300 bg-amber-50 text-[10px] text-amber-700" title={r.enrich_error ?? "تعذّر قراءة الموقع"}>تعذّر</Badge>
+                        )}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">{[r.category, r.address].filter(Boolean).join(" · ")}</div>
                     </TableCell>
                     <TableCell>
@@ -318,6 +331,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                           </a>
                           {r.emails?.length ? <Badge variant="outline" className="text-[10px]">بريد</Badge> : null}
                           {r.site_whatsapp ? <Badge variant="outline" className="text-[10px]">واتساب</Badge> : null}
+                          {r.socials && Object.keys(r.socials).length ? <Badge variant="outline" className="text-[10px]">سوشال</Badge> : null}
                         </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
