@@ -123,3 +123,30 @@ test("technologies and the page language are read from the page source", async (
   assert.deepEqual(detectTech("<html><body>hi</body></html>"), []);
   assert.equal(detectLang("<html><body></body></html>"), null);
 });
+
+function cfEncode(email: string, key = 0x2a) {
+  return key.toString(16).padStart(2, "0") + [...email].map((c) => (c.charCodeAt(0) ^ key).toString(16).padStart(2, "0")).join("");
+}
+
+test("emails: Cloudflare-protected, JSON-LD and [at]/[dot] forms are found", () => {
+  const html = `<a class="__cf_email__" data-cfemail="${cfEncode("hello@clinic.com")}">[email&#160;protected]</a>
+    <script type="application/ld+json">{"@type":"Dentist","email":"mailto:desk@clinic.com","sameAs":["https://www.instagram.com/clinic.tr/","https://facebook.com/clinictr"]}</script>
+    <p>write: sales [at] clinic [dot] com</p>`;
+  assert.deepEqual(extractEmails(html, "clinic.com").sort(), ["desk@clinic.com", "hello@clinic.com", "sales@clinic.com"]);
+  const c = extractContacts(html, "https://clinic.com/");
+  assert.equal(c.socials.instagram, "https://www.instagram.com/clinic.tr");
+  assert.equal(c.socials.facebook, "https://www.facebook.com/clinictr");
+});
+
+test("readSite tries the usual contact paths when the home page has no email and links none", async () => {
+  const seen: string[] = [];
+  const fetchPage = async (url: string) => {
+    seen.push(url);
+    if (url.endsWith("/contact")) return { finalUrl: url, html: '<a href="mailto:hi@shop.com">x</a>' };
+    if (url === "https://shop.com/") return { finalUrl: url, html: "<html>no email here</html>" };
+    throw new Error("404");
+  };
+  const found = await readSite("https://shop.com/", fetchPage);
+  assert.deepEqual(found.emails, ["hi@shop.com"]);
+  assert.deepEqual(seen, ["https://shop.com/", "https://shop.com/contact"]);
+});
