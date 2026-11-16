@@ -5,8 +5,8 @@
  * Nothing here sends a message to a customer.
  */
 
-export type Ticket = { id: string; lead_id: string | null; owner_agent_id: string | null; department_id: string | null };
-export type Move = { ticketId: string; leadId: string | null; from: string | null; to: string; departmentId: string | null };
+export type Ticket = { id: string; lead_id: string | null; owner_agent_id: string | null; department_id: string | null; contact_id?: string | null };
+export type Move = { ticketId: string; leadId: string | null; from: string | null; to: string; departmentId: string | null; contactId?: string | null };
 export type Agents = { all: string[]; byDepartment: Map<string, string[]> };
 
 const CHUNK = 100;
@@ -80,7 +80,7 @@ export function planRedistribution(input: { tickets: Ticket[]; history: Map<stri
     const tied = pool.filter((u) => (load.get(u) ?? 0) === least);
     const to = tied[Math.floor(random() * tied.length)]!;
     load.set(to, (load.get(to) ?? 0) + 1);
-    moves.push({ ticketId: t.id, leadId: t.lead_id, from: t.owner_agent_id, to, departmentId: t.department_id });
+    moves.push({ ticketId: t.id, leadId: t.lead_id, from: t.owner_agent_id, to, departmentId: t.department_id, contactId: t.contact_id ?? null });
   }
   return { moves, unassignable, perAgent: Object.fromEntries(load) as Record<string, number> };
 }
@@ -98,6 +98,7 @@ export async function applyRedistribution(db: any, input: { organizationId: stri
   for (const m of input.moves) byAgent.set(m.to, [...(byAgent.get(m.to) ?? []), m]);
 
   let moved = 0;
+  const appliedMoves: Move[] = [];
   for (const [agent, list] of byAgent) {
     for (const part of chunks(list)) {
       const ids = part.map((m) => m.ticketId);
@@ -114,6 +115,7 @@ export async function applyRedistribution(db: any, input: { organizationId: stri
       const done = new Set<string>((data ?? []).map((r: any) => r.id));
       const applied = part.filter((m) => done.has(m.ticketId));
       moved += applied.length;
+      appliedMoves.push(...applied);
       const leadIds = applied.map((m) => m.leadId).filter((x): x is string => !!x);
       if (leadIds.length) {
         const { error: leadError } = await db.from("crm_leads").update({ owner_user_id: agent }).eq("organization_id", input.organizationId).in("id", leadIds);
@@ -133,5 +135,5 @@ export async function applyRedistribution(db: any, input: { organizationId: stri
       }
     }
   }
-  return { moved };
+  return { moved, appliedMoves };
 }

@@ -12,7 +12,9 @@ export const Route = createFileRoute("/api/public/cmp-tick")({
           const r = await tickCampaigns();
           const { tickEmailCampaigns } = await import("@/modules/marketing/email-send.server");
           const email = await tickEmailCampaigns();
-          return Response.json({ ...r, email: email.processed });
+          const { tickRedistributionSends } = await import("@/modules/assignments/redistribute-send.server");
+          const redistribute = await tickRedistributionSends();
+          return Response.json({ ...r, email: email.processed, redistribute: redistribute.processed });
         } catch (e) {
           console.error("[cmp-tick] failed", e);
           return Response.json({ error: (e as Error).message }, { status: 500 });

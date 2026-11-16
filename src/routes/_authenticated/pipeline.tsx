@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { quickAssignOpportunity } from "@/modules/assignments/lead-assignments.functions";
 import { redistributeLostTickets } from "@/modules/assignments/redistribute.functions";
-import { askConfirm } from "@/components/ui/confirm-dialog";
+import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -368,32 +368,26 @@ function PipelinePage() {
     onError: (e: any) => toast.error(e?.message ?? "تعذرت إضافة التذكرة"),
   });
   // The abandoned stage: the lost stage, or one named «مهمل». The button lives only there.
+  // Step 1 only reads the plan; the manager then decides in the dialog whether the agents also send a message.
+  const [redistributePlan, setRedistributePlan] = useState<{ stage: any; plan: any } | null>(null);
   const redistributeMut = useMutation({
-    mutationFn: async (stage: any) => {
-      const plan = await doRedistribute({ data: { stageId: stage.id, dryRun: true } });
+    mutationFn: async (stage: any) => ({ stage, plan: await doRedistribute({ data: { stageId: stage.id, dryRun: true } }) }),
+    onSuccess: ({ stage, plan }) => {
       if (plan.willMove === 0) {
         toast.error(plan.tickets === 0 ? `لا توجد تذاكر في مرحلة «${plan.stageName}»` : "لا يوجد مندوبون متاحون لاستلام هذه التذاكر");
-        return null;
+        return;
       }
-      const spread = plan.perAgent.slice(0, 6).map((a: any) => `${a.name}: ${a.count}`).join(" · ");
-      const ok = await askConfirm({
-        title: `إعادة توزيع ${plan.willMove} تذكرة؟`,
-        description:
-          `ستنتقل التذاكر من «${plan.stageName}» إلى «${plan.firstStageName}» وتُوزَّع على ${plan.agents} مندوب تقريباً بالتساوي.\n` +
-          `${spread ? `${spread}\n` : ""}` +
-          `كل تذكرة تذهب لمندوب لم تمرّ عليه بعد، ولا ترجع لمندوبها السابق قبل أن تمرّ على الجميع.\n` +
-          `سيُحفظ سجل التوزيع، ويمكنك تكرار هذه الخطوة لاحقاً.\n` +
-          `لن تُرسل أي رسالة للعملاء الآن.` +
-          `${plan.unassignable ? `\n(${plan.unassignable} تذكرة لا مندوب لها وستبقى مكانها)` : ""}` +
-          `${plan.hasMore ? `\n(الحد الأقصى 1000 تذكرة بالمرة؛ كرّر الخطوة للباقي)` : ""}`,
-        confirmLabel: "إعادة التوزيع",
-      });
-      if (!ok) return null;
-      return doRedistribute({ data: { stageId: stage.id, dryRun: false } });
+      setRedistributePlan({ stage, plan });
     },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const redistributeApplyMut = useMutation({
+    mutationFn: (message: RedistributeMessage | null) => doRedistribute({ data: { stageId: redistributePlan!.stage.id, dryRun: false, ...(message ? { message } : {}) } }),
     onSuccess: (r) => {
-      if (!r || r.dryRun) return;
-      toast.success(`أُعيد توزيع ${r.moved} تذكرة إلى «${r.firstStageName}»`);
+      if (r.dryRun) return;
+      setRedistributePlan(null);
+      const queued = "queued" in r ? r.queued : 0;
+      toast.success(`أُعيد توزيع ${r.moved} تذكرة إلى «${r.firstStageName}»${queued ? ` · ${queued} رسالة بانتظار الإرسال داخل ساعات العمل` : ""}`);
       qc.invalidateQueries({ queryKey: ["pipeline-board"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -508,6 +502,15 @@ function PipelinePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {redistributePlan && (
+        <RedistributeDialog
+          plan={redistributePlan.plan}
+          pending={redistributeApplyMut.isPending}
+          onCancel={() => setRedistributePlan(null)}
+          onConfirm={(message) => redistributeApplyMut.mutate(message)}
+        />
+      )}
 
       <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) { setAddStage(null); setAddMore(false); } }}>
         <DialogContent dir="rtl" className="max-w-md">

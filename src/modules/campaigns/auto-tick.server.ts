@@ -28,6 +28,13 @@ export function startCampaignTicker() {
       console.error("[email] run failed", error instanceof Error ? error.message : error);
     }
     try {
+      const { tickRedistributionSends } = await import("@/modules/assignments/redistribute-send.server");
+      const { processed } = await tickRedistributionSends();
+      if (processed) console.log(`[redistribute] sent ${processed}`);
+    } catch (error) {
+      console.error("[redistribute] run failed", error instanceof Error ? error.message : error);
+    }
+    try {
       const { deliverMetaConversions } = await import("@/modules/integrations/meta-capi.server");
       const { sent } = await deliverMetaConversions();
       if (sent) console.log(`[conversions] sent ${sent} to Meta`);
