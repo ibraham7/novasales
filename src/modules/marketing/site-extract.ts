@@ -34,8 +34,47 @@ function cleanEmail(raw: string): string | null {
   return email;
 }
 
+/** Cloudflare "email protection" hides an address as hex: the first byte is the XOR key. */
+export function decodeCfEmail(hex: string): string | null {
+  if (!/^[0-9a-f]{4,}$/i.test(hex) || hex.length % 2) return null;
+  const key = parseInt(hex.slice(0, 2), 16);
+  let out = "";
+  for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+  return out.includes("@") ? out : null;
+}
+
+/** Emails (and the sameAs social links) that schema.org JSON-LD blocks declare. */
+function jsonLdValues(html: string): { emails: string[]; links: string[] } {
+  const emails: string[] = [];
+  const links: string[] = [];
+  const walk = (node: any) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "email" && typeof v === "string") emails.push(v.replace(/^mailto:/i, ""));
+      else if (k === "sameAs") {
+        for (const u of ([] as unknown[]).concat(v)) if (typeof u === "string") links.push(u);
+      } else walk(v);
+    }
+  };
+  for (const m of html.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      walk(JSON.parse(m[1]));
+    } catch {
+      /* invalid JSON-LD is common; skip it */
+    }
+  }
+  return { emails, links };
+}
+
 export function extractEmails(html: string, siteHost = ""): string[] {
-  const text = html.replace(/&#0*64;|&commat;|\[at\]|\(at\)/gi, "@").replace(/&amp;/g, "&");
+  const decoded = [...html.matchAll(/data-cfemail\s*=\s*["']([0-9a-fA-F]+)["']/g), ...html.matchAll(/\/cdn-cgi\/l\/email-protection#([0-9a-fA-F]+)/g)]
+    .map((m) => decodeCfEmail(m[1]))
+    .filter((v): v is string => !!v);
+  const text = (html + " " + decoded.join(" ") + " " + jsonLdValues(html).emails.join(" "))
+    .replace(/&#0*64;|&commat;|\s*[\[(]\s*at\s*[\])]\s*/gi, "@")
+    .replace(/\s*[\[(]\s*dot\s*[\])]\s*/gi, ".")
+    .replace(/&amp;/g, "&");
   const found = new Set<string>();
   for (const m of text.matchAll(/mailto:([^"'?<>\s]+)/gi)) {
     let value = m[1];
@@ -105,10 +144,11 @@ export function extractContacts(html: string, baseUrl: string): SiteContacts {
   const base = hostOf(baseUrl);
   const socials: Record<string, string> = {};
   const contactLinks: string[] = [];
-  for (const m of html.matchAll(/href\s*=\s*["']([^"'#][^"']*)["']/gi)) {
+  const hrefs = [...[...html.matchAll(/href\s*=\s*["']([^"'#][^"']*)["']/gi)].map((m) => m[1]), ...jsonLdValues(html).links];
+  for (const href of hrefs) {
     let abs: string;
     try {
-      abs = new URL(m[1].replace(/&amp;/g, "&"), baseUrl).toString();
+      abs = new URL(href.replace(/&amp;/g, "&"), baseUrl).toString();
     } catch {
       continue;
     }

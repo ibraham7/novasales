@@ -9,6 +9,7 @@ export type PageFetcherLike = (url: string) => Promise<{ finalUrl: string; html:
 
 export const ENRICH_BATCH_MAX = 25;
 const CONCURRENCY = 3;
+const GUESSED_PATHS = ["/contact", "/contact-us", "/iletisim", "/about"];
 
 /** Home page plus up to two contact/about pages of the same site. Only the home page must work. */
 export type SiteReading = SiteContacts & { tech: string[]; lang: string | null };
@@ -19,12 +20,23 @@ export async function readSite(website: string, fetchPage: PageFetcherLike): Pro
   const home = await fetchPage(start.toString());
   const first = extractContacts(home.html, home.finalUrl);
   const parts = [first];
-  for (const link of first.contactLinks) {
+  const readExtra = async (link: string) => {
     try {
       const page = await fetchPage(link);
       parts.push(extractContacts(page.html, page.finalUrl));
     } catch {
       /* a missing contact page is fine */
+    }
+  };
+  for (const link of first.contactLinks) await readExtra(link);
+  // No email yet: many sites do not link their contact page from the home page, so try the usual paths.
+  if (!parts.some((p) => p.emails.length)) {
+    const tried = new Set([home.finalUrl, ...first.contactLinks]);
+    for (const path of GUESSED_PATHS) {
+      const link = new URL(path, home.finalUrl).toString();
+      if (tried.has(link)) continue;
+      await readExtra(link);
+      if (parts.some((p) => p.emails.length)) break;
     }
   }
   return { ...mergeContacts(parts, new URL(home.finalUrl).hostname), tech: detectTech(home.html), lang: detectLang(home.html) };
