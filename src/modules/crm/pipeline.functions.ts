@@ -364,18 +364,24 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    // The notes go on the ticket itself, where the team reads them.
-    if (data.notes) {
-      const { error: noteError } = await db.from("opp_notes").insert({ organization_id: organizationId, opportunity_id: opp.id, author_id: access.userId, body: data.notes });
-      if (noteError) throw new Error(noteError.message);
-    }
-    if (data.labelIds?.length) {
-      const wanted = [...new Set(data.labelIds)];
-      const valid = await checkedRows(db.from("opp_labels").select("id").eq("organization_id", organizationId).in("id", wanted));
-      if (valid.length) {
-        const { error: linkError } = await db.from("opp_label_links").insert(valid.map((l: any) => ({ opportunity_id: opp.id, label_id: l.id, organization_id: organizationId })));
-        if (linkError) throw new Error(linkError.message);
+    // The notes and labels belong to the ticket. If either cannot be saved, the ticket is removed again,
+    // so a retry does not leave a half-made duplicate behind.
+    try {
+      if (data.notes) {
+        const { error: noteError } = await db.from("opp_notes").insert({ organization_id: organizationId, opportunity_id: opp.id, author_id: access.userId, body: data.notes });
+        if (noteError) throw new Error(noteError.message);
       }
+      if (data.labelIds?.length) {
+        const wanted = [...new Set(data.labelIds)];
+        const valid = await checkedRows(db.from("opp_labels").select("id").eq("organization_id", organizationId).in("id", wanted));
+        if (valid.length) {
+          const { error: linkError } = await db.from("opp_label_links").insert(valid.map((l: any) => ({ opportunity_id: opp.id, label_id: l.id, organization_id: organizationId })));
+          if (linkError) throw new Error(linkError.message);
+        }
+      }
+    } catch (e) {
+      await db.from("opp_opportunities").delete().eq("id", opp.id).eq("organization_id", organizationId);
+      throw e;
     }
     await db.from("domain_events").insert({
       organization_id: organizationId,
