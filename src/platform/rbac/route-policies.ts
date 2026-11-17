@@ -91,6 +91,19 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
   },
 
   {
+    prefix: "/channels",
+    label: "قنوات التواصل",
+    anyOf: [
+      "messaging.channels.manage",
+      "messaging.channels.view",
+      "messaging.send",
+      "crm.opportunities.view",
+      "opportunities.view",
+      "opportunities.view_own",
+    ],
+  },
+
+  {
     prefix: "/instances",
     label: "جلسات واتساب",
     anyOf: [

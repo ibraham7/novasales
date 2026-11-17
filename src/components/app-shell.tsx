@@ -198,7 +198,7 @@ const NAV = [
   {
     to: "/instances",
     icon: Smartphone,
-    label: "جلسات واتساب",
+    label: "الجلسات",
     anyOf: [
       "messaging.channels.manage",
       "messaging.channels.view",

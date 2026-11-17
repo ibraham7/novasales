@@ -188,6 +188,10 @@ export interface IWhatsAppProvider {
   readonly label: string;
   readonly capabilities: ProviderCapabilities;
   readonly linkMode?: ProviderLinkMode;
+  /** Channel this engine serves; absent means WhatsApp. Other channels are not listed as WhatsApp engines. */
+  readonly channelType?: string;
+  /** The number-protection layer (caps, observation window) is WhatsApp's; other channels opt out. */
+  readonly skipRiskGuard?: boolean;
   /** وصف قصير يظهر في واجهة اختيار المحرّك. */
   readonly description?: string;
   /** هل الربط رسمي معتمد من Meta (يُستثنى من مخاطر Baileys). */

@@ -54,6 +54,7 @@ import {
   sendMediaMessageFn,
 } from "@/modules/messaging";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
+import { getInstagramWindowFn } from "@/modules/channels/instagram/instagram.functions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MediaPreviewDialog, makeItems, type PreviewItem } from "@/components/chat/media-preview-dialog";
 
@@ -366,6 +367,18 @@ function ChatView() {
   }, [
     messages.length,
   ]);
+
+  // Instagram only allows a reply within 24 hours of the customer's last message; say so before
+  // anyone types, instead of failing after they send.
+  const fetchIgWindow = useServerFn(getInstagramWindowFn);
+  const igWindow = useQuery({
+    queryKey: ["ig-window", chatId, data?.messages?.length ?? 0],
+    queryFn: () => fetchIgWindow({ data: { chatId } }),
+    enabled: !!data,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const igBlocked = !!igWindow.data?.isInstagram && (!igWindow.data.open || igWindow.data.connected === false);
 
   if (!data) {
     // Show what the chat list already knows right away; messages fill in when they arrive.
@@ -870,6 +883,13 @@ function ChatView() {
               </div>
             </DialogContent>
           </Dialog>
+          {igBlocked && (
+            <div role="status" className="mx-2 sm:mx-3 mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              {igWindow.data?.connected === false
+                ? "انتهى ربط حساب إنستغرام هذا. أعد ربطه من «الجلسات ← إنستغرام» لتتمكن من الرد."
+                : "انتهت مدة الرد على هذا العميل (24 ساعة من آخر رسالة منه). تسمح إنستغرام بالرد فقط بعد أن يراسلك من جديد."}
+            </div>
+          )}
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -879,6 +899,7 @@ function ChatView() {
             className="p-2 sm:p-3 flex gap-2 items-end"
           >
             <Textarea
+              disabled={igBlocked}
               value={text}
               onChange={(
                 event,
@@ -903,7 +924,7 @@ function ChatView() {
               }}
               rows={1}
               autoFocus
-              placeholder="اكتب رسالة..."
+              placeholder={igBlocked ? "لا يمكن الرد الآن" : "اكتب رسالة..."}
               className="min-h-10 max-h-32 resize-none rounded-2xl"
             />
 
@@ -911,7 +932,7 @@ function ChatView() {
               type="submit"
               size="icon"
               disabled={
-                !text.trim()
+                !text.trim() || igBlocked
               }
               className="h-10 w-10 rounded-full shrink-0"
             >

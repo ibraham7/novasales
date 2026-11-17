@@ -328,16 +328,21 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       import("@/modules/channels/whatsapp/registry.server"),
       import("@/modules/risk/risk.server"),
     ]);
+    // The engine is known from a short-lived cache, so asking for it first costs almost nothing. The
+    // number-protection layer is WhatsApp's: other channels (Instagram) have their own rules.
+    const providerRef = await resolveAccountProvider(sess.channel_account_id);
+    const protectNumber = !providerRef.provider.skipRiskGuard;
     // Independent reads before sending; the risk guard runs only once permission is confirmed above.
-    const [providerRef, guard, quote] = await Promise.all([
-      resolveAccountProvider(sess.channel_account_id),
+    const [guard, quote] = await Promise.all([
       // Risk layer: protect the number from behaviour that gets it restricted.
-      risk.riskGuard({
-        orgId: organizationId,
-        accountId: sess.channel_account_id,
-        source: "manual",
-        peer: sess.peer_identifier,
-      }),
+      protectNumber
+        ? risk.riskGuard({
+            orgId: organizationId,
+            accountId: sess.channel_account_id,
+            source: "manual",
+            peer: sess.peer_identifier,
+          })
+        : Promise.resolve({ allowed: true, message: undefined as string | undefined }),
       quotePromise,
     ]);
     if (!providerRef.provider.isConfigured())
@@ -364,18 +369,20 @@ export const sendMessageFn = createServerFn({ method: "POST" })
       // Numbers only: how long the WhatsApp server took to accept the message.
       console.log(`[SEND_TIMING] whatsapp=${Math.round(performance.now() - providerStarted)}ms`);
       // Counting must never turn a message WhatsApp already accepted into a failure.
-      outboundRecorded = risk
-        .recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id })
-        .catch((e) => console.error("[sendMessageFn] recordOutbound failed", e));
+      if (protectNumber)
+        outboundRecorded = risk
+          .recordOutbound({ orgId: organizationId, accountId: sess.channel_account_id })
+          .catch((e) => console.error("[sendMessageFn] recordOutbound failed", e));
     } catch (e) {
       status = "failed";
       sendError = e instanceof Error ? e.message : "فشل الإرسال";
-      await risk.recordHealthEvent({
-        orgId: organizationId,
-        accountId: sess.channel_account_id,
-        eventType: "send_failed",
-        detail: { error: sendError },
-      });
+      if (protectNumber)
+        await risk.recordHealthEvent({
+          orgId: organizationId,
+          accountId: sess.channel_account_id,
+          eventType: "send_failed",
+          detail: { error: sendError },
+        });
     }
 
     // The message row, chat preview, risk counters and stage step are independent writes.

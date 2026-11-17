@@ -93,7 +93,8 @@ async function syncAccountInfoFromEvolution(accounts: AccountView[]) {
  * - department supervisor: sessions they own + sessions linked to their departments
  * - sales agent: only the sessions they created (their own number)
  */
-export async function loadAccounts(_userId: string, orgId: string) {
+export async function loadAccounts(_userId: string, orgId: string, opts: { channel?: "whatsapp" | "instagram" } = {}) {
+  const channel = opts.channel ?? "whatsapp";
   const db = supabaseAdmin as any;
   const access = await getWorkspaceAccess().catch(() => null);
   const scope = access ? getOpportunityVisibility(access) : "all";
@@ -126,8 +127,26 @@ export async function loadAccounts(_userId: string, orgId: string) {
       : query.eq("owner_user_id", access.userId);
   }
 
-  const { data: accounts, error } = await query;
+  const { data: allAccounts, error } = await query;
   if (error) throw new Error(error.message);
+  // Each channel has its own list: an Instagram account is not a phone line, and the other way round.
+  const channelIdsAll = [...new Set((allAccounts ?? []).map((a: any) => a.channel_id).filter(Boolean))];
+  const channelTypeById = new Map<string, string>();
+  const providerByChannel = new Map<string, string>();
+  if (channelIdsAll.length) {
+    const { data: chans } = await db.from("msg_channels").select("id, provider, channel_type").in("id", channelIdsAll);
+    (chans ?? []).forEach((c: any) => {
+      channelTypeById.set(c.id, c.channel_type ?? "whatsapp");
+      // provider لكل جلسة يأتي من قناتها (msg_channels.provider)
+      providerByChannel.set(c.id, c.provider ?? "evolution");
+    });
+  }
+  // WhatsApp's list drops only what is known to belong to another channel, so no phone line can vanish
+  // because of an old or unusual channel row.
+  const accounts = (allAccounts ?? []).filter((a: any) => {
+    const type = channelTypeById.get(a.channel_id) ?? "whatsapp";
+    return channel === "whatsapp" ? type !== "instagram" : type === channel;
+  });
   const ids = (accounts ?? []).map((a: any) => a.id);
   let plugins: any[] = [];
   let deptLinks: any[] = [];
@@ -138,13 +157,6 @@ export async function loadAccounts(_userId: string, orgId: string) {
     ]);
     plugins = plugData ?? [];
     deptLinks = linkData ?? [];
-  }
-  // provider لكل جلسة يأتي من قناتها (msg_channels.provider)
-  const channelIds = [...new Set((accounts ?? []).map((a: any) => a.channel_id).filter(Boolean))];
-  const providerByChannel = new Map<string, string>();
-  if (channelIds.length) {
-    const { data: chans } = await db.from("msg_channels").select("id, provider").in("id", channelIds);
-    (chans ?? []).forEach((c: any) => providerByChannel.set(c.id, c.provider ?? "evolution"));
   }
   const byAcc = new Map<string, any>();
   plugins.forEach((p) => byAcc.set(p.channel_account_id, p));
@@ -178,5 +190,5 @@ export async function loadAccounts(_userId: string, orgId: string) {
     };
   });
 
-  return syncAccountInfoFromEvolution(mapped);
+  return channel === "whatsapp" ? syncAccountInfoFromEvolution(mapped) : mapped;
 }
