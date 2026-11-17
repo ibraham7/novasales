@@ -290,7 +290,8 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
     const { normalizePhone } = await import("./contacts.server");
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
-    const access = await requireAnyPermission(["crm.opportunities.create", "opportunities.manage"]);
+    // The sales-agent role can update opportunities but not "create" them, and adding a ticket to the board is part of their work.
+    const access = await requireAnyPermission(["crm.opportunities.create", "crm.opportunities.update", "opportunities.manage"]);
 
     const { data: stage } = await db
       .from("crm_pipeline_stages")

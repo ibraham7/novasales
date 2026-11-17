@@ -342,7 +342,7 @@ function PipelinePage() {
     (permsQ.data ?? []).includes("crm.pipelines.manage") || (permsQ.data ?? []).includes("org.manage");
 
   const canRedistribute = (permsQ.data ?? []).includes("crm.leads.assign");
-  const canAddTicket = ["crm.opportunities.create", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
+  const canAddTicket = ["crm.opportunities.create", "crm.opportunities.update", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
   const createTicket = useServerFn(createOpportunityInStage);
   const labelsFn = useServerFn(listOppLabels);
   const createLabelFn = useServerFn(createOppLabel);
