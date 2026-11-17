@@ -414,17 +414,27 @@ async function onMessage(db: Db, ctx: AccountCtx, msg: NormalizedMessage) {
  *   * صاحب الرقم مندوب (sales) → المرحلة الثانية "تم التواصل"
  *   * مشرف/أدمن → المرحلة الأولى "عميل جديد"
  */
-async function ensureOpportunity(
+export async function ensureOpportunity(
   db: Db,
   ctx: AccountCtx,
-  args: { phone: string; sessionId: string; fromMe: boolean },
+  args: {
+    phone: string;
+    sessionId: string;
+    fromMe: boolean;
+    /** Other channels pass their own; WhatsApp keeps the defaults. */
+    channelType?: string;
+    source?: string;
+    sourceLabel?: string;
+  },
 ) {
+  const channelType = args.channelType ?? "whatsapp";
+  const source = args.source ?? "whatsapp_inbound";
   const { orgId, accountId, ownerUserId } = ctx;
   const { data: cp2 } = await db
     .from("crm_contact_points")
     .select("contact_id")
     .eq("organization_id", orgId)
-    .eq("channel_type", "whatsapp")
+    .eq("channel_type", channelType)
     .eq("identifier", args.phone)
     .maybeSingle();
   const contactId = cp2?.contact_id as string | undefined;
@@ -508,7 +518,7 @@ async function ensureOpportunity(
             stage: targetStageName,
             owner_agent_id: ownerUserId ?? null,
             department_id: accountDepartmentId ?? null,
-            source: "whatsapp_inbound",
+            source,
           })
           .select("id")
           .single();
@@ -520,7 +530,7 @@ async function ensureOpportunity(
             event_type: "crm.opportunity.created",
             aggregate_type: "opportunity",
             aggregate_id: oppId,
-            payload: { contact_id: contactId, source: "whatsapp_inbound" },
+            payload: { contact_id: contactId, source },
           });
           void import("@/modules/notifications/events.server").then((m) =>
             m.notifyNewCustomer({
@@ -529,7 +539,7 @@ async function ensureOpportunity(
               contactId,
               ownerUserId: ownerUserId ?? null,
               departmentId: accountDepartmentId ?? null,
-              source: "واتساب",
+              source: args.sourceLabel ?? "واتساب",
               url: `/pipeline/${oppId}`,
             }),
           );
@@ -558,7 +568,7 @@ async function ensureOpportunity(
         organization_id: orgId,
         opportunity_id: oppId,
         session_ref: args.sessionId,
-        channel: "whatsapp",
+        channel: channelType,
       });
     }
   } else {

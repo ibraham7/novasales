@@ -48,6 +48,8 @@ export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     if (typeof process !== "undefined" && process.env?.CAMPAIGN_AUTO_TICK === "1")
       void import("./modules/campaigns/auto-tick.server").then((m) => m.startCampaignTicker());
+    if (typeof process !== "undefined" && process.env?.INSTAGRAM_APP_ID)
+      void import("./modules/channels/instagram/auto-refresh.server").then((m) => m.startInstagramTokenRefresher());
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

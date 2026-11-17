@@ -17,6 +17,7 @@ import { CoexistenceLinkDialog } from "@/modules/channels";
 import { getNumbersRisk } from "@/modules/risk";
 import { ShieldAlert, ShieldCheck, Clock } from "lucide-react";
 
+import { ChannelTabs } from "@/components/channels/channel-tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -222,6 +223,7 @@ function Instances() {
 
   return (
     <div className="p-6 md:p-8 max-w-5xl">
+      <ChannelTabs active="whatsapp" />
       <header className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
           <h1 className="text-3xl font-bold">جلسات واتساب</h1>

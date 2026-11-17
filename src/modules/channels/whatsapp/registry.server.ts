@@ -5,11 +5,13 @@ import type { IWhatsAppProvider, ProviderCapabilities, ProviderId, ProviderLinkM
 import { evolutionProvider } from "./evolution.provider";
 import { coexistenceProvider } from "./coexistence.provider";
 import { wahaProvider } from "./waha.provider";
+import { instagramProvider } from "../instagram/instagram.provider";
 
 const providers = new Map<ProviderId, IWhatsAppProvider>([
   [coexistenceProvider.id, coexistenceProvider],
   [evolutionProvider.id, evolutionProvider],
   [wahaProvider.id, wahaProvider],
+  [instagramProvider.id, instagramProvider],
 ]);
 
 export function getProvider(id: ProviderId): IWhatsAppProvider {
@@ -32,7 +34,8 @@ export function listAvailableProviders(): Array<{
   isOfficial: boolean;
   capabilities: ProviderCapabilities;
 }> {
-  return listProviders().map((p) => ({
+  // Only WhatsApp engines: other channels link through their own tab and are not engines for a number.
+  return listProviders().filter((p) => !p.channelType || p.channelType === "whatsapp").map((p) => ({
     id: p.id,
     label: p.label,
     description: p.description ?? null,
