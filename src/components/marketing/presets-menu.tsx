@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { PRESETS, type Filters } from "@/modules/marketing/filters";
 import { askConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/lib/toast";
@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 type Saved = { id: string; name: string; filters: Filters };
 
 /** «فلاتر جاهزة»: pick a ready set (clinics, WhatsApp-ready…) or one of your own, or save the current filters as your own. */
-export function PresetsMenu({ current, active, saved, onApply, onSave, onDelete, saving }: { current: Filters; active: boolean; saved: Saved[]; onApply: (f: Filters) => void; onSave: (name: string) => void; onDelete: (id: string) => void; saving: boolean }) {
+export function PresetsMenu({ current, active, saved, onApply, onSave, onDelete, saving, hiddenPresets = [], onHidePreset, onRestorePresets }: { current: Filters; active: boolean; saved: Saved[]; onApply: (f: Filters) => void; onSave: (name: string) => void; onDelete: (id: string) => void; saving: boolean; hiddenPresets?: string[]; onHidePreset?: (id: string) => void; onRestorePresets?: () => void }) {
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
@@ -40,12 +40,34 @@ export function PresetsMenu({ current, active, saved, onApply, onSave, onDelete,
         </PopoverTrigger>
         <PopoverContent dir="rtl" align="start" className="max-h-[70vh] w-80 overflow-y-auto p-2">
           <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">قوالب جاهزة</p>
-          {PRESETS.map((p) => (
-            <button key={p.id} type="button" className="block w-full rounded-md px-2 py-1.5 text-right hover:bg-muted" onClick={() => apply(p.name, p.filters, p.needsData)}>
-              <span className="block text-sm font-medium">{p.name}</span>
-              <span className="block text-xs text-muted-foreground">{p.hint}</span>
-            </button>
+          {PRESETS.filter((p) => !hiddenPresets.includes(p.id)).map((p) => (
+            <div key={p.id} className="flex items-start gap-1 rounded-md hover:bg-muted">
+              <button type="button" className="block flex-1 px-2 py-1.5 text-right" onClick={() => apply(p.name, p.filters, p.needsData)}>
+                <span className="block text-sm font-medium">{p.name}</span>
+                <span className="block text-xs text-muted-foreground">{p.hint}</span>
+              </button>
+              {onHidePreset && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="mt-1 h-7 w-7 shrink-0 text-muted-foreground"
+                  aria-label={`حذف القالب ${p.name}`}
+                  title="حذف هذا القالب من قائمتي"
+                  onClick={async () => {
+                    if (await askConfirm({ title: "حذف القالب الجاهز؟", description: `«${p.name}» يختفي من قائمة مؤسستك لكل الفريق. تقدر ترجعه من أسفل القائمة.`, confirmLabel: "حذف", destructive: true })) onHidePreset(p.id);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
           ))}
+          {hiddenPresets.length > 0 && onRestorePresets && (
+            <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground" onClick={onRestorePresets}>
+              <RotateCcw className="ml-1 h-3.5 w-3.5" /> إرجاع القوالب المحذوفة ({hiddenPresets.length})
+            </Button>
+          )}
           <p className="mt-2 border-t px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">فلاتري (مخصصة)</p>
           {saved.length === 0 && <p className="px-2 pb-1 text-xs text-muted-foreground">لا توجد فلاتر محفوظة بعد. فعّل فلاتر ثم احفظها من الزر أدناه.</p>}
           {saved.map((s) => (

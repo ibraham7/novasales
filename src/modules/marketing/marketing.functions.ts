@@ -135,6 +135,29 @@ export const saveSearchFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** The ready-made templates this organization removed. */
+export const listHiddenPresetsFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId, db } = await access();
+  const { listHiddenPresets } = await import("./presets-core");
+  return listHiddenPresets(db, organizationId);
+});
+
+/** Removes a ready-made template from this organization's list (it can be restored). */
+export const hidePresetFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ id: z.string().trim().min(1).max(60) }).parse(data))
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access();
+    const { hidePreset } = await import("./presets-core");
+    await hidePreset(db, organizationId, userId, data.id);
+    return { ok: true };
+  });
+
+export const restorePresetsFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await access();
+  const { restorePresets } = await import("./presets-core");
+  return { restored: await restorePresets(db, organizationId) };
+});
+
 export const deleteSavedSearchFn = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
