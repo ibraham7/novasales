@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Archive, ArchiveRestore, Check, ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
-import { archiveMarketingProspects, deleteMarketingProspects, deleteSavedSearchFn, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, listSavedSearches, promoteMarketingProspects, saveSearchFn, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
+import { Archive, ArchiveRestore, Check, ChevronLeft, Search as SearchIcon, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
+import { archiveMarketingProspects, deleteMarketingProspects, discoverMarketingProspects, getDiscoveryStatus, deleteSavedSearchFn, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, listSavedSearches, promoteMarketingProspects, saveSearchFn, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { EMPTY_FILTERS, countActiveFilters, decodeFilters, encodeFilters, filterChips, type Filters } from "@/modules/marketing/filters";
 import { PROSPECT_STATUS_LABELS, type ManualStatus } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
@@ -21,6 +21,10 @@ import { StatusBadge } from "./status-badge";
 
 const PAGE_SIZE = 25;
 
+/** The business has a suggested website or social page waiting for a person to accept or ignore it. */
+const hasSuggestions = (r: { discovered?: { website?: unknown; socials?: Record<string, unknown> } | null }) =>
+  Boolean(r.discovered?.website) || Object.keys(r.discovered?.socials ?? {}).length > 0;
+
 const BULK: { status: ManualStatus; label: string; variant: "default" | "outline" }[] = [
   { status: "qualified", label: "مؤهل", variant: "outline" },
   { status: "approved", label: "اعتماد للتواصل", variant: "default" },
@@ -37,6 +41,8 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const enrichFn = useServerFn(enrichMarketingProspects);
   const deleteFn = useServerFn(deleteMarketingProspects);
   const archiveFn = useServerFn(archiveMarketingProspects);
+  const discoverFn = useServerFn(discoverMarketingProspects);
+  const discoveryStatusFn = useServerFn(getDiscoveryStatus);
   const promoteFn = useServerFn(promoteMarketingProspects);
 
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -158,6 +164,25 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const discoveryStatus = useQuery({ queryKey: ["marketing-discovery-status"], queryFn: () => discoveryStatusFn(), staleTime: 5 * 60_000 });
+  const discover = useMutation({
+    mutationFn: () => discoverFn({ data: { ids: [...selected].slice(0, 25) } }),
+    onSuccess: (r) => {
+      const searched = r.requested - r.tooGeneric - r.alreadyComplete;
+      const parts = [
+        `${r.confirmed} أُضيفت بعد التأكد (رقم الجهة ظهر في النتيجة)`,
+        `${r.suggested} اقتراحات تحتاج مراجعتك`,
+        `${r.nothingFound} بلا نتيجة موثوقة`,
+        r.tooGeneric ? `${r.tooGeneric} اسمها عام جداً للبحث` : null,
+        r.alreadyComplete ? `${r.alreadyComplete} مكتملة أصلاً` : null,
+      ].filter(Boolean);
+      toast.success(`بحثنا عن ${searched} جهة: ${parts.join(" · ")}`);
+      if (r.failed) toast.error(r.error ?? `تعذّر البحث لـ ${r.failed} جهة`);
+      qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const enrich = useMutation({
     mutationFn: () => enrichFn({ data: { ids: [...selected].slice(0, 25) } }),
     onSuccess: (r) => {
@@ -244,6 +269,16 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                 <Button size="sm" variant="outline" disabled={enrich.isPending} onClick={() => enrich.mutate()}>
                   {enrich.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="ml-1 h-3.5 w-3.5" />}
                   إثراء من المواقع{selected.size > 25 ? " (أول 25)" : ""}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={discover.isPending || discoveryStatus.data?.configured === false}
+                  title={discoveryStatus.data?.configured === false ? "خدمة البحث غير مفعّلة على الخادم (SERPER_API_KEY)" : "يبحث على الإنترنت عن موقع الجهة وحساباتها باسمها ومدينتها (حوالي استعلامين لكل جهة)"}
+                  onClick={() => discover.mutate()}
+                >
+                  {discover.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <SearchIcon className="ml-1 h-3.5 w-3.5" />}
+                  اكتشاف الحساب والموقع{selected.size > 25 ? " (أول 25)" : ""}
                 </Button>
                 <Button size="sm" variant="outline" disabled={promote.isPending} onClick={() => promote.mutate()}>
                   {promote.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="ml-1 h-3.5 w-3.5" />}
@@ -332,6 +367,9 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                           <Badge variant="outline" className="shrink-0 gap-0.5 border-emerald-300 bg-emerald-50 text-[10px] text-emerald-700" title="تم إثراء هذه الجهة">
                             <Check className="h-3 w-3" /> مُثرى
                           </Badge>
+                        )}
+                        {hasSuggestions(r) && (
+                          <Badge variant="outline" className="shrink-0 border-sky-300 bg-sky-50 text-[10px] text-sky-700" title="وجدنا حسابات أو موقعاً محتملاً؛ افتح الجهة لتراجعها">مقترحات</Badge>
                         )}
                         {r.enrich_status === "no_website" && (
                           <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground" title="جرى الإثراء لكن لا يوجد موقع لقراءته">بلا موقع</Badge>

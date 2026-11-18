@@ -71,7 +71,7 @@ const dialOf = (country: string | null | undefined) => MARKETING_COUNTRIES.find(
 
 export async function enrichProspects(db: any, organizationId: string, ids: string[], fetchPage: PageFetcherLike, now: Date = new Date()): Promise<EnrichSummary> {
   const wanted = [...new Set(ids)].slice(0, ENRICH_BATCH_MAX);
-  const { data: rows, error } = await db.from("ob_prospects").select("id,website,country,phone_e164").eq("organization_id", organizationId).in("id", wanted);
+  const { data: rows, error } = await db.from("ob_prospects").select("id,website,country,phone_e164,socials,site_whatsapp").eq("organization_id", organizationId).in("id", wanted);
   if (error) throw new Error(error.message);
   const summary: EnrichSummary = { requested: (rows ?? []).length, done: 0, failed: 0, noWebsite: 0, withEmail: 0, withPhone: 0, withSocial: 0, withWhatsapp: 0, fromProfileLink: 0 };
   const stamp = now.toISOString();
@@ -79,7 +79,7 @@ export async function enrichProspects(db: any, organizationId: string, ids: stri
     const { error: saveError } = await db.from("ob_prospects").update({ ...patch, enriched_at: stamp, updated_at: stamp }).eq("organization_id", organizationId).eq("id", id);
     if (saveError) throw new Error(saveError.message);
   };
-  const work = async (row: { id: string; website: string | null; country: string | null; phone_e164: string | null }) => {
+  const work = async (row: { id: string; website: string | null; country: string | null; phone_e164: string | null; socials?: Record<string, string> | null; site_whatsapp?: string | null }) => {
     if (!row.website?.trim()) {
       summary.noWebsite++;
       return save(row.id, { enrich_status: "no_website", enrich_error: null });
@@ -92,7 +92,7 @@ export async function enrichProspects(db: any, organizationId: string, ids: stri
       summary.fromProfileLink++;
       if (direct.kind === "social") {
         summary.withSocial++;
-        return save(row.id, { socials: { [direct.platform]: direct.url }, enrich_status: "done", enrich_error: null });
+        return save(row.id, { socials: { ...(row.socials ?? {}), [direct.platform]: direct.url }, enrich_status: "done", enrich_error: null });
       }
       summary.withWhatsapp++;
       return save(row.id, { site_whatsapp: direct.value, enrich_status: "done", enrich_error: null });
@@ -106,7 +106,8 @@ export async function enrichProspects(db: any, organizationId: string, ids: stri
       if (phones.length) summary.withPhone++;
       if (Object.keys(found.socials).length) summary.withSocial++;
       if (found.whatsapp) summary.withWhatsapp++;
-      await save(row.id, { emails: found.emails, site_phones: phones, socials: found.socials, site_whatsapp: found.whatsapp, tech: found.tech, site_lang: found.lang, enrich_status: "done", enrich_error: null });
+      // What was already known (a page found by search, one added by hand) is kept; the site's own links win when both name a platform.
+      await save(row.id, { emails: found.emails, site_phones: phones, socials: { ...(row.socials ?? {}), ...found.socials }, site_whatsapp: found.whatsapp ?? row.site_whatsapp ?? null, tech: found.tech, site_lang: found.lang, enrich_status: "done", enrich_error: null });
     } catch (e) {
       summary.failed++;
       await save(row.id, { enrich_status: "failed", enrich_error: (e instanceof Error ? e.message : "تعذّر قراءة الموقع").slice(0, 200) });

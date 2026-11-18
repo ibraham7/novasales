@@ -211,6 +211,37 @@ export const enrichMarketingProspects = createServerFn({ method: "POST" })
     return enrichProspects(db, organizationId, data.ids, createPageFetcher());
   });
 
+/** Whether the web search behind «اكتشاف الحسابات» is switched on for this server. */
+export const getDiscoveryStatus = createServerFn({ method: "GET" }).handler(async () => {
+  await access();
+  const { discoveryConfigured } = await import("./web-search.server");
+  return { configured: discoveryConfigured() };
+});
+
+/** Searches the web for the website and social pages of businesses Google lists without them. */
+export const discoverMarketingProspects = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(25) }).parse(data))
+  .handler(async ({ data }) => {
+    const { userId, organizationId, db } = await access();
+    const { discoveryConfigured, createSerperSearch } = await import("./web-search.server");
+    if (!discoveryConfigured()) throw new Error("خدمة البحث غير مفعّلة على الخادم (SERPER_API_KEY). تواصل مع إدارة المنصة.");
+    if (!enrichLimiter.allow(userId)) throw new Error("عمليات كثيرة خلال دقيقة؛ انتظر قليلاً");
+    const { createPageFetcher } = await import("./site-fetch.server");
+    const { discoverProspects } = await import("./discover-core");
+    return discoverProspects(db, organizationId, data.ids, { search: createSerperSearch(process.env.SERPER_API_KEY!.trim()), fetchPage: createPageFetcher() });
+  });
+
+/** A person accepts or ignores a suggested website or social page. */
+export const resolveMarketingSuggestion = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z.object({ id: z.string().uuid(), kind: z.enum(["website", "social"]), platform: z.string().max(30).optional(), accept: z.boolean() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access();
+    const { resolveSuggestion } = await import("./discover-core");
+    return resolveSuggestion(db, organizationId, data);
+  });
+
 export const listMarketingSearches = createServerFn({ method: "GET" }).handler(async () => {
   const { organizationId, db } = await access();
   const { data, error } = await db

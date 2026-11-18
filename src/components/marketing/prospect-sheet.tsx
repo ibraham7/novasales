@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ExternalLink, Globe, Loader2, Mail, MapPin, MessageCircle, Phone, Sparkles, Star } from "lucide-react";
-import { enrichMarketingProspects, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
+import { resolveMarketingSuggestion, enrichMarketingProspects, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { MANUAL_STATUSES, PROSPECT_STATUS_LABELS } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
 import { formatDateTime } from "@/lib/utils";
@@ -33,6 +33,7 @@ export type ProspectRow = {
   socials: Record<string, string> | null;
   site_whatsapp: string | null;
   site_phones: string[] | null;
+  discovered: { website?: { url: string; confidence: string }; socials?: Record<string, { url: string; confidence: string }> } | null;
   enrich_status: "done" | "failed" | "no_website" | null;
   enriched_at: string | null;
   enrich_error: string | null;
@@ -64,6 +65,25 @@ export function ProspectSheet({ row, onClose }: { row: ProspectRow | null; onClo
       toast.success("تم الحفظ");
       qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
       onClose();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  // Suggested pages found by the web search: kept here while a person accepts or ignores each one.
+  const resolveFn = useServerFn(resolveMarketingSuggestion);
+  const [suggested, setSuggested] = useState<ProspectRow["discovered"]>(null);
+  useEffect(() => setSuggested(row?.discovered ?? null), [row?.id]);
+  const resolve = useMutation({
+    mutationFn: (input: { kind: "website" | "social"; platform?: string; accept: boolean }) => resolveFn({ data: { id: row!.id, ...input } }),
+    onSuccess: (_r, input) => {
+      toast.success(input.accept ? "تم اعتماد الاقتراح" : "تم تجاهل الاقتراح");
+      setSuggested((current) => {
+        const next = { ...(current ?? {}) };
+        if (input.kind === "website") delete next.website;
+        else if (input.platform) next.socials = Object.fromEntries(Object.entries(next.socials ?? {}).filter(([k]) => k !== input.platform));
+        return next;
+      });
+      qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -174,6 +194,30 @@ export function ProspectSheet({ row, onClose }: { row: ProspectRow | null; onClo
                   </div>
                 ))}
                 {row.enriched_at && <p className="text-xs text-muted-foreground">آخر قراءة: {formatDateTime(row.enriched_at)}. بيانات منشورة علناً على موقع الجهة.</p>}
+                {(suggested?.website || Object.keys(suggested?.socials ?? {}).length > 0) && (
+                  <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50/60 p-2.5">
+                    <p className="text-xs font-medium text-sky-900">اقتراحات من البحث على الإنترنت</p>
+                    <p className="text-xs text-muted-foreground">الاسم والمدينة يتطابقان لكن لا دليل قاطع. افتح الرابط وتأكد أنها نفس الجهة قبل الاعتماد.</p>
+                    {suggested?.website && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <a href={suggested.website.url} target="_blank" rel="noopener noreferrer" dir="ltr" className="break-all text-primary hover:underline">{suggested.website.url}</a>
+                        <span className="text-xs text-muted-foreground">موقع محتمل</span>
+                        <Button size="sm" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate({ kind: "website", accept: true })}>اعتماد</Button>
+                        <Button size="sm" variant="ghost" disabled={resolve.isPending} onClick={() => resolve.mutate({ kind: "website", accept: false })}>تجاهل</Button>
+                      </div>
+                    )}
+                    {Object.entries(suggested?.socials ?? {}).map(([platform, s]) => (
+                      <div key={platform} className="flex flex-wrap items-center gap-2">
+                        <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <a href={s.url} target="_blank" rel="noopener noreferrer" dir="ltr" className="break-all text-primary hover:underline">{SOCIAL_LABELS[platform] ?? platform}</a>
+                        <span className="text-xs text-muted-foreground">محتمل</span>
+                        <Button size="sm" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate({ kind: "social", platform, accept: true })}>اعتماد</Button>
+                        <Button size="sm" variant="ghost" disabled={resolve.isPending} onClick={() => resolve.mutate({ kind: "social", platform, accept: false })}>تجاهل</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
