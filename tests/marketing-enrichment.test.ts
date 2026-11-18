@@ -104,7 +104,7 @@ test("enrichProspects saves results per organization and marks failures and miss
     ],
   });
   const s = await enrichProspects(db, "org-1", ["p1", "p2", "p3", "p4"], fakeFetch, new Date("2026-11-05T10:00:00Z"));
-  assert.deepEqual(s, { requested: 3, done: 1, failed: 1, noWebsite: 1, withEmail: 1, withSocial: 1, withWhatsapp: 1 });
+  assert.deepEqual(s, { requested: 3, done: 1, failed: 1, noWebsite: 1, withEmail: 1, withPhone: 0, withSocial: 1, withWhatsapp: 1, fromProfileLink: 0 });
   const [p1, p2, p3, p4] = db.tables.ob_prospects;
   assert.equal(p1.enrich_status, "done");
   assert.deepEqual(p1.emails.slice(0, 1), ["info@clinic.com"]);
@@ -142,7 +142,7 @@ test("readSite tries the usual contact paths when the home page has no email and
   const seen: string[] = [];
   const fetchPage = async (url: string) => {
     seen.push(url);
-    if (url.endsWith("/contact")) return { finalUrl: url, html: '<a href="mailto:hi@shop.com">x</a>' };
+    if (url.endsWith("/contact")) return { finalUrl: url, html: '<a href="mailto:hi@shop.com">x</a><a href="tel:+90 212 252 59 25">call</a>' };
     if (url === "https://shop.com/") return { finalUrl: url, html: "<html>no email here</html>" };
     throw new Error("404");
   };
