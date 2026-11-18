@@ -161,7 +161,9 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const enrich = useMutation({
     mutationFn: () => enrichFn({ data: { ids: [...selected].slice(0, 25) } }),
     onSuccess: (r) => {
-      toast.success(`قُرئ ${r.done} موقع: بريد عند ${r.withEmail}، حسابات عند ${r.withSocial}، واتساب عند ${r.withWhatsapp}${r.failed ? ` · تعذّر ${r.failed}` : ""}${r.noWebsite ? ` · بلا موقع ${r.noWebsite}` : ""}`);
+      toast.success(
+        `قُرئ ${r.done} موقع: بريد عند ${r.withEmail}، أرقام عند ${r.withPhone}، واتساب عند ${r.withWhatsapp}، حسابات عند ${r.withSocial}${r.fromProfileLink ? ` (منها ${r.fromProfileLink} موقعها صفحة سوشال أو رابط واتساب)` : ""}${r.failed ? ` · تعذّر ${r.failed}` : ""}${r.noWebsite ? ` · ${r.noWebsite} بلا موقع في خرائط قوقل فلا يوجد ما يُقرأ` : ""}`,
+      );
       qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -354,12 +356,15 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
                       )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {r.website ? (
+                      {r.website || r.emails?.length || r.site_whatsapp || r.site_phones?.length || (r.socials && Object.keys(r.socials).length) ? (
                         <div className="flex flex-col items-start gap-0.5">
-                          <a href={r.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                            <Globe className="h-3.5 w-3.5" /> فتح
-                          </a>
+                          {r.website ? (
+                            <a href={r.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                              <Globe className="h-3.5 w-3.5" /> فتح
+                            </a>
+                          ) : null}
                           {r.emails?.length ? <Badge variant="outline" className="text-[10px]">بريد</Badge> : null}
+                          {r.site_phones?.length ? <Badge variant="outline" className="text-[10px]">رقم من الموقع</Badge> : null}
                           {r.site_whatsapp ? <Badge variant="outline" className="text-[10px]">واتساب</Badge> : null}
                           {r.socials && Object.keys(r.socials).length ? <Badge variant="outline" className="text-[10px]">سوشال</Badge> : null}
                         </div>

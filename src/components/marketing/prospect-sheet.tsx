@@ -32,6 +32,7 @@ export type ProspectRow = {
   emails: string[] | null;
   socials: Record<string, string> | null;
   site_whatsapp: string | null;
+  site_phones: string[] | null;
   enrich_status: "done" | "failed" | "no_website" | null;
   enriched_at: string | null;
   enrich_error: string | null;
@@ -140,12 +141,19 @@ export function ProspectSheet({ row, onClose }: { row: ProspectRow | null; onClo
                     </Button>
                   )}
                 </div>
-                {!row.website && <p className="text-xs text-muted-foreground">لا يوجد موقع لقراءته.</p>}
+                {!row.website && <p className="text-xs text-muted-foreground">لا يوجد موقع مسجّل لهذه الجهة في خرائط قوقل، فلا يوجد ما يُقرأ. غالباً لها صفحة على إنستغرام أو فيسبوك؛ ابحث عنها باسمها وأضفها يدوياً.</p>}
                 {row.website && !row.enriched_at && <p className="text-xs text-muted-foreground">لم تُقرأ بيانات الموقع بعد.</p>}
                 {row.enrich_status === "failed" && <p className="text-xs text-destructive">تعذّرت القراءة: {row.enrich_error}</p>}
-                {row.enrich_status === "done" && !(row.emails?.length || row.site_whatsapp || Object.keys(row.socials ?? {}).length) && (
-                  <p className="text-xs text-muted-foreground">لم نجد بريداً أو حسابات منشورة في الموقع.</p>
+                {row.enrich_status === "done" && !(row.emails?.length || row.site_whatsapp || row.site_phones?.length || Object.keys(row.socials ?? {}).length) && (
+                  <p className="text-xs text-muted-foreground">قرأنا الموقع ولم نجد بريداً أو رقماً أو حسابات منشورة. قد يكون الموقع يعرض بياناته بسكربت لا نقرؤه.</p>
                 )}
+                {(row.site_phones ?? []).map((phone) => (
+                  <div key={phone} className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <a href={`tel:+${phone}`} dir="ltr" className="select-all text-primary hover:underline">+{phone}</a>
+                    <span className="text-xs text-muted-foreground">رقم منشور في الموقع</span>
+                  </div>
+                ))}
                 {(row.emails ?? []).map((e) => (
                   <div key={e} className="flex items-center gap-2">
                     <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
