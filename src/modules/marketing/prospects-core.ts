@@ -17,7 +17,7 @@ const CHUNK = 100;
 const chunks = <T>(items: T[], size = CHUNK) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 
 const COLUMNS =
-  "id,name,category,address,city,country,phone_raw,phone_e164,phone_kind,website,maps_url,rating,ratings_count,business_status,status,notes,search_id,created_at,updated_at,expires_at,emails,socials,site_whatsapp,enrich_status,enriched_at,enrich_error,tech,site_lang";
+  "id,name,category,address,city,country,phone_raw,phone_e164,phone_kind,website,maps_url,rating,ratings_count,business_status,status,notes,search_id,created_at,updated_at,expires_at,emails,socials,site_whatsapp,enrich_status,enriched_at,enrich_error,tech,site_lang,archived_at";
 
 export type SaveInput = {
   organizationId: string;
@@ -95,8 +95,10 @@ export type ProspectFilters = Filters & { page: number; pageSize: number };
 /** A search term safe to put inside a PostgREST filter. */
 export const safeTerm = (value: string) => value.replace(/[%_,()*"'\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 
-export async function listProspects(db: any, organizationId: string, f: ProspectFilters) {
+/** The working list hides archived businesses; the archive view shows only them. */
+export async function listProspects(db: any, organizationId: string, f: ProspectFilters, archived = false) {
   let query = db.from("ob_prospects").select(COLUMNS, { count: "exact" }).eq("organization_id", organizationId);
+  query = archived ? query.not("archived_at", "is", null) : query.is("archived_at", null);
   query = applyProspectFilters(query, f);
   query = f.sort === "rating" ? query.order("rating", { ascending: false, nullsFirst: false }) : f.sort === "name" ? query.order("name", { ascending: true }) : query.order("created_at", { ascending: false });
   const from = (f.page - 1) * f.pageSize;
@@ -105,9 +107,33 @@ export async function listProspects(db: any, organizationId: string, f: Prospect
   return { rows: data ?? [], total: count ?? 0 };
 }
 
-/** How many businesses are in each status (whole organization, ignoring the filters). */
+/** How many businesses are in the archive. */
+export async function countArchived(db: any, organizationId: string): Promise<number> {
+  const { count, error } = await db.from("ob_prospects").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).not("archived_at", "is", null);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/**
+ * Puts businesses in the archive, or takes them out. Their status and notes are untouched, so a restored
+ * business is exactly as it was. Returns how many changed.
+ */
+export async function archiveProspects(db: any, organizationId: string, ids: string[], archive: boolean) {
+  const now = new Date().toISOString();
+  let changed = 0;
+  for (const part of chunks([...new Set(ids)])) {
+    let query = db.from("ob_prospects").update({ archived_at: archive ? now : null, updated_at: now }).eq("organization_id", organizationId).in("id", part);
+    query = archive ? query.is("archived_at", null) : query.not("archived_at", "is", null);
+    const { data, error } = await query.select("id");
+    if (error) throw new Error(error.message);
+    changed += (data ?? []).length;
+  }
+  return changed;
+}
+
+/** How many businesses are in each status (the working list: archived ones are not counted). */
 export async function countByStatus(db: any, organizationId: string): Promise<Record<string, number>> {
-  const { data, error } = await db.from("ob_prospects").select("status").eq("organization_id", organizationId).limit(20000);
+  const { data, error } = await db.from("ob_prospects").select("status").eq("organization_id", organizationId).is("archived_at", null).limit(20000);
   if (error) throw new Error(error.message);
   const counts: Record<string, number> = {};
   for (const row of data ?? []) counts[row.status] = (counts[row.status] ?? 0) + 1;

@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./helpers/fake-db.ts";
-import { listProspects, safeTerm, saveFoundPlaces, updateProspects } from "../src/modules/marketing/prospects-core.ts";
+import { archiveProspects, countArchived, countByStatus, listProspects, safeTerm, saveFoundPlaces, updateProspects } from "../src/modules/marketing/prospects-core.ts";
+import { previewAudience } from "../src/modules/marketing/outbound-core.ts";
+import { emailAudience } from "../src/modules/marketing/email-core.ts";
 import { EMPTY_FILTERS, normalizeFilters } from "../src/modules/marketing/filters.ts";
 import type { FoundPlace } from "../src/modules/marketing/google-places.ts";
 
@@ -98,4 +100,54 @@ test("a business that asked to stop can be moved again only once its number is o
   assert.equal(await updateProspects(db, "org-1", { ids: ["a", "b"], status: "approved" }), 1);
   assert.deepEqual(db.tables.ob_prospects.map((r: any) => r.status), ["opted_out", "approved"]);
   assert.equal(await countStillStopped(db, "org-1", ["a", "b"]), 1);
+});
+
+test("archiving hides a business from the working list, keeps its status, and restoring brings it back as it was", async () => {
+  const db = fakeDb({ ob_prospects: [
+    { id: "a", organization_id: "org-1", status: "approved", notes: "مهم" },
+    { id: "b", organization_id: "org-1", status: "new" },
+    { id: "x", organization_id: "org-2", status: "new" },
+  ] }, UNIQUE);
+  assert.equal(await archiveProspects(db, "org-1", ["a", "x"], true), 1);
+  const archivedRow = db.tables.ob_prospects.find((r: any) => r.id === "a");
+  assert.ok(archivedRow.archived_at);
+  assert.equal(archivedRow.status, "approved");
+  assert.equal(archivedRow.notes, "مهم");
+  // another organization's business cannot be archived by sending its id
+  assert.equal(db.tables.ob_prospects.find((r: any) => r.id === "x").archived_at ?? null, null);
+
+  const active = await listProspects(db, "org-1", { ...EMPTY_FILTERS, page: 1, pageSize: 25 });
+  assert.deepEqual(active.rows.map((r: any) => r.id), ["b"]);
+  const archived = await listProspects(db, "org-1", { ...EMPTY_FILTERS, page: 1, pageSize: 25 }, true);
+  assert.deepEqual(archived.rows.map((r: any) => r.id), ["a"]);
+  assert.equal(await countArchived(db, "org-1"), 1);
+  assert.deepEqual(await countByStatus(db, "org-1"), { new: 1 });
+
+  // archiving twice changes nothing; restoring only touches archived ones
+  assert.equal(await archiveProspects(db, "org-1", ["a"], true), 0);
+  assert.equal(await archiveProspects(db, "org-1", ["a", "b"], false), 1);
+  const back = db.tables.ob_prospects.find((r: any) => r.id === "a");
+  assert.equal(back.archived_at, null);
+  assert.equal(back.status, "approved");
+  assert.equal(await countArchived(db, "org-1"), 0);
+  for (const call of db.calls.filter((c: any) => c.table === "ob_prospects"))
+    assert.ok(call.filters.some(([op, col]: any) => op === "eq" && col === "organization_id"), `${call.op} without organization filter`);
+});
+
+test("an archived business is left out of a campaign audience even when it is approved", async () => {
+  const db = fakeDb({ ob_prospects: [
+    { id: "keep", organization_id: "o", status: "approved", phone_e164: "+905051112233", phone_kind: "mobile", name: "A" },
+    { id: "away", organization_id: "o", status: "approved", phone_e164: "+905051112244", phone_kind: "mobile", name: "B", archived_at: "2026-11-18T00:00:00.000Z" },
+  ] }, UNIQUE);
+  const preview = await previewAudience(db, "o");
+  assert.deepEqual(preview.eligible.map((r: any) => r.id), ["keep"]);
+});
+
+test("an archived business is also left out of an email audience", async () => {
+  const db = fakeDb({ ob_prospects: [
+    { id: "keep", organization_id: "o", status: "approved", emails: ["a@clinic.example"], name: "A" },
+    { id: "away", organization_id: "o", status: "approved", emails: ["b@clinic.example"], name: "B", archived_at: "2026-11-18T00:00:00.000Z" },
+  ] }, UNIQUE);
+  const audience = await emailAudience(db, "o");
+  assert.deepEqual(audience.eligible.map((r: any) => r.id), ["keep"]);
 });

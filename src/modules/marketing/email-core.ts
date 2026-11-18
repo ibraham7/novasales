@@ -55,7 +55,7 @@ export type EmailAudience = {
 
 /** Approved businesses with a usable email that can be emailed now, and why the others cannot. */
 export async function emailAudience(db: any, organizationId: string, prospectIds?: string[]): Promise<EmailAudience> {
-  let query = db.from("ob_prospects").select("id,name,emails").eq("organization_id", organizationId).eq("status", "approved").limit(5000);
+  let query = db.from("ob_prospects").select("id,name,emails").eq("organization_id", organizationId).eq("status", "approved").is("archived_at", null).limit(5000);
   if (prospectIds?.length) query = query.in("id", prospectIds);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
