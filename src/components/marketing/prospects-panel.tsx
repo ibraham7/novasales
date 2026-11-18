@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FiltersSidebar } from "./filters-sidebar";
 import { PresetsMenu } from "./presets-menu";
+import { hidePresetFn, listHiddenPresetsFn, restorePresetsFn } from "@/modules/marketing/marketing.functions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ProspectSheet, type ProspectRow } from "./prospect-sheet";
@@ -58,6 +59,9 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const saveFn = useServerFn(saveSearchFn);
   const savedFn = useServerFn(listSavedSearches);
   const removeSavedFn = useServerFn(deleteSavedSearchFn);
+  const hiddenPresetsFn = useServerFn(listHiddenPresetsFn);
+  const hidePresetServer = useServerFn(hidePresetFn);
+  const restorePresetsServer = useServerFn(restorePresetsFn);
 
   // A shared link opens with its filters (the «f» parameter).
   useEffect(() => {
@@ -107,6 +111,23 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
     onSuccess: () => {
       toast.success("حُفظ البحث");
       qc.invalidateQueries({ queryKey: ["marketing-saved-searches"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const hiddenPresets = useQuery({ queryKey: ["marketing-hidden-presets"], queryFn: () => hiddenPresetsFn(), staleTime: 60_000 });
+  const hidePreset = useMutation({
+    mutationFn: (id: string) => hidePresetServer({ data: { id } }),
+    onSuccess: () => {
+      toast.success("حُذف القالب من قائمتك. تقدر ترجعه من أسفل القائمة");
+      qc.invalidateQueries({ queryKey: ["marketing-hidden-presets"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const restorePresets = useMutation({
+    mutationFn: () => restorePresetsServer(),
+    onSuccess: (r) => {
+      toast.success(`رجعت ${r.restored} قالب`);
+      qc.invalidateQueries({ queryKey: ["marketing-hidden-presets"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -235,6 +256,9 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
           onSave={(name) => saveSearch.mutate(name)}
           onDelete={(id) => removeSaved.mutate(id)}
           saving={saveSearch.isPending}
+          hiddenPresets={hiddenPresets.data ?? []}
+          onHidePreset={(id) => hidePreset.mutate(id)}
+          onRestorePresets={() => restorePresets.mutate()}
         />
 
         {chips.length > 0 && (
