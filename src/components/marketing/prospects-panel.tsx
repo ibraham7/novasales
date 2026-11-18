@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
-import { deleteMarketingProspects, deleteSavedSearchFn, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, listSavedSearches, promoteMarketingProspects, saveSearchFn, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
+import { Archive, ArchiveRestore, Check, ChevronLeft, ChevronRight, Filter, Globe, Inbox, Loader2, PanelRightClose, PanelRightOpen, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
+import { archiveMarketingProspects, deleteMarketingProspects, deleteSavedSearchFn, enrichMarketingProspects, listMarketingProspects, listMarketingSearches, listSavedSearches, promoteMarketingProspects, saveSearchFn, updateMarketingProspects } from "@/modules/marketing/marketing.functions";
 import { EMPTY_FILTERS, countActiveFilters, decodeFilters, encodeFilters, filterChips, type Filters } from "@/modules/marketing/filters";
 import { PROSPECT_STATUS_LABELS, type ManualStatus } from "@/modules/marketing/statuses";
 import { toast } from "@/lib/toast";
@@ -36,12 +36,15 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   const updateFn = useServerFn(updateMarketingProspects);
   const enrichFn = useServerFn(enrichMarketingProspects);
   const deleteFn = useServerFn(deleteMarketingProspects);
+  const archiveFn = useServerFn(archiveMarketingProspects);
   const promoteFn = useServerFn(promoteMarketingProspects);
 
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [debounced, setDebounced] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // The working list, or the archive (businesses put away; kept, hidden, and left out of every campaign).
+  const [view, setView] = useState<"active" | "archived">("active");
   const [open, setOpen] = useState<ProspectRow | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -78,15 +81,16 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
   useEffect(() => {
     setPage(1);
     setSelected(new Set());
-  }, [debouncedKey]);
+  }, [debouncedKey, view]);
 
-  const query = useMemo(() => ({ filters: debounced, page, pageSize: PAGE_SIZE }), [debounced, page]);
+  const query = useMemo(() => ({ filters: debounced, page, pageSize: PAGE_SIZE, archived: view === "archived" }), [debounced, page, view]);
   const list = useQuery({ queryKey: ["marketing-prospects", query], queryFn: () => listFn({ data: query }), placeholderData: keepPreviousData, enabled: ready });
   const searches = useQuery({ queryKey: ["marketing-searches"], queryFn: () => searchesFn(), staleTime: 60_000 });
 
   const rows = (list.data?.rows ?? []) as ProspectRow[];
   const total = list.data?.total ?? 0;
   const counts = (list.data?.counts ?? {}) as Record<string, number>;
+  const archivedTotal = list.data?.archivedTotal ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const activeFilters = countActiveFilters(filters);
@@ -134,6 +138,16 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const archive = useMutation({
+    mutationFn: (archived: boolean) => archiveFn({ data: { ids: [...selected], archive: archived } }),
+    onSuccess: (r) => {
+      toast.success(r.archived ? `أُرشفت ${r.changed} جهة. تجدها في «الأرشيف» ويمكنك استعادتها` : `استُعيدت ${r.changed} جهة إلى القائمة`);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["marketing-prospects"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const remove = useMutation({
     mutationFn: () => deleteFn({ data: { ids: [...selected] } }),
     onSuccess: (r) => {
@@ -167,8 +181,12 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
           </Button>
           <p className="text-sm text-muted-foreground">
             {list.isFetching && !list.isPending ? <Loader2 className="ml-1 inline h-3.5 w-3.5 animate-spin" /> : null}
-            {total} جهة
+            {total} جهة{view === "archived" ? " في الأرشيف" : ""}
           </p>
+          <Button variant={view === "archived" ? "default" : "outline"} size="sm" onClick={() => setView(view === "archived" ? "active" : "archived")}>
+            {view === "archived" ? <ChevronRight className="ml-1 h-4 w-4" /> : <Archive className="ml-1 h-4 w-4" />}
+            {view === "archived" ? "العودة للقائمة" : `الأرشيف${archivedTotal > 0 ? ` (${archivedTotal})` : ""}`}
+          </Button>
           <div className="mr-auto flex items-center gap-2">
             <Label htmlFor="mk-sort" className="text-xs text-muted-foreground">
               الترتيب
@@ -214,18 +232,26 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-2.5">
             <span className="text-sm font-medium">تم تحديد {selected.size}</span>
-            {BULK.map((b) => (
-              <Button key={b.status} size="sm" variant={b.variant} disabled={bulk.isPending} onClick={() => bulk.mutate(b.status)}>
-                {b.label}
-              </Button>
-            ))}
-            <Button size="sm" variant="outline" disabled={enrich.isPending} onClick={() => enrich.mutate()}>
-              {enrich.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="ml-1 h-3.5 w-3.5" />}
-              إثراء من المواقع{selected.size > 25 ? " (أول 25)" : ""}
-            </Button>
-            <Button size="sm" variant="outline" disabled={promote.isPending} onClick={() => promote.mutate()}>
-              {promote.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="ml-1 h-3.5 w-3.5" />}
-              نقل إلى العملاء المحتملين
+            {view === "active" && (
+              <>
+                {BULK.map((b) => (
+                  <Button key={b.status} size="sm" variant={b.variant} disabled={bulk.isPending} onClick={() => bulk.mutate(b.status)}>
+                    {b.label}
+                  </Button>
+                ))}
+                <Button size="sm" variant="outline" disabled={enrich.isPending} onClick={() => enrich.mutate()}>
+                  {enrich.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="ml-1 h-3.5 w-3.5" />}
+                  إثراء من المواقع{selected.size > 25 ? " (أول 25)" : ""}
+                </Button>
+                <Button size="sm" variant="outline" disabled={promote.isPending} onClick={() => promote.mutate()}>
+                  {promote.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="ml-1 h-3.5 w-3.5" />}
+                  نقل إلى العملاء المحتملين
+                </Button>
+              </>
+            )}
+            <Button size="sm" variant="outline" disabled={archive.isPending} onClick={() => archive.mutate(view === "active")}>
+              {archive.isPending ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : view === "active" ? <Archive className="ml-1 h-3.5 w-3.5" /> : <ArchiveRestore className="ml-1 h-3.5 w-3.5" />}
+              {view === "active" ? "أرشفة" : "استعادة من الأرشيف"}
             </Button>
             <Button
               size="sm"
@@ -242,7 +268,11 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
               إلغاء التحديد
             </Button>
-            <p className="w-full text-xs text-muted-foreground">«اعتماد للتواصل» لا يرسل شيئاً؛ الإرسال يكون لاحقاً من حملة تعتمدها أنت.</p>
+            <p className="w-full text-xs text-muted-foreground">
+              {view === "active"
+                ? "«اعتماد للتواصل» لا يرسل شيئاً؛ الإرسال يكون لاحقاً من حملة تعتمدها أنت. «أرشفة» تُخفي الجهة من القائمة وتُخرجها من أي حملة، ولا تحذف شيئاً."
+                : "الجهات المؤرشفة لا تظهر في القائمة ولا تدخل أي حملة. «استعادة» تعيدها بحالتها كما كانت."}
+            </p>
           </div>
         )}
 
@@ -258,7 +288,7 @@ export function ProspectsPanel({ focusSearchId }: { focusSearchId: string | null
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-10 text-center text-muted-foreground">
               <Inbox className="h-8 w-8" />
-              <p className="text-sm">{activeFilters ? "لا توجد جهات تطابق الفلاتر." : "لا توجد جهات بعد. ابدأ ببحث جديد من الأعلى."}</p>
+              <p className="text-sm">{activeFilters ? "لا توجد جهات تطابق الفلاتر." : view === "archived" ? "الأرشيف فارغ. حدّد جهات من القائمة واضغط «أرشفة»." : "لا توجد جهات بعد. ابدأ ببحث جديد من الأعلى."}</p>
             </div>
           ) : (
             <Table>

@@ -103,13 +103,18 @@ export const listMarketingProspects = createServerFn({ method: "GET" })
       filters: normalizeFilters(raw.filters),
       page: z.number().int().min(1).max(1000).default(1).parse(raw.page ?? 1),
       pageSize: z.number().int().min(10).max(100).default(25).parse(raw.pageSize ?? 25),
+      archived: z.boolean().default(false).parse(raw.archived ?? false),
     };
   })
   .handler(async ({ data }) => {
     const { organizationId, db } = await access();
-    const { listProspects, countByStatus } = await import("./prospects-core");
-    const [list, counts] = await Promise.all([listProspects(db, organizationId, { ...data.filters, page: data.page, pageSize: data.pageSize }), countByStatus(db, organizationId)]);
-    return { ...list, counts };
+    const { listProspects, countByStatus, countArchived } = await import("./prospects-core");
+    const [list, counts, archivedTotal] = await Promise.all([
+      listProspects(db, organizationId, { ...data.filters, page: data.page, pageSize: data.pageSize }, data.archived),
+      countByStatus(db, organizationId),
+      countArchived(db, organizationId),
+    ]);
+    return { ...list, counts, archivedTotal };
   });
 
 export const listSavedSearches = createServerFn({ method: "GET" }).handler(async () => {
@@ -157,6 +162,15 @@ export const updateMarketingProspects = createServerFn({ method: "POST" })
     // Said out loud, so «0 updated» is never a mystery.
     const stopped = data.status && changed < data.ids.length ? await countStillStopped(db, organizationId, data.ids) : 0;
     return { changed, stopped };
+  });
+
+/** Archive or restore businesses. Nothing is deleted and their status is kept. */
+export const archiveMarketingProspects = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(200), archive: z.boolean() }).parse(data))
+  .handler(async ({ data }) => {
+    const { organizationId, db } = await access();
+    const { archiveProspects } = await import("./prospects-core");
+    return { changed: await archiveProspects(db, organizationId, data.ids, data.archive), archived: data.archive };
   });
 
 export const deleteMarketingProspects = createServerFn({ method: "POST" })

@@ -125,7 +125,7 @@ export type AudiencePreview = {
  * earlier one is left out and counted by reason.
  */
 export async function previewAudience(db: any, organizationId: string, prospectIds?: string[]): Promise<AudiencePreview> {
-  let query = db.from("ob_prospects").select("id,name,phone_e164,phone_kind").eq("organization_id", organizationId).eq("status", "approved").limit(5000);
+  let query = db.from("ob_prospects").select("id,name,phone_e164,phone_kind").eq("organization_id", organizationId).eq("status", "approved").is("archived_at", null).limit(5000);
   if (prospectIds?.length) query = query.in("id", prospectIds);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
