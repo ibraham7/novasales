@@ -25,6 +25,7 @@ export {
   listOppLabels,
   createOppLabel,
   getTicketQuickEdit,
+  reorderBoardColumn,
   saveTicketQuickEdit,
 } from "./pipeline.functions";
 
