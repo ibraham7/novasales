@@ -31,6 +31,7 @@ import { quickAssignOpportunity } from "@/modules/assignments/lead-assignments.f
 import { redistributeLostTickets } from "@/modules/assignments/redistribute.functions";
 import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
 import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
+import { TicketEditDialog } from "@/components/crm/ticket-edit-dialog";
 import { sharePercent } from "@/lib/share-percent";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -344,6 +345,8 @@ function PipelinePage() {
 
   const canRedistribute = (permsQ.data ?? []).includes("crm.leads.assign");
   const canAddTicket = ["crm.opportunities.create", "crm.opportunities.update", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
+  const canEditTicket = ["crm.opportunities.update", "opportunities.manage", "org.manage"].some((p) => (permsQ.data ?? []).includes(p));
+  const [editOpp, setEditOpp] = useState<{ id: string; name: string } | null>(null);
   const createTicket = useServerFn(createOpportunityInStage);
   const labelsFn = useServerFn(listOppLabels);
   const createLabelFn = useServerFn(createOppLabel);
@@ -527,6 +530,23 @@ function PipelinePage() {
         />
       )}
 
+      {editOpp && (
+        <TicketEditDialog
+          oppId={editOpp.id}
+          title={editOpp.name}
+          labels={labelsQ.data ?? []}
+          creatingLabel={createLabelMut.isPending}
+          onCreateLabel={async (input) => {
+            try {
+              return await createLabelMut.mutateAsync(input);
+            } catch {
+              return undefined;
+            }
+          }}
+          onClose={() => setEditOpp(null)}
+        />
+      )}
+
       <Dialog open={!!addStage} onOpenChange={(o) => { if (!o) setAddStage(null); }}>
         <DialogContent dir="rtl" className="max-w-lg">
           <DialogHeader><DialogTitle>تذكرة جديدة في «{addStage?.name}»</DialogTitle></DialogHeader>
@@ -663,6 +683,7 @@ function PipelinePage() {
               onRename={(name) => renameStageMut.mutate({ stage: s, name })}
               onQualityChange={(level) => qualityMut.mutate({ stage: s, level })}
               onAssign={handleAssign}
+              onEdit={canEditTicket ? (o: any) => setEditOpp({ id: o.id, name: o.contact_name ?? "" }) : undefined}
               onRedistribute={canRedistribute && (s.is_lost || /مهمل/.test(s.name ?? "")) ? () => redistributeMut.mutate(s) : undefined}
               redistributing={redistributeMut.isPending}
               stages={stages}
@@ -698,6 +719,7 @@ function KanbanColumn({
   onRename,
   onQualityChange,
   onAssign,
+  onEdit,
   onRedistribute,
   redistributing,
   stages,
@@ -723,6 +745,7 @@ function KanbanColumn({
   onRename: (name: string) => void;
   onQualityChange: (level: QualityLevel | null) => void;
   onAssign: (oppId: string, userId: string) => void;
+  onEdit?: (opp: any) => void;
   onRedistribute?: () => void;
   redistributing?: boolean;
 }) {
@@ -770,7 +793,7 @@ function KanbanColumn({
         ) : (
           <>
             {items.map((o: any) => (
-              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onMove={onMove} />
+              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onEdit={onEdit} onMove={onMove} />
             ))}
             {all > items.length && (
               <Button variant="ghost" size="sm" className="w-full text-xs" onClick={onLoadMore}>
@@ -793,12 +816,14 @@ const KanbanCard = memo(function KanbanCard({
   members,
   stages,
   onAssign,
+  onEdit,
   onMove,
 }: {
   opp: any;
   members: any[];
   stages: any[];
   onAssign: (oppId: string, userId: string) => void;
+  onEdit?: (opp: any) => void;
   onMove: (oppId: string, stageId: string) => void;
 }) {
   const qc = useQueryClient();
@@ -838,7 +863,18 @@ const KanbanCard = memo(function KanbanCard({
       <Card className="p-2.5 cursor-move hover:shadow-md transition-shadow relative">
         <Link to="/pipeline/$oppId" params={{ oppId: opp.id }} className="block" draggable={canDrag ? undefined : false}>
           <div className="flex items-start gap-2">
-            <Avatar className="h-9 w-9 shrink-0">
+            <Avatar
+              className={cn("h-9 w-9 shrink-0", onEdit && "cursor-pointer ring-primary/40 transition-shadow hover:ring-2")}
+              {...(onEdit
+                ? {
+                    role: "button",
+                    tabIndex: 0,
+                    title: "تعديل التذكرة",
+                    onClick: (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onEdit(opp); },
+                    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onEdit(opp); } },
+                  }
+                : {})}
+            >
               {opp.contact_avatar && <AvatarImage src={opp.contact_avatar} />}
               <AvatarFallback className="text-xs">
                 {(opp.contact_name ?? "?").charAt(0).toUpperCase()}

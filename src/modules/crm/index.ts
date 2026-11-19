@@ -24,6 +24,8 @@ export {
   createOpportunityInStage,
   listOppLabels,
   createOppLabel,
+  getTicketQuickEdit,
+  saveTicketQuickEdit,
 } from "./pipeline.functions";
 
 // Pipelines (dynamic)
