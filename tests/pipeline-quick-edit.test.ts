@@ -97,3 +97,11 @@ test("the ticket's value is loaded with its currency and saved only when sent", 
   assert.deepEqual([opp.value, opp.currency], [2500.75, "TRY"]);
   assert.throws(() => save({ data: { opportunityId: OPP, name: "اسم", labelIds: [], value: -1 } }));
 });
+
+test("changing only the currency keeps the amount; a bad currency code is refused", async () => {
+  const { save, db } = setup();
+  await save({ data: { opportunityId: OPP, name: "اسم", labelIds: [L1], currency: "EUR" } });
+  const [opp] = await rows(db, "opp_opportunities");
+  assert.deepEqual([opp.value, opp.currency], [100, "EUR"]);
+  assert.throws(() => save({ data: { opportunityId: OPP, name: "اسم", labelIds: [], currency: "eur" } }), /عملة/);
+});

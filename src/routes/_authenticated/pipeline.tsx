@@ -32,6 +32,7 @@ import { redistributeLostTickets } from "@/modules/assignments/redistribute.func
 import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
 import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
 import { TicketEditDialog } from "@/components/crm/ticket-edit-dialog";
+import { TicketValueField } from "@/components/crm/ticket-value-field";
 import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, isBoardSort, parseAmount, placeInColumn, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
 import { sharePercent } from "@/lib/share-percent";
 import { Textarea } from "@/components/ui/textarea";
@@ -412,6 +413,8 @@ function PipelinePage() {
   const [addStage, setAddStage] = useState<any | null>(null);
   const EMPTY_TICKET = { name: "", phone: "", value: "", notes: "", labelIds: [] as string[] };
   const [addForm, setAddForm] = useState(EMPTY_TICKET);
+  const [addCurrency, setAddCurrency] = useState("");
+  const currencyNow = addCurrency || (metaQ.data?.defaultCurrency ?? "USD");
   const addAmount = parseAmount(addForm.value);
   const addReady = !!addForm.name.trim() && (!addForm.phone.trim() || addForm.phone.replace(/\D/g, "").length >= 5) && addAmount !== null;
   const addTicketMut = useMutation({
@@ -421,7 +424,7 @@ function PipelinePage() {
           stageId: addStage.id,
           name: addForm.name,
           ...(addForm.phone.trim() ? { phone: addForm.phone } : {}),
-          ...(addAmount ? { value: addAmount } : {}),
+          ...(addAmount ? { value: addAmount, currency: currencyNow } : {}),
           ...(addForm.notes.trim() ? { notes: addForm.notes } : {}),
           ...(addForm.labelIds.length ? { labelIds: addForm.labelIds } : {}),
         },
@@ -430,6 +433,7 @@ function PipelinePage() {
       toast.success(`أُضيفت التذكرة إلى «${addStage?.name}»`);
       setAddStage(null);
       setAddForm(EMPTY_TICKET);
+      setAddCurrency("");
       qc.invalidateQueries({ queryKey: ["pipeline-board"] });
     },
     onError: (e: any) => toast.error(e?.message ?? "تعذرت إضافة التذكرة"),
@@ -615,8 +619,7 @@ function PipelinePage() {
           >
             <Input aria-label="اسم العميل" placeholder="اسم العميل" autoFocus value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
             <Input aria-label="رقم الواتساب" placeholder="رقم الواتساب مع رمز الدولة (اختياري)" dir="ltr" className="text-right" inputMode="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
-            <Input aria-label="القيمة" placeholder={`القيمة (اختياري) · ${metaQ.data?.defaultCurrency ?? "USD"}`} dir="ltr" className="text-right" inputMode="decimal" value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} />
-            {addAmount === null && <p className="-mt-2 text-xs text-destructive">اكتب القيمة بالأرقام فقط</p>}
+            <TicketValueField currency={currencyNow} onCurrency={setAddCurrency} amount={addForm.value} onAmount={(value) => setAddForm((f) => ({ ...f, value }))} invalid={addAmount === null} />
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">الليبلز</Label>
               <LabelPicker
