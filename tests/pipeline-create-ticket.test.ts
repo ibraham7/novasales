@@ -65,3 +65,13 @@ test("the same number reuses the customer; a number that is too short is refused
   assert.equal((await all(db, "opp_opportunities")).length, 2);
   assert.throws(() => fn({ data: { stageId: STAGE, name: "x", phone: "12" } }), /رقم هاتف صحيحاً/);
 });
+
+test("the ticket gets the chosen currency and amount; without a currency, the platform's default", async () => {
+  const { fn, db } = setup();
+  await fn({ data: { stageId: STAGE, name: "أ", value: 1500, currency: "TRY" } });
+  await fn({ data: { stageId: STAGE, name: "ب", value: 20 } });
+  const opps = await all(db, "opp_opportunities");
+  assert.deepEqual([opps[0].value, opps[0].currency], [1500, "TRY"]);
+  assert.deepEqual([opps[1].value, opps[1].currency], [20, "USD"]);
+  assert.throws(() => fn({ data: { stageId: STAGE, name: "ج", value: 1, currency: "dollar" } }), /عملة/);
+});

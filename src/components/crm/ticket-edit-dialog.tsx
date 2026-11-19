@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { LabelPicker, type TicketLabel } from "@/components/crm/ticket-labels";
 import { getTicketQuickEdit, saveTicketQuickEdit, listOppNotes } from "@/modules/crm";
 import { parseAmount } from "@/modules/crm/board-money";
+import { TicketValueField } from "@/components/crm/ticket-value-field";
 
 /** The window that opens from the customer's circle on a board card: the same fields as «new ticket», for editing. */
 export function TicketEditDialog({ oppId, title, defaultCurrency, labels, onCreateLabel, creatingLabel, onClose }: {
@@ -29,11 +30,11 @@ export function TicketEditDialog({ oppId, title, defaultCurrency, labels, onCrea
   const notesFn = useServerFn(listOppNotes);
   const detailQ = useQuery({ queryKey: ["ticket-quick-edit", oppId], queryFn: () => getFn({ data: { opportunityId: oppId } }), staleTime: 0, gcTime: 0 });
   const notesQ = useQuery({ queryKey: ["opp-notes", oppId], queryFn: () => notesFn({ data: { opportunityId: oppId } }) });
-  const [form, setForm] = useState({ name: "", phone: "", value: "", labelIds: [] as string[], note: "" });
+  const [form, setForm] = useState({ name: "", phone: "", value: "", currency: "", labelIds: [] as string[], note: "" });
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (detailQ.data && !loaded) {
-      setForm({ name: detailQ.data.name, phone: detailQ.data.phone, value: detailQ.data.value > 0 ? String(detailQ.data.value) : "", labelIds: detailQ.data.labelIds, note: "" });
+      setForm({ name: detailQ.data.name, phone: detailQ.data.phone, value: detailQ.data.value > 0 ? String(detailQ.data.value) : "", currency: detailQ.data.currency || defaultCurrency, labelIds: detailQ.data.labelIds, note: "" });
       setLoaded(true);
     }
   }, [detailQ.data, loaded]);
@@ -51,6 +52,7 @@ export function TicketEditDialog({ oppId, title, defaultCurrency, labels, onCrea
           ...(form.phone.trim() && form.phone.trim() !== (detailQ.data?.phone ?? "") ? { phone: form.phone } : {}),
           // Only a changed amount is sent (clearing the box sets it to 0).
           ...(amount !== null && amount !== initialAmount ? { value: amount } : {}),
+          ...(form.currency && form.currency !== (detailQ.data?.currency || defaultCurrency) ? { currency: form.currency } : {}),
           labelIds: form.labelIds,
           ...(form.note.trim() ? { note: form.note } : {}),
         },
@@ -77,10 +79,7 @@ export function TicketEditDialog({ oppId, title, defaultCurrency, labels, onCrea
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (ready && !save.isPending) save.mutate(); }}>
             <Input aria-label="اسم العميل" placeholder="اسم العميل" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
             <Input aria-label="رقم الواتساب" placeholder="رقم الواتساب مع رمز الدولة (اختياري)" dir="ltr" className="text-right" inputMode="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-            <div className="space-y-1">
-              <Input aria-label="القيمة" placeholder={`القيمة · ${detailQ.data?.currency || defaultCurrency}`} dir="ltr" className="text-right" inputMode="decimal" value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
-              {amount === null && <p className="text-xs text-destructive">اكتب القيمة بالأرقام فقط</p>}
-            </div>
+            <TicketValueField currency={form.currency || defaultCurrency} onCurrency={(currency) => setForm((f) => ({ ...f, currency }))} amount={form.value} onAmount={(value) => setForm((f) => ({ ...f, value }))} invalid={amount === null} />
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">الليبلز</Label>
               <LabelPicker labels={labels} value={form.labelIds} onChange={(labelIds) => setForm((f) => ({ ...f, labelIds }))} onCreate={onCreateLabel} creating={creatingLabel} />

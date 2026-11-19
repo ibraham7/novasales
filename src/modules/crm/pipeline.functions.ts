@@ -328,6 +328,8 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
       phone: z.string().trim().max(30).optional().refine((v) => !v || v.replace(/\D/g, "").length >= 5, "اكتب رقم هاتف صحيحاً أو اتركه فارغاً"),
       title: z.string().trim().max(200).optional(),
       value: z.number().finite().min(0).max(1e12).optional(),
+      /** ISO code such as USD or TRY; left out, the platform's default currency. */
+      currency: z.string().regex(/^[A-Z]{3}$/, "اختر عملة صحيحة").optional(),
       notes: z.string().trim().max(5000).optional(),
       labelIds: z.array(z.string().uuid()).max(12).optional(),
     }).parse(d)
@@ -407,7 +409,7 @@ export const createOpportunityInStage = createServerFn({ method: "POST" })
         title: data.title || data.name,
         source: "outbound_manual",
         value: data.value ?? 0,
-        currency: platform.default_currency,
+        currency: data.currency ?? platform.default_currency,
         probability: stage.probability,
       })
       .select("id")
@@ -508,6 +510,7 @@ export const saveTicketQuickEdit = createServerFn({ method: "POST" })
       labelIds: z.array(z.string().uuid()).max(12).default([]),
       /** The ticket's value in its own currency; left out, it stays as it is. */
       value: z.number().finite().min(0).max(1e12).optional(),
+      currency: z.string().regex(/^[A-Z]{3}$/, "اختر عملة صحيحة").optional(),
       note: z.string().trim().max(5000).optional(),
     }).parse(d)
   )
@@ -569,8 +572,11 @@ export const saveTicketQuickEdit = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
 
-    if (data.value !== undefined) {
-      const { error } = await db.from("opp_opportunities").update({ value: data.value, updated_at: new Date().toISOString() }).eq("id", opp.id).eq("organization_id", organizationId);
+    if (data.value !== undefined || data.currency !== undefined) {
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (data.value !== undefined) patch.value = data.value;
+      if (data.currency !== undefined) patch.currency = data.currency;
+      const { error } = await db.from("opp_opportunities").update(patch).eq("id", opp.id).eq("organization_id", organizationId);
       if (error) throw new Error(error.message);
     }
     if (data.note) {
