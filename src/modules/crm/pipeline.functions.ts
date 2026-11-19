@@ -57,7 +57,13 @@ export const getPipelinePageMeta = createServerFn({ method: "GET" }).handler(asy
   const filterDepartmentIds = visibility === "all" ? null : visibility === "department" ? access.departmentIds : [];
   const filterMemberIds =
     visibility === "all" ? null : visibility === "department" ? Array.from(new Set([access.userId, ...departmentMembers.map((m: any) => m.user_id)])) : [];
+  // The currency a new ticket's value is in (the platform default); a failure here must not break the board.
+  const defaultCurrency: string = await import("@/modules/superadmin/settings.functions")
+    .then((m: any) => m.getPublicPlatformSettings())
+    .then((settings: any) => settings?.default_currency || "USD")
+    .catch(() => "USD");
   return {
+    defaultCurrency,
     pipelines,
     departments,
     members: profiles.map(p => ({ ...p, user_id: p.id, profile_name: p.full_name })),
@@ -78,6 +84,8 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       perStage: z.number().int().min(1).max(200).optional(),
       /** حدّ خاص بمراحل طلب المستخدم عرض المزيد منها */
       limits: z.record(z.number().int().min(1).max(500)).optional(),
+      /** ترتيب التذاكر داخل كل مرحلة (الافتراضي: الأحدث أولاً) */
+      sort: z.enum(["newest", "oldest", "value_desc", "value_asc"]).optional(),
     }).parse(d ?? {})
   )
   .handler(async ({ data }) => {
@@ -104,8 +112,13 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
 
     const build = () => {
       let q = db.from("opp_opportunities").select("*")
-        .eq("organization_id", organizationId).is("deleted_at", null)
-        .order("opened_at", { ascending: false }).order("id");
+        .eq("organization_id", organizationId).is("deleted_at", null);
+      // Tickets without a value always go last, whichever way the values are sorted.
+      if (data.sort === "oldest") q = q.order("opened_at", { ascending: true });
+      else if (data.sort === "value_desc") q = q.order("value", { ascending: false, nullsFirst: false }).order("opened_at", { ascending: false });
+      else if (data.sort === "value_asc") q = q.order("value", { ascending: true, nullsFirst: false }).order("opened_at", { ascending: false });
+      else q = q.order("opened_at", { ascending: false });
+      q = q.order("id");
       if (ownerAgentId) q = q.eq("owner_agent_id", ownerAgentId);
       if (departmentIds) q = q.in("department_id", departmentIds);
       return q;
@@ -219,20 +232,31 @@ export const getBoardStageCounts = createServerFn({ method: "GET" })
       ownerAgentId = access.userId;
       departmentIds = null;
     } else if (visibility === "department") {
-      if (data.departmentId && !access.departmentIds.includes(data.departmentId)) return { counts: {} as Record<string, number> };
+      if (data.departmentId && !access.departmentIds.includes(data.departmentId)) return { counts: {} as Record<string, number>, sums: {} as Record<string, Record<string, number>> };
       departmentIds = data.departmentId ? [data.departmentId] : access.departmentIds;
-      if (departmentIds.length === 0) return { counts: {} as Record<string, number> };
+      if (departmentIds.length === 0) return { counts: {} as Record<string, number>, sums: {} as Record<string, Record<string, number>> };
     }
     const counts: Record<string, number> = {};
+    // The money in each stage, per currency, over ALL its tickets (the board only loads the newest few).
+    const sums: Record<string, Record<string, number>> = {};
     for (let offset = 0; ; offset += 1000) {
-      let q = db.from("opp_opportunities").select("stage_id").eq("organization_id", organizationId).is("deleted_at", null).order("id");
+      let q = db.from("opp_opportunities").select("stage_id,value,currency").eq("organization_id", organizationId).is("deleted_at", null).order("id");
       if (ownerAgentId) q = q.eq("owner_agent_id", ownerAgentId);
       if (departmentIds) q = q.in("department_id", departmentIds);
       const page = await checkedRows(q.range(offset, offset + 999));
-      for (const r of page) if (r.stage_id) counts[r.stage_id] = (counts[r.stage_id] ?? 0) + 1;
+      for (const r of page) {
+        if (!r.stage_id) continue;
+        counts[r.stage_id] = (counts[r.stage_id] ?? 0) + 1;
+        const amount = Number(r.value ?? 0);
+        if (Number.isFinite(amount) && amount > 0) {
+          const currency = (r.currency as string | null) || "USD";
+          const stage = (sums[r.stage_id] ??= {});
+          stage[currency] = (stage[currency] ?? 0) + amount;
+        }
+      }
       if (page.length < 1000) break;
     }
-    return { counts };
+    return { counts, sums };
   });
 
 export const moveOpportunityStage = createServerFn({ method: "POST" })
@@ -442,7 +466,7 @@ export const getTicketQuickEdit = createServerFn({ method: "GET" })
     const db = supabaseAdmin as any;
     const { organizationId } = await getWorkspace();
     const access = await requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
-    const { data: opp } = await db.from("opp_opportunities").select("id,contact_id,owner_agent_id,department_id").eq("id", data.opportunityId).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
+    const { data: opp } = await db.from("opp_opportunities").select("id,contact_id,owner_agent_id,department_id,value,currency").eq("id", data.opportunityId).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
     if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("التذكرة غير موجودة أو غير مسموحة");
     const [{ data: contact }, { data: points }, links] = await Promise.all([
       db.from("crm_contacts").select("display_name,full_name").eq("id", opp.contact_id).eq("organization_id", organizationId).maybeSingle(),
@@ -455,6 +479,8 @@ export const getTicketQuickEdit = createServerFn({ method: "GET" })
       phone: (point?.identifier ?? "") as string,
       // Labels are optional decoration: without their table the list is simply empty.
       labelIds: (links.error ? [] : (links.data ?? []).map((l: any) => l.label_id)) as string[],
+      value: Number(opp.value ?? 0),
+      currency: (opp.currency as string | null) || "USD",
     };
   });
 
@@ -467,6 +493,8 @@ export const saveTicketQuickEdit = createServerFn({ method: "POST" })
       /** Left empty, the customer's current number stays as it is. */
       phone: z.string().trim().max(30).optional().refine((v) => !v || v.replace(/\D/g, "").length >= 5, "اكتب رقم هاتف صحيحاً أو اتركه فارغاً"),
       labelIds: z.array(z.string().uuid()).max(12).default([]),
+      /** The ticket's value in its own currency; left out, it stays as it is. */
+      value: z.number().finite().min(0).max(1e12).optional(),
       note: z.string().trim().max(5000).optional(),
     }).parse(d)
   )
@@ -528,6 +556,10 @@ export const saveTicketQuickEdit = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
 
+    if (data.value !== undefined) {
+      const { error } = await db.from("opp_opportunities").update({ value: data.value, updated_at: new Date().toISOString() }).eq("id", opp.id).eq("organization_id", organizationId);
+      if (error) throw new Error(error.message);
+    }
     if (data.note) {
       const { error } = await db.from("opp_notes").insert({ organization_id: organizationId, opportunity_id: opp.id, author_id: access.userId, body: data.note });
       if (error) throw new Error(error.message);

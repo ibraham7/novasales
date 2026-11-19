@@ -13,8 +13,8 @@ function setup(scope = 'all', failTable) {
   const access = { organizationId: 'org-a', userId: 'ali', departmentIds: ['dept-a'] };
   const tables = {
     opp_opportunities: [
-      { id: 'one', organization_id: 'org-a', owner_agent_id: 'ali', department_id: 'dept-a', contact_id: 'contact', deleted_at: null, title: 'Test', stage_id: 'new' },
-      { id: 'two', organization_id: 'org-a', owner_agent_id: 'other', department_id: 'dept-b', deleted_at: null, title: 'Other' },
+      { id: 'one', organization_id: 'org-a', owner_agent_id: 'ali', department_id: 'dept-a', contact_id: 'contact', deleted_at: null, title: 'Test', stage_id: 'new', value: 120.5, currency: 'USD' },
+      { id: 'two', organization_id: 'org-a', owner_agent_id: 'other', department_id: 'dept-b', deleted_at: null, title: 'Other', stage_id: 'new', value: 80, currency: 'USD' },
       { id: 'foreign', organization_id: 'org-b', owner_agent_id: 'ali', deleted_at: null },
       { id: 'deleted', organization_id: 'org-a', owner_agent_id: 'ali', deleted_at: 'date' },
     ],
@@ -86,4 +86,14 @@ test('each board card carries its own organization\'s labels, and none when it h
   const one = rows.find(r => r.id === 'one'), two = rows.find(r => r.id === 'two');
   assert.equal(JSON.stringify(one.labels.map(({ id, name, color }) => ({ id, name, color }))), JSON.stringify([{ id: 'label-1', name: 'نوفا سيلز', color: '#0079bf' }]));
   assert.equal(two.labels.length, 0);
+});
+
+test('each stage reports how many tickets it holds and how much money, per currency, over all of them', async () => {
+  const r = await setup().getBoardStageCounts();
+  assert.equal(r.counts.new, 2);
+  assert.equal(JSON.stringify(r.sums), JSON.stringify({ new: { USD: 200.5 } }));
+  // a viewer who sees only their own tickets gets only their own money
+  const own = await setup('own').getBoardStageCounts();
+  assert.equal(own.counts.new, 1);
+  assert.equal(JSON.stringify(own.sums), JSON.stringify({ new: { USD: 120.5 } }));
 });
