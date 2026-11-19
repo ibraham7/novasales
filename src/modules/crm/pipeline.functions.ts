@@ -166,6 +166,17 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
     } catch {
       /* labels not installed yet */
     }
+    // While searching, the notes are sent too so the search can find what was written in them.
+    const notesByOpp = new Map<string, string>();
+    if (data.all) {
+      try {
+        const notes = await readByIds(db, "opp_notes", "opportunity_id,body,created_at", rows.map(o => o.id), organizationId, "opportunity_id");
+        notes.sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+        for (const n of notes) notesByOpp.set(n.opportunity_id, `${notesByOpp.get(n.opportunity_id) ?? ""} ${n.body ?? ""}`.slice(0, 3000));
+      } catch {
+        /* notes not installed yet */
+      }
+    }
     return rows.map(o => {
       const contact = contactsById.get(o.contact_id);
       const owner = ownersById.get(o.owner_agent_id);
@@ -174,7 +185,7 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       const latest = linked[0];
       const account = accountsById.get(latest?.channel_account_id);
       return {
-        ...o, labels: labelsByOpp.get(o.id) ?? [], contact_name: contact?.display_name || contact?.full_name || o.title,
+        ...o, labels: labelsByOpp.get(o.id) ?? [], notes_text: notesByOpp.get(o.id) ?? "", contact_name: contact?.display_name || contact?.full_name || o.title,
         contact_avatar: contact?.avatar_url, contact_phone: latest?.peer_identifier,
         owner_name: owner?.full_name, owner_avatar: owner?.avatar_url,
         channel: latest?.channel, account_name: account?.display_name,

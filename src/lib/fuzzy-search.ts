@@ -6,7 +6,8 @@
  * - Multi-token AND matching (كل كلمة يجب أن توجد في أي حقل)
  */
 
-const ARABIC_DIACRITICS = /[\u064B-\u0652\u0670\u0640\u06D6-\u06ED]/g;
+// \u0653-\u065F too: NFKD turns أ إ آ into a plain alef plus a combining hamza/madda mark, which must go as well.
+const ARABIC_DIACRITICS = /[\u064B-\u065F\u0670\u0640\u06D6-\u06ED]/g;
 const ARABIC_DIGITS = /[\u0660-\u0669\u06F0-\u06F9]/g;
 
 function foldArabicDigits(value: string) {
@@ -51,7 +52,10 @@ export type SearchFields = Array<unknown>;
  * كل كلمة في الاستعلام يجب أن تطابق نصياً (جزء من الاسم) أو رقمياً (جزء من الرقم).
  */
 export function matchesSearch(query: string, fields: SearchFields): boolean {
-  const q = normalizeText(query);
+  const raw = normalizeText(query);
+  // «dr_shehabi», «al-shehabi», «dr.shehabi»: a word typed with a separator is searched as separate words.
+  // Numbers keep their dashes, so a phone number still matches as one run of digits.
+  const q = /[a-z\u0600-\u06ff]/.test(raw) ? raw.replace(/[_.\-]+/g, " ").trim() : raw;
   if (!q) return true;
 
   const textHay = fields.map((f) => normalizeText(f)).filter(Boolean).join(" | ");

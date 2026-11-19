@@ -417,6 +417,9 @@ function PipelinePage() {
       if (search.trim()) {
         const ok = matchesSearch(search, [
           o.contact_name,
+          o.title,
+          o.notes_text,
+          (o.labels ?? []).map((l: any) => l.name).join(" "),
           o.contact_phone,
           o.source,
           o.owner_name,
