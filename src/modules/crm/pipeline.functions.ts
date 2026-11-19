@@ -85,7 +85,7 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       /** حدّ خاص بمراحل طلب المستخدم عرض المزيد منها */
       limits: z.record(z.number().int().min(1).max(500)).optional(),
       /** ترتيب التذاكر داخل كل مرحلة (الافتراضي: الأحدث أولاً) */
-      sort: z.enum(["newest", "oldest", "value_desc", "value_asc"]).optional(),
+      sort: z.enum(["newest", "oldest", "value_desc", "value_asc", "manual"]).optional(),
     }).parse(d ?? {})
   )
   .handler(async ({ data }) => {
@@ -110,37 +110,50 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       if (departmentIds.length === 0) return [];
     }
 
-    const build = () => {
+    const build = (sort: string | undefined = data.sort) => {
       let q = db.from("opp_opportunities").select("*")
         .eq("organization_id", organizationId).is("deleted_at", null);
       // Tickets without a value always go last, whichever way the values are sorted.
-      if (data.sort === "oldest") q = q.order("opened_at", { ascending: true });
-      else if (data.sort === "value_desc") q = q.order("value", { ascending: false, nullsFirst: false }).order("opened_at", { ascending: false });
-      else if (data.sort === "value_asc") q = q.order("value", { ascending: true, nullsFirst: false }).order("opened_at", { ascending: false });
+      if (sort === "oldest") q = q.order("opened_at", { ascending: true });
+      else if (sort === "value_desc") q = q.order("value", { ascending: false, nullsFirst: false }).order("opened_at", { ascending: false });
+      else if (sort === "value_asc") q = q.order("value", { ascending: true, nullsFirst: false }).order("opened_at", { ascending: false });
+      // The hand-made order; tickets never ordered by hand come after, newest first.
+      else if (sort === "manual") q = q.order("board_pos", { ascending: true, nullsFirst: false }).order("opened_at", { ascending: false });
       else q = q.order("opened_at", { ascending: false });
       q = q.order("id");
       if (ownerAgentId) q = q.eq("owner_agent_id", ownerAgentId);
       if (departmentIds) q = q.in("department_id", departmentIds);
       return q;
     };
-    const rows: any[] = [];
-    if (data.perStage && !data.all) {
-      // Only the newest few of each stage: a stage with hundreds of tickets no longer loads them all.
-      const stageRows = await checkedRows(
-        db.from("crm_pipeline_stages").select("id, crm_pipelines!inner(organization_id)").eq("crm_pipelines.organization_id", organizationId).limit(200),
-      );
-      const pages = await Promise.all(
-        stageRows.map((st: any) => checkedRows(build().eq("stage_id", st.id).limit(data.limits?.[st.id] ?? data.perStage!))),
-      );
-      for (const page of pages) rows.push(...page);
-    } else {
-      const query = build();
-      const limit = data.all ? 3000 : 500;
-      for (let offset = 0; offset < limit; offset += 500) {
-        const page = await checkedRows(query.range(offset, Math.min(offset + 499, limit - 1)));
-        rows.push(...page);
-        if (page.length < 500) break;
+    const loadRows = async (sort: string | undefined) => {
+      const out: any[] = [];
+      if (data.perStage && !data.all) {
+        // Only the newest few of each stage: a stage with hundreds of tickets no longer loads them all.
+        const stageRows = await checkedRows(
+          db.from("crm_pipeline_stages").select("id, crm_pipelines!inner(organization_id)").eq("crm_pipelines.organization_id", organizationId).limit(200),
+        );
+        const pages = await Promise.all(
+          stageRows.map((st: any) => checkedRows(build(sort).eq("stage_id", st.id).limit(data.limits?.[st.id] ?? data.perStage!))),
+        );
+        for (const page of pages) out.push(...page);
+      } else {
+        const query = build(sort);
+        const limit = data.all ? 3000 : 500;
+        for (let offset = 0; offset < limit; offset += 500) {
+          const page = await checkedRows(query.range(offset, Math.min(offset + 499, limit - 1)));
+          out.push(...page);
+          if (page.length < 500) break;
+        }
       }
+      return out;
+    };
+    let rows: any[];
+    try {
+      rows = await loadRows(data.sort);
+    } catch (e) {
+      // The hand-made order needs the board_pos column; until its SQL is run the board falls back to newest first.
+      if (data.sort === "manual" && /board_pos/i.test((e as Error).message)) rows = await loadRows("newest");
+      else throw e;
     }
     if (!rows.length) return [];
     // Contacts, owners and chat links depend only on the opportunities: one parallel round.
@@ -565,4 +578,44 @@ export const saveTicketQuickEdit = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
     return { ok: true };
+  });
+
+/**
+ * Saves the hand-made order of one column. `orderedIds` is the column as the agent now sees it, top to
+ * bottom; tickets of the stage that were not on screen follow in their old order. The whole column is
+ * written in one statement (opp_set_board_order), so a big column costs one round trip.
+ */
+export const reorderBoardColumn = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ stageId: z.string().uuid(), orderedIds: z.array(z.string().uuid()).min(1).max(1000) }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+    const db = supabaseAdmin as any;
+    const { organizationId } = await getWorkspace();
+    const access = await requireAnyPermission(["crm.opportunities.update", "opportunities.manage", "org.manage"]);
+    const { data: stage } = await db
+      .from("crm_pipeline_stages")
+      .select("id, crm_pipelines!inner(organization_id)")
+      .eq("id", data.stageId)
+      .eq("crm_pipelines.organization_id", organizationId)
+      .maybeSingle();
+    if (!stage) throw new Error("المرحلة غير موجودة");
+    // Only tickets of this stage that the user may touch are placed by hand.
+    const wanted = [...new Set(data.orderedIds)];
+    const rows = await readByIds(db, "opp_opportunities", "id,owner_agent_id,department_id,stage_id,deleted_at", wanted, organizationId);
+    const allowed = new Set(rows.filter((r: any) => !r.deleted_at && r.stage_id === data.stageId && canAccessOpportunityRow(access, r)).map((r: any) => r.id as string));
+    const ordered = wanted.filter((id) => allowed.has(id));
+    if (!ordered.length) return { ok: true, placed: 0 };
+    const rest = await checkedRows(
+      db.from("opp_opportunities").select("id").eq("organization_id", organizationId).eq("stage_id", data.stageId).is("deleted_at", null)
+        .order("board_pos", { ascending: true, nullsFirst: false }).order("opened_at", { ascending: false }).order("id").limit(5000),
+    ).catch((e: Error) => {
+      throw new Error(/board_pos/i.test(e.message) ? "شغّل ملف SQL الخاص بترتيب التذاكر في Supabase أولاً" : e.message);
+    });
+    const placed = new Set(ordered);
+    const column = [...ordered, ...rest.map((r: any) => r.id as string).filter((id: string) => !placed.has(id))];
+    const { error } = await db.rpc("opp_set_board_order", { _org: organizationId, _stage: data.stageId, _ids: column });
+    if (error) throw new Error(["PGRST202", "42883", "42703"].includes(error.code) ? "شغّل ملف SQL الخاص بترتيب التذاكر في Supabase أولاً" : error.message);
+    return { ok: true, placed: ordered.length };
   });

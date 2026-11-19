@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, createOpportunityInStage, listOppLabels, createOppLabel, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
+import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, reorderBoardColumn, createOpportunityInStage, listOppLabels, createOppLabel, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
 import { getMergedChatForOpportunity } from "@/modules/messaging";
 import { setStageQualityLevel } from "@/modules/integrations/conversions.functions";
 import { QUALITY_LEVELS, QUALITY_LEVEL_KEYS, type QualityLevel } from "@/modules/integrations/conversion-model";
@@ -32,7 +32,7 @@ import { redistributeLostTickets } from "@/modules/assignments/redistribute.func
 import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
 import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
 import { TicketEditDialog } from "@/components/crm/ticket-edit-dialog";
-import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, isBoardSort, parseAmount, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
+import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, isBoardSort, parseAmount, placeInColumn, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
 import { sharePercent } from "@/lib/share-percent";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -200,6 +200,39 @@ function PipelinePage() {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["pipeline-board"] }),
   });
+
+  // Dragging a card onto another card puts it there: inside the column it reorders, from another column it moves it too.
+  const reorderFn = useServerFn(reorderBoardColumn);
+  const reorderMut = useMutation({
+    mutationFn: async (v: { id: string; stageId: string; fromStageId: string | null; orderedIds: string[] }) => {
+      if (v.fromStageId !== v.stageId) await move({ data: { opportunityId: v.id, stageId: v.stageId } });
+      return reorderFn({ data: { stageId: v.stageId, orderedIds: v.orderedIds } });
+    },
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ["pipeline-board"] });
+      const previous = qc.getQueriesData({ queryKey: ["pipeline-board"] });
+      qc.setQueriesData({ queryKey: ["pipeline-board"] }, (data: any) => {
+        if (!Array.isArray(data)) return data;
+        const placed = new Set(v.orderedIds);
+        const byId = new Map(data.map((o: any) => [o.id, o]));
+        const column = v.orderedIds.map((id) => byId.get(id)).filter(Boolean).map((o: any) => ({ ...o, stage_id: v.stageId }));
+        return [...data.filter((o: any) => !placed.has(o.id)), ...column];
+      });
+      return { previous };
+    },
+    onError: (e: Error, _v, context) => {
+      for (const [key, data] of context?.previous ?? []) qc.setQueryData(key, data);
+      toast.error(e.message);
+    },
+    // From now on the board shows the agent's own order.
+    onSuccess: () => changeSort("manual"),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["pipeline-board"] }),
+  });
+  const handleReorder = useCallback(
+    (draggedId: string, stageId: string, orderedIds: string[]) =>
+      reorderMut.mutate({ id: draggedId, stageId, orderedIds, fromStageId: (boardQ.data ?? []).find((o: any) => o.id === draggedId)?.stage_id ?? null }),
+    [reorderMut.mutate, boardQ.data],
+  );
 
   const saveStage = useServerFn(upsertStage);
   const renameStageMut = useMutation({
@@ -724,6 +757,7 @@ function PipelinePage() {
               onRename={(name) => renameStageMut.mutate({ stage: s, name })}
               onQualityChange={(level) => qualityMut.mutate({ stage: s, level })}
               onAssign={handleAssign}
+              onReorder={canEditTicket ? handleReorder : undefined}
               onEdit={canEditTicket ? (o: any) => setEditOpp({ id: o.id, name: o.contact_name ?? "" }) : undefined}
               onRedistribute={canRedistribute && (s.is_lost || /مهمل/.test(s.name ?? "")) ? () => redistributeMut.mutate(s) : undefined}
               redistributing={redistributeMut.isPending}
@@ -763,6 +797,7 @@ function KanbanColumn({
   onQualityChange,
   onAssign,
   onEdit,
+  onReorder,
   onRedistribute,
   redistributing,
   stages,
@@ -792,10 +827,18 @@ function KanbanColumn({
   onQualityChange: (level: QualityLevel | null) => void;
   onAssign: (oppId: string, userId: string) => void;
   onEdit?: (opp: any) => void;
+  /** Called with the column's new order (top to bottom) after a card was dropped on another card. */
+  onReorder?: (draggedId: string, stageId: string, orderedIds: string[]) => void;
   onRedistribute?: () => void;
   redistributing?: boolean;
 }) {
   const all = total ?? items.length;
+  const handleCardDrop = onReorder
+    ? (draggedId: string, targetId: string, after: boolean) => {
+        const ids = placeInColumn(items.map((o: any) => o.id as string), draggedId, targetId, after);
+        if (ids) onReorder(draggedId, stage.id, ids);
+      }
+    : undefined;
   // Whole-stage money from the server when the count is exact; otherwise what is shown (a filter is on).
   const totalText = formatTotals(total !== undefined ? stageSums ?? {} : sumByCurrency(items, currency));
 
@@ -846,7 +889,7 @@ function KanbanColumn({
         ) : (
           <>
             {items.map((o: any) => (
-              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onEdit={onEdit} onMove={onMove} />
+              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onEdit={onEdit} onCardDrop={handleCardDrop} onMove={onMove} />
             ))}
             {all > items.length && (
               <Button variant="ghost" size="sm" className="w-full text-xs" onClick={onLoadMore}>
@@ -870,6 +913,7 @@ const KanbanCard = memo(function KanbanCard({
   stages,
   onAssign,
   onEdit,
+  onCardDrop,
   onMove,
 }: {
   opp: any;
@@ -877,6 +921,8 @@ const KanbanCard = memo(function KanbanCard({
   stages: any[];
   onAssign: (oppId: string, userId: string) => void;
   onEdit?: (opp: any) => void;
+  /** Dropping another card on this one: `after` says whether it went below the middle of this card. */
+  onCardDrop?: (draggedId: string, targetId: string, after: boolean) => void;
   onMove: (oppId: string, stageId: string) => void;
 }) {
   const qc = useQueryClient();
@@ -910,7 +956,24 @@ const KanbanCard = memo(function KanbanCard({
       onPointerEnter={prefetch}
       onFocusCapture={prefetch}
       onContextMenu={canDrag ? undefined : (e) => e.preventDefault()}
-      className="group select-none [-webkit-touch-callout:none]"
+      // A card dragged over this one shows a line above or below it; dropping puts it there.
+      onDragOver={canDrag && onCardDrop ? (e) => {
+        if (!e.dataTransfer.types.includes("text/opp-id")) return;
+        e.preventDefault();
+        const box = e.currentTarget.getBoundingClientRect();
+        e.currentTarget.dataset.drop = e.clientY > box.top + box.height / 2 ? "after" : "before";
+      } : undefined}
+      onDragLeave={canDrag && onCardDrop ? (e) => { delete e.currentTarget.dataset.drop; } : undefined}
+      onDrop={canDrag && onCardDrop ? (e) => {
+        const draggedId = e.dataTransfer.getData("text/opp-id");
+        if (!draggedId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const after = e.currentTarget.dataset.drop === "after";
+        delete e.currentTarget.dataset.drop;
+        onCardDrop(draggedId, opp.id, after);
+      } : undefined}
+      className="group relative select-none [-webkit-touch-callout:none] data-[drop=before]:before:absolute data-[drop=before]:before:inset-x-0 data-[drop=before]:before:-top-1.5 data-[drop=before]:before:h-0.5 data-[drop=before]:before:rounded data-[drop=before]:before:bg-primary data-[drop=before]:before:content-[''] data-[drop=after]:after:absolute data-[drop=after]:after:inset-x-0 data-[drop=after]:after:-bottom-1.5 data-[drop=after]:after:h-0.5 data-[drop=after]:after:rounded data-[drop=after]:after:bg-primary data-[drop=after]:after:content-['']"
     >
 
       <Card className="p-2.5 cursor-move hover:shadow-md transition-shadow relative">

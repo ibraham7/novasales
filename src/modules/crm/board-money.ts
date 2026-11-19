@@ -1,11 +1,12 @@
 /** Money on the sales board: sort choices, per-currency totals and how amounts are written. Pure, so it is tested without a browser. */
-export const BOARD_SORTS = ["newest", "oldest", "value_desc", "value_asc"] as const;
+export const BOARD_SORTS = ["newest", "oldest", "value_desc", "value_asc", "manual"] as const;
 export type BoardSort = (typeof BOARD_SORTS)[number];
 export const BOARD_SORT_LABELS: Record<BoardSort, string> = {
   newest: "الأحدث أولاً",
   oldest: "الأقدم أولاً",
   value_desc: "الأعلى قيمة أولاً",
   value_asc: "الأقل قيمة أولاً",
+  manual: "ترتيبي اليدوي",
 };
 export const isBoardSort = (value: unknown): value is BoardSort => (BOARD_SORTS as readonly unknown[]).includes(value);
 
@@ -49,4 +50,19 @@ export function parseAmount(text: string): number | null {
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) && n <= 1e12 ? n : null;
+}
+
+/**
+ * The column's new order (top to bottom) when `draggedId` is dropped on `targetId`, above or below it.
+ * `columnIds` is the column as shown now (the dragged card may already be in it, or come from another column).
+ * Returns null when nothing changes (dropped on itself, or the target is not in the column).
+ */
+export function placeInColumn(columnIds: string[], draggedId: string, targetId: string, after: boolean): string[] | null {
+  if (draggedId === targetId) return null;
+  const without = columnIds.filter((id) => id !== draggedId);
+  const at = without.indexOf(targetId);
+  if (at < 0) return null;
+  without.splice(after ? at + 1 : at, 0, draggedId);
+  const same = without.length === columnIds.length && without.every((id, i) => id === columnIds[i]);
+  return same ? null : without;
 }

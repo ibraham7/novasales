@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatMoney, formatTotals, isBoardSort, parseAmount, sumByCurrency } from "../src/modules/crm/board-money.ts";
+import { formatMoney, formatTotals, isBoardSort, parseAmount, placeInColumn, sumByCurrency } from "../src/modules/crm/board-money.ts";
 
 test("totals are kept per currency; empty, zero and invalid values count for nothing", () => {
   const totals = sumByCurrency([{ value: 100, currency: "USD" }, { value: "250.5", currency: "USD" }, { value: 4000, currency: "TRY" }, { value: 0, currency: "USD" }, { value: null }, { value: -5, currency: "USD" }, { value: "abc" }]);
@@ -18,7 +18,7 @@ test("amounts are written without noise: whole numbers plain, fractions with two
 });
 
 test("only the known sort choices are accepted", () => {
-  for (const ok of ["newest", "oldest", "value_desc", "value_asc"]) assert.equal(isBoardSort(ok), true);
+  for (const ok of ["newest", "oldest", "value_desc", "value_asc", "manual"]) assert.equal(isBoardSort(ok), true);
   assert.equal(isBoardSort("price"), false);
   assert.equal(isBoardSort(undefined), false);
 });
@@ -32,4 +32,19 @@ test("a typed amount: digits in either script, thousands commas, empty means 0, 
   assert.equal(parseAmount("12abc"), null);
   assert.equal(parseAmount("-5"), null);
   assert.equal(parseAmount("1e5"), null);
+});
+
+test("dropping a card on another puts it above or below it; nothing changes when it would land where it is", () => {
+  const column = ["a", "b", "c", "d"];
+  assert.deepEqual(placeInColumn(column, "d", "b", false), ["a", "d", "b", "c"]);
+  assert.deepEqual(placeInColumn(column, "a", "c", true), ["b", "c", "a", "d"]);
+  assert.deepEqual(placeInColumn(column, "a", "d", true), ["b", "c", "d", "a"]);
+  assert.deepEqual(placeInColumn(column, "d", "a", false), ["d", "a", "b", "c"]);
+  // a card from another column lands at the chosen spot
+  assert.deepEqual(placeInColumn(column, "x", "b", true), ["a", "b", "x", "c", "d"]);
+  // no change
+  assert.equal(placeInColumn(column, "b", "b", true), null);
+  assert.equal(placeInColumn(column, "b", "a", true), null);
+  assert.equal(placeInColumn(column, "a", "b", false), null);
+  assert.equal(placeInColumn(column, "x", "missing", true), null);
 });
