@@ -420,3 +420,101 @@ export const createOppLabel = createServerFn({ method: "POST" })
     if (error) throw new Error(error.code === "23505" ? "يوجد ليبل بهذا الاسم" : ["PGRST205", "42P01"].includes(error.code) ? "شغّل ملف SQL الخاص بالليبلز في Supabase أولاً" : error.message);
     return row as { id: string; name: string; color: string };
   });
+
+/** What the quick-edit window shows for a ticket: the customer's name and number, and the labels on it. */
+export const getTicketQuickEdit = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => z.object({ opportunityId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+    const db = supabaseAdmin as any;
+    const { organizationId } = await getWorkspace();
+    const access = await requireAnyPermission(["crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]);
+    const { data: opp } = await db.from("opp_opportunities").select("id,contact_id,owner_agent_id,department_id").eq("id", data.opportunityId).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
+    if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("التذكرة غير موجودة أو غير مسموحة");
+    const [{ data: contact }, { data: points }, links] = await Promise.all([
+      db.from("crm_contacts").select("display_name,full_name").eq("id", opp.contact_id).eq("organization_id", organizationId).maybeSingle(),
+      db.from("crm_contact_points").select("identifier,is_primary").eq("organization_id", organizationId).eq("contact_id", opp.contact_id).eq("channel_type", "whatsapp"),
+      db.from("opp_label_links").select("label_id").eq("organization_id", organizationId).eq("opportunity_id", opp.id),
+    ]);
+    const point = (points ?? []).find((p: any) => p.is_primary) ?? (points ?? [])[0];
+    return {
+      name: (contact?.display_name || contact?.full_name || "") as string,
+      phone: (point?.identifier ?? "") as string,
+      // Labels are optional decoration: without their table the list is simply empty.
+      labelIds: (links.error ? [] : (links.data ?? []).map((l: any) => l.label_id)) as string[],
+    };
+  });
+
+/** Saves the quick-edit window: the customer's name and number, the ticket's labels, and an optional new note. */
+export const saveTicketQuickEdit = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      opportunityId: z.string().uuid(),
+      name: z.string().trim().min(1, "اكتب اسم العميل").max(120),
+      /** Left empty, the customer's current number stays as it is. */
+      phone: z.string().trim().max(30).optional().refine((v) => !v || v.replace(/\D/g, "").length >= 5, "اكتب رقم هاتف صحيحاً أو اتركه فارغاً"),
+      labelIds: z.array(z.string().uuid()).max(12).default([]),
+      note: z.string().trim().max(5000).optional(),
+    }).parse(d)
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+    const { normalizePhone } = await import("./contacts.server");
+    const db = supabaseAdmin as any;
+    const { organizationId } = await getWorkspace();
+    const access = await requireAnyPermission(["crm.opportunities.update", "opportunities.manage", "org.manage"]);
+    const { data: opp } = await db.from("opp_opportunities").select("id,contact_id,owner_agent_id,department_id").eq("id", data.opportunityId).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
+    if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("التذكرة غير موجودة أو غير مسموحة");
+
+    // The number first: refuse before anything changes if it belongs to another customer.
+    const phone = data.phone ? normalizePhone(data.phone) : null;
+    let pointToUpdate: { id: string } | null = null;
+    let insertPoint = false;
+    if (phone) {
+      const { data: owner } = await db.from("crm_contact_points").select("id,contact_id").eq("organization_id", organizationId).eq("channel_type", "whatsapp").eq("identifier", phone).maybeSingle();
+      if (owner && owner.contact_id !== opp.contact_id) throw new Error("هذا الرقم مسجّل لعميل آخر");
+      if (!owner) {
+        const { data: mine } = await db.from("crm_contact_points").select("id,is_primary").eq("organization_id", organizationId).eq("contact_id", opp.contact_id).eq("channel_type", "whatsapp");
+        const current = (mine ?? []).find((p: any) => p.is_primary) ?? (mine ?? [])[0];
+        if (current) pointToUpdate = { id: current.id };
+        else insertPoint = true;
+      }
+    }
+
+    const { error: nameError } = await db.from("crm_contacts").update({ display_name: data.name, full_name: data.name }).eq("id", opp.contact_id).eq("organization_id", organizationId);
+    if (nameError) throw new Error(nameError.message);
+    if (pointToUpdate) {
+      const { error } = await db.from("crm_contact_points").update({ identifier: phone }).eq("id", pointToUpdate.id).eq("organization_id", organizationId);
+      if (error) throw new Error(error.message);
+    } else if (insertPoint) {
+      const { error } = await db.from("crm_contact_points").insert({ organization_id: organizationId, contact_id: opp.contact_id, channel_type: "whatsapp", identifier: phone, is_primary: true, verified: false });
+      if (error) throw new Error(error.message);
+    }
+
+    // Labels: exactly the chosen set (only this organization's labels count).
+    const wanted = [...new Set(data.labelIds)];
+    const valid = wanted.length ? await checkedRows(db.from("opp_labels").select("id").eq("organization_id", organizationId).in("id", wanted)) : [];
+    const keep = new Set(valid.map((l: any) => l.id as string));
+    const existing = await checkedRows(db.from("opp_label_links").select("label_id").eq("organization_id", organizationId).eq("opportunity_id", opp.id));
+    const have = new Set(existing.map((l: any) => l.label_id as string));
+    const remove = [...have].filter((id) => !keep.has(id));
+    const add = [...keep].filter((id) => !have.has(id));
+    if (remove.length) {
+      const { error } = await db.from("opp_label_links").delete().eq("organization_id", organizationId).eq("opportunity_id", opp.id).in("label_id", remove);
+      if (error) throw new Error(error.message);
+    }
+    if (add.length) {
+      const { error } = await db.from("opp_label_links").insert(add.map((id) => ({ opportunity_id: opp.id, label_id: id, organization_id: organizationId })));
+      if (error) throw new Error(error.message);
+    }
+
+    if (data.note) {
+      const { error } = await db.from("opp_notes").insert({ organization_id: organizationId, opportunity_id: opp.id, author_id: access.userId, body: data.note });
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
