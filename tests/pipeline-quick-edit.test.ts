@@ -16,7 +16,7 @@ const FOREIGN = "00000000-0000-0000-0000-0000000000b3";
 function setup(allowed = true) {
   const access = { organizationId: "org-a", userId: "ali", permissions: [] };
   const db: any = fakeDb({
-    opp_opportunities: [{ id: OPP, organization_id: "org-a", contact_id: "c1", owner_agent_id: "ali", department_id: null, deleted_at: null }],
+    opp_opportunities: [{ id: OPP, organization_id: "org-a", contact_id: "c1", owner_agent_id: "ali", department_id: null, deleted_at: null, value: 100, currency: "TRY" }],
     crm_contacts: [{ id: "c1", organization_id: "org-a", display_name: "قديم", full_name: "قديم" }, { id: "c2", organization_id: "org-a", display_name: "آخر", full_name: "آخر" }],
     crm_contact_points: [
       { id: "p1", organization_id: "org-a", contact_id: "c1", channel_type: "whatsapp", identifier: "905320000000", is_primary: true },
@@ -84,4 +84,16 @@ test("saving the same number back does not rewrite the id WhatsApp gave an autom
   await save({ data: { opportunityId: OPP, name: "اسم", phone: "+90 532 000 00 00:12", labelIds: [L2] } });
   assert.equal((await rows(db, "crm_contact_points")).find((p) => p.id === "p1").identifier, "905320000000:12");
   assert.deepEqual((await rows(db, "opp_label_links")).map((l) => l.label_id), [L2]);
+});
+
+test("the ticket's value is loaded with its currency and saved only when sent", async () => {
+  const { get, save, db } = setup();
+  const before = await get({ data: { opportunityId: OPP } });
+  assert.deepEqual([before.value, before.currency], [100, "TRY"]);
+  await save({ data: { opportunityId: OPP, name: "اسم", labelIds: [L1] } });
+  assert.equal((await rows(db, "opp_opportunities"))[0].value, 100);
+  await save({ data: { opportunityId: OPP, name: "اسم", labelIds: [L1], value: 2500.75 } });
+  const [opp] = await rows(db, "opp_opportunities");
+  assert.deepEqual([opp.value, opp.currency], [2500.75, "TRY"]);
+  assert.throws(() => save({ data: { opportunityId: OPP, name: "اسم", labelIds: [], value: -1 } }));
 });

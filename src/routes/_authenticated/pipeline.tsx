@@ -32,6 +32,7 @@ import { redistributeLostTickets } from "@/modules/assignments/redistribute.func
 import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
 import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
 import { TicketEditDialog } from "@/components/crm/ticket-edit-dialog";
+import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, isBoardSort, parseAmount, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
 import { sharePercent } from "@/lib/share-percent";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -91,14 +92,33 @@ function PipelinePage() {
   // Each stage shows its newest tickets first; «عرض المزيد» raises that stage's limit.
   const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
   const loadMore = useCallback((stageId: string) => setStageLimits((l) => ({ ...l, [stageId]: (l[stageId] ?? PER_STAGE) + MORE_STEP })), []);
+  // How tickets are ordered inside every column; remembered on this device.
+  const [sort, setSort] = useState<BoardSort>("newest");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("pipeline-sort");
+      if (isBoardSort(saved)) setSort(saved);
+    } catch {
+      /* storage can be unavailable */
+    }
+  }, []);
+  const changeSort = (value: BoardSort) => {
+    setSort(value);
+    try {
+      localStorage.setItem("pipeline-sort", value);
+    } catch {
+      /* storage can be unavailable */
+    }
+  };
   const boardQ = useQuery({
-    queryKey: ["pipeline-board", deptFilter, agentFilter, searching, searching ? null : stageLimits],
+    queryKey: ["pipeline-board", deptFilter, agentFilter, searching, searching ? null : stageLimits, sort],
     queryFn: () =>
       listBoard({
         data: {
           ...(deptFilter === "all" ? {} : { departmentId: deptFilter }),
           ...(agentFilter === "all" ? {} : { ownerAgentId: agentFilter }),
           all: searching,
+          ...(sort !== "newest" ? { sort } : {}),
           ...(searching ? {} : { perStage: PER_STAGE, limits: stageLimits }),
         },
       }),
@@ -357,9 +377,10 @@ function PipelinePage() {
     onError: (e: Error) => toast.error(e.message),
   });
   const [addStage, setAddStage] = useState<any | null>(null);
-  const EMPTY_TICKET = { name: "", phone: "", notes: "", labelIds: [] as string[] };
+  const EMPTY_TICKET = { name: "", phone: "", value: "", notes: "", labelIds: [] as string[] };
   const [addForm, setAddForm] = useState(EMPTY_TICKET);
-  const addReady = !!addForm.name.trim() && (!addForm.phone.trim() || addForm.phone.replace(/\D/g, "").length >= 5);
+  const addAmount = parseAmount(addForm.value);
+  const addReady = !!addForm.name.trim() && (!addForm.phone.trim() || addForm.phone.replace(/\D/g, "").length >= 5) && addAmount !== null;
   const addTicketMut = useMutation({
     mutationFn: () =>
       createTicket({
@@ -367,6 +388,7 @@ function PipelinePage() {
           stageId: addStage.id,
           name: addForm.name,
           ...(addForm.phone.trim() ? { phone: addForm.phone } : {}),
+          ...(addAmount ? { value: addAmount } : {}),
           ...(addForm.notes.trim() ? { notes: addForm.notes } : {}),
           ...(addForm.labelIds.length ? { labelIds: addForm.labelIds } : {}),
         },
@@ -537,6 +559,7 @@ function PipelinePage() {
         <TicketEditDialog
           oppId={editOpp.id}
           title={editOpp.name}
+          defaultCurrency={metaQ.data?.defaultCurrency ?? "USD"}
           labels={labelsQ.data ?? []}
           creatingLabel={createLabelMut.isPending}
           onCreateLabel={async (input) => {
@@ -559,6 +582,8 @@ function PipelinePage() {
           >
             <Input aria-label="اسم العميل" placeholder="اسم العميل" autoFocus value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
             <Input aria-label="رقم الواتساب" placeholder="رقم الواتساب مع رمز الدولة (اختياري)" dir="ltr" className="text-right" inputMode="tel" value={addForm.phone} onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))} />
+            <Input aria-label="القيمة" placeholder={`القيمة (اختياري) · ${metaQ.data?.defaultCurrency ?? "USD"}`} dir="ltr" className="text-right" inputMode="decimal" value={addForm.value} onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))} />
+            {addAmount === null && <p className="-mt-2 text-xs text-destructive">اكتب القيمة بالأرقام فقط</p>}
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">الليبلز</Label>
               <LabelPicker
@@ -633,6 +658,17 @@ function PipelinePage() {
         >
           <MessageCircle className="h-4 w-4 ml-1" /> غير مقروء فقط
         </Button>
+        <Select value={sort} onValueChange={(v) => { if (isBoardSort(v)) changeSort(v); }}>
+          <SelectTrigger className="w-52 h-9" aria-label="ترتيب التذاكر">
+            <span className="ml-1 text-muted-foreground">الترتيب:</span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {BOARD_SORTS.map((key) => (
+              <SelectItem key={key} value={key}>{BOARD_SORT_LABELS[key]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {(agentFilter !== "all" || deptFilter !== "all" || channelFilter !== "all" || unreadOnly || search) && (
           <Button
             variant="ghost"
@@ -674,6 +710,8 @@ function PipelinePage() {
               items={byStage.get(s.id) ?? []}
               total={!searching && channelFilter === "all" && !unreadOnly ? stageCounts[s.id] : undefined}
               grandTotal={grandTotal}
+              stageSums={countsQ.data?.sums?.[s.id]}
+              currency={metaQ.data?.defaultCurrency ?? "USD"}
               onLoadMore={() => loadMore(s.id)}
               loading={boardQ.isLoading && !boardQ.data}
               members={members}
@@ -710,6 +748,8 @@ function KanbanColumn({
   items,
   total,
   grandTotal,
+  stageSums,
+  currency,
   onLoadMore,
   loading,
   members,
@@ -734,6 +774,9 @@ function KanbanColumn({
   total?: number;
   /** All tickets in the pipeline, for the column's share. */
   grandTotal: number;
+  /** The stage's money per currency over all its tickets (from the server). */
+  stageSums?: Record<string, number>;
+  currency: string;
   onLoadMore: () => void;
   loading: boolean;
   members: any[];
@@ -753,6 +796,8 @@ function KanbanColumn({
   redistributing?: boolean;
 }) {
   const all = total ?? items.length;
+  // Whole-stage money from the server when the count is exact; otherwise what is shown (a filter is on).
+  const totalText = formatTotals(total !== undefined ? stageSums ?? {} : sumByCurrency(items, currency));
 
   return (
     <div
@@ -769,7 +814,12 @@ function KanbanColumn({
         if (id) onDropOpp(id);
       }}
     >
-      <StageQualityBadge level={stage.quality_level} canEdit={canManageStages} onChange={onQualityChange} />
+      <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2">
+        <StageQualityBadge level={stage.quality_level} canEdit={canManageStages} onChange={onQualityChange} />
+        {totalText && (
+          <span className="text-[11px] font-semibold tabular-nums text-emerald-700" title="مجموع قيمة تذاكر هذه المرحلة">{totalText}</span>
+        )}
+      </div>
       <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: stage.color }} />
@@ -890,6 +940,11 @@ const KanbanCard = memo(function KanbanCard({
                 </div>
               )}
               <div className="font-medium text-sm truncate">{opp.contact_name ?? "—"}</div>
+              {Number(opp.value) > 0 && (
+                <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-emerald-700" title="قيمة التذكرة">
+                  {formatMoney(Number(opp.value), opp.currency || "USD")}
+                </div>
+              )}
               {opp.last_message && (
                 <div className="text-[11px] text-muted-foreground truncate mt-0.5">
                   {opp.last_message}
@@ -1222,9 +1277,9 @@ function StageQualityBadge({
       + تقييم الجودة
     </span>
   );
-  if (!canEdit) return level ? <div className="mb-2 shrink-0">{chip}</div> : null;
+  if (!canEdit) return level ? <div className="shrink-0">{chip}</div> : null;
   return (
-    <div className="mb-2 shrink-0">
+    <div className="shrink-0">
       <DropdownMenu>
         <DropdownMenuTrigger aria-label="تقييم جودة العملاء في هذه المرحلة" className="rounded-full">
           {chip}
