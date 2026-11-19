@@ -28,11 +28,11 @@ type Deps = {
 };
 
 class FetchProblem extends Error {
-  constructor(
-    message: string,
-    readonly kind: "refused" | "unreachable" | "other",
-  ) {
+  readonly kind: "refused" | "unreachable" | "other";
+  // Written out (not a parameter property) so the node test runner's type stripping can load this file.
+  constructor(message: string, kind: "refused" | "unreachable" | "other") {
     super(message);
+    this.kind = kind;
   }
 }
 
