@@ -31,6 +31,7 @@ import { quickAssignOpportunity } from "@/modules/assignments/lead-assignments.f
 import { redistributeLostTickets } from "@/modules/assignments/redistribute.functions";
 import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/redistribute-dialog";
 import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
+import { sharePercent } from "@/lib/share-percent";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -444,6 +445,12 @@ function PipelinePage() {
     return <Outlet />;
   }
 
+  // Each column shows its share of ALL the tickets in this pipeline (not the stage's win probability).
+  // Counts come from the whole stage when no filter is on, otherwise from what is shown.
+  const countsExact = !searching && channelFilter === "all" && !unreadOnly;
+  const stageTotal = (id: string) => (countsExact ? stageCounts[id] ?? byStage.get(id)?.length ?? 0 : byStage.get(id)?.length ?? 0);
+  const grandTotal = stages.reduce((sum: number, st: any) => sum + stageTotal(st.id), 0);
+
   const members = membersQ.data ?? [];
   // Filter choices limited to what this user can see (null = everything).
   const allowedMemberIds: string[] | null = metaQ.data?.filterMemberIds ?? null;
@@ -643,6 +650,7 @@ function PipelinePage() {
               stage={s}
               items={byStage.get(s.id) ?? []}
               total={!searching && channelFilter === "all" && !unreadOnly ? stageCounts[s.id] : undefined}
+              grandTotal={grandTotal}
               onLoadMore={() => loadMore(s.id)}
               loading={boardQ.isLoading && !boardQ.data}
               members={members}
@@ -677,6 +685,7 @@ function KanbanColumn({
   stage,
   items,
   total,
+  grandTotal,
   onLoadMore,
   loading,
   members,
@@ -698,6 +707,8 @@ function KanbanColumn({
   items: any[];
   /** All tickets the stage holds (items may be only the newest ones); unset when a filter is active. */
   total?: number;
+  /** All tickets in the pipeline, for the column's share. */
+  grandTotal: number;
   onLoadMore: () => void;
   loading: boolean;
   members: any[];
@@ -737,10 +748,10 @@ function KanbanColumn({
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: stage.color }} />
           <StageNameEditor stage={stage} canEdit={canManageStages} onRename={onRename} />
-          <span className="text-[10px] text-muted-foreground shrink-0">{stage.probability}%</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Badge variant="secondary">{all}</Badge>
+          <span className="text-[10px] text-muted-foreground tabular-nums" title="نسبة تذاكر هذه المرحلة من كل التذاكر">{sharePercent(all, grandTotal)}</span>
           {onAdd && (
             <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={`إضافة تذكرة في ${stage.name}`} title="إضافة تذكرة" onClick={onAdd}>
               <Plus className="h-4 w-4" />
