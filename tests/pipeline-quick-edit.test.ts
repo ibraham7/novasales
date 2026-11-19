@@ -77,3 +77,11 @@ test("an empty number leaves the current one; a ticket outside the user's scope 
   await assert.rejects(denied.save({ data: { opportunityId: OPP, name: "x", labelIds: [] } }), /غير موجودة أو غير مسموحة/);
   assert.equal((await rows(denied.db, "crm_contacts")).find((c) => c.id === "c1").display_name, "قديم");
 });
+
+test("saving the same number back does not rewrite the id WhatsApp gave an automatic ticket", async () => {
+  const { save, db } = setup();
+  await db.from("crm_contact_points").update({ identifier: "905320000000:12" }).eq("id", "p1");
+  await save({ data: { opportunityId: OPP, name: "اسم", phone: "+90 532 000 00 00:12", labelIds: [L2] } });
+  assert.equal((await rows(db, "crm_contact_points")).find((p) => p.id === "p1").identifier, "905320000000:12");
+  assert.deepEqual((await rows(db, "opp_label_links")).map((l) => l.label_id), [L2]);
+});

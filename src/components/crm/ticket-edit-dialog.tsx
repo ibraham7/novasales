@@ -42,7 +42,8 @@ export function TicketEditDialog({ oppId, title, labels, onCreateLabel, creating
         data: {
           opportunityId: oppId,
           name: form.name,
-          ...(form.phone.trim() ? { phone: form.phone } : {}),
+          // Only a number the user actually changed is sent, so an automatic ticket's WhatsApp id is never rewritten.
+          ...(form.phone.trim() && form.phone.trim() !== (detailQ.data?.phone ?? "") ? { phone: form.phone } : {}),
           labelIds: form.labelIds,
           ...(form.note.trim() ? { note: form.note } : {}),
         },

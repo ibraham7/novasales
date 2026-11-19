@@ -475,13 +475,18 @@ export const saveTicketQuickEdit = createServerFn({ method: "POST" })
     let pointToUpdate: { id: string } | null = null;
     let insertPoint = false;
     if (phone) {
-      const { data: owner } = await db.from("crm_contact_points").select("id,contact_id").eq("organization_id", organizationId).eq("channel_type", "whatsapp").eq("identifier", phone).maybeSingle();
-      if (owner && owner.contact_id !== opp.contact_id) throw new Error("هذا الرقم مسجّل لعميل آخر");
-      if (!owner) {
-        const { data: mine } = await db.from("crm_contact_points").select("id,is_primary").eq("organization_id", organizationId).eq("contact_id", opp.contact_id).eq("channel_type", "whatsapp");
-        const current = (mine ?? []).find((p: any) => p.is_primary) ?? (mine ?? [])[0];
-        if (current) pointToUpdate = { id: current.id };
-        else insertPoint = true;
+      const { data: mine } = await db.from("crm_contact_points").select("id,is_primary,identifier").eq("organization_id", organizationId).eq("contact_id", opp.contact_id).eq("channel_type", "whatsapp");
+      // Tickets that came in from WhatsApp keep the identifier WhatsApp gave (it can carry a suffix or be an internal id).
+      // Saving the same digits back must not rewrite it.
+      const unchanged = (mine ?? []).some((p: any) => normalizePhone(String(p.identifier ?? "")) === phone);
+      if (!unchanged) {
+        const { data: owner } = await db.from("crm_contact_points").select("id,contact_id").eq("organization_id", organizationId).eq("channel_type", "whatsapp").eq("identifier", phone).maybeSingle();
+        if (owner && owner.contact_id !== opp.contact_id) throw new Error("هذا الرقم مسجّل لعميل آخر");
+        if (!owner) {
+          const current = (mine ?? []).find((p: any) => p.is_primary) ?? (mine ?? [])[0];
+          if (current) pointToUpdate = { id: current.id };
+          else insertPoint = true;
+        }
       }
     }
 
