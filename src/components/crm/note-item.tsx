@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { updateOppNote } from "@/modules/crm";
+import { askConfirm } from "@/components/ui/confirm-dialog";
+import { deleteOppNote, updateOppNote } from "@/modules/crm";
 
 export type TicketNote = { id: string; body: string; author_name: string | null; created_at?: string; can_edit?: boolean };
 
@@ -21,6 +22,7 @@ export function NoteItem({ oppId, note, className, bodyClassName, dateText }: {
 }) {
   const qc = useQueryClient();
   const saveFn = useServerFn(updateOppNote);
+  const deleteFn = useServerFn(deleteOppNote);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.body);
   const save = useMutation({
@@ -33,18 +35,41 @@ export function NoteItem({ oppId, note, className, bodyClassName, dateText }: {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const remove = useMutation({
+    mutationFn: () => deleteFn({ data: { noteId: note.id } }),
+    onSuccess: () => {
+      toast.success("تم حذف الملاحظة");
+      qc.invalidateQueries({ queryKey: ["opp-notes", oppId] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const confirmDelete = async () => {
+    const preview = note.body.length > 80 ? `${note.body.slice(0, 80)}…` : note.body;
+    if (await askConfirm({ title: "حذف الملاحظة؟", description: `«${preview}»\nلا يمكن التراجع عن الحذف.`, confirmLabel: "حذف", destructive: true })) remove.mutate();
+  };
+
   return (
     <div className={className}>
       <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
         <span>{[note.author_name ?? "—", dateText].filter(Boolean).join(" · ")}</span>
         {note.can_edit && !editing && (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded px-1 text-primary hover:bg-primary/10"
-            onClick={() => { setText(note.body); setEditing(true); }}
-          >
-            <Pencil className="h-3 w-3" /> تعديل
-          </button>
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded px-1 text-primary hover:bg-primary/10"
+              onClick={() => { setText(note.body); setEditing(true); }}
+            >
+              <Pencil className="h-3 w-3" /> تعديل
+            </button>
+            <button
+              type="button"
+              disabled={remove.isPending}
+              className="inline-flex items-center gap-1 rounded px-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              onClick={() => void confirmDelete()}
+            >
+              <Trash2 className="h-3 w-3" /> حذف
+            </button>
+          </span>
         )}
       </div>
       {editing ? (

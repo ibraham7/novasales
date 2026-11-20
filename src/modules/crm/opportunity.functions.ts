@@ -810,22 +810,41 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
         });
       });
 
+/**
+ * The note the caller may change or remove: its author, or whoever manages opportunities, on a ticket they
+ * can reach in their own organization. `action` words the refusal ("تعديل" / "حذف").
+ */
+async function noteTheCallerMayChange(noteId: string, action: "تعديل" | "حذف") {
+  const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+  const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+  const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+  const db = supabaseAdmin as any;
+  const { organizationId, userId } = await getWorkspace();
+  const access = await requireAnyPermission(["crm.opportunities.update", "crm.activities.create", "opportunities.manage", "org.manage"]);
+  const { data: note } = await db.from("opp_notes").select("id, author_id, opportunity_id").eq("id", noteId).eq("organization_id", organizationId).maybeSingle();
+  if (!note) throw new Error("الملاحظة غير موجودة");
+  const { data: opp } = await db.from("opp_opportunities").select("owner_agent_id, department_id").eq("id", note.opportunity_id).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
+  if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error(`لا تملك صلاحية ${action} هذه الملاحظة`);
+  if (note.author_id !== userId && !noteManager(access)) throw new Error(`يمكن لكاتب الملاحظة أو المشرف فقط ${action === "حذف" ? "حذفها" : "تعديلها"}`);
+  return { db, organizationId, note: note as { id: string; opportunity_id: string } };
+}
+
 /** Changes the text of a note. Its author may; so may whoever manages opportunities. */
 export const updateOppNote = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ noteId: z.string().uuid(), body: z.string().trim().min(1, "اكتب نص الملاحظة").max(4000) }).parse(d))
   .handler(async ({ data }) => {
-    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
-    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
-    const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
-    const db = supabaseAdmin as any;
-    const { organizationId, userId } = await getWorkspace();
-    const access = await requireAnyPermission(["crm.opportunities.update", "crm.activities.create", "opportunities.manage", "org.manage"]);
-    const { data: note } = await db.from("opp_notes").select("id, author_id, opportunity_id").eq("id", data.noteId).eq("organization_id", organizationId).maybeSingle();
-    if (!note) throw new Error("الملاحظة غير موجودة");
-    const { data: opp } = await db.from("opp_opportunities").select("owner_agent_id, department_id").eq("id", note.opportunity_id).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
-    if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("لا تملك صلاحية تعديل هذه الملاحظة");
-    if (note.author_id !== userId && !noteManager(access)) throw new Error("يمكن لكاتب الملاحظة أو المشرف فقط تعديلها");
+    const { db, organizationId, note } = await noteTheCallerMayChange(data.noteId, "تعديل");
     const { error } = await db.from("opp_notes").update({ body: data.body }).eq("id", note.id).eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+    return { ok: true, opportunityId: note.opportunity_id as string };
+  });
+
+/** Removes a note for good. Same rule as editing: its author or a manager. */
+export const deleteOppNote = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ noteId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db, organizationId, note } = await noteTheCallerMayChange(data.noteId, "حذف");
+    const { error } = await db.from("opp_notes").delete().eq("id", note.id).eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
     return { ok: true, opportunityId: note.opportunity_id as string };
   });
