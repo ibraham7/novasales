@@ -202,6 +202,11 @@ export const updateOpportunity = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Who may edit anyone's note, not only their own. */
+function noteManager(access: any): boolean {
+  return !!access?.isSuperAdmin || ((access?.permissions ?? []) as string[]).some((p) => p === "opportunities.manage" || p === "org.manage");
+}
+
 export const listOppNotes = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ opportunityId: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
@@ -218,6 +223,8 @@ export const listOppNotes = createServerFn({ method: "GET" })
       .eq("organization_id", organizationId)
       .maybeSingle();
     if (!opp || !canAccessOpportunityRow(access, opp)) return [];
+    // A note can be edited by its author, or by whoever manages opportunities (the server checks again on save).
+    const manager = noteManager(access);
     const { data: notes } = await db
       .from("opp_notes")
       .select("id, body, author_id, created_at")
@@ -234,6 +241,7 @@ export const listOppNotes = createServerFn({ method: "GET" })
       body: n.body,
       author_name: n.author_id ? pMap.get(n.author_id) ?? null : null,
       created_at: n.created_at,
+      can_edit: manager || (!!n.author_id && n.author_id === access.userId),
     }));
   });
 
@@ -801,3 +809,23 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
           };
         });
       });
+
+/** Changes the text of a note. Its author may; so may whoever manages opportunities. */
+export const updateOppNote = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ noteId: z.string().uuid(), body: z.string().trim().min(1, "اكتب نص الملاحظة").max(4000) }).parse(d))
+  .handler(async ({ data }) => {
+    const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+    const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+    const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+    const db = supabaseAdmin as any;
+    const { organizationId, userId } = await getWorkspace();
+    const access = await requireAnyPermission(["crm.opportunities.update", "crm.activities.create", "opportunities.manage", "org.manage"]);
+    const { data: note } = await db.from("opp_notes").select("id, author_id, opportunity_id").eq("id", data.noteId).eq("organization_id", organizationId).maybeSingle();
+    if (!note) throw new Error("الملاحظة غير موجودة");
+    const { data: opp } = await db.from("opp_opportunities").select("owner_agent_id, department_id").eq("id", note.opportunity_id).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
+    if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("لا تملك صلاحية تعديل هذه الملاحظة");
+    if (note.author_id !== userId && !noteManager(access)) throw new Error("يمكن لكاتب الملاحظة أو المشرف فقط تعديلها");
+    const { error } = await db.from("opp_notes").update({ body: data.body }).eq("id", note.id).eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+    return { ok: true, opportunityId: note.opportunity_id as string };
+  });

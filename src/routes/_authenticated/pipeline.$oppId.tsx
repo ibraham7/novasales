@@ -43,6 +43,7 @@ import {
   Pin,
   Star,
 } from "lucide-react";
+import { NoteItem } from "@/components/crm/note-item";
 import { getOpportunityWorkspace, updateContactName, addOppNote, listOppNotes, addOppTag, updateOpportunity, softDeleteOpportunity } from "@/modules/crm";
 import { usePermission } from "@/platform/rbac/use-permission";
 import {
@@ -422,12 +423,9 @@ function ContactColumn({ ws, oppId }: { ws: any; oppId: string }) {
       <FilesGallery oppId={oppId} />
 
       <Section title="ملاحظات">
-        <div className="space-y-2 max-h-40 overflow-y-auto">
+        <div className="space-y-2 max-h-64 overflow-y-auto">
           {(notesQ.data ?? []).map((n: any) => (
-            <div key={n.id} className="text-xs bg-background rounded p-2 border">
-              <div className="text-muted-foreground text-[10px] mb-0.5">{n.author_name ?? "—"}</div>
-              <div className="whitespace-pre-wrap">{n.body}</div>
-            </div>
+            <NoteItem key={n.id} oppId={oppId} note={n} className="text-xs bg-background rounded p-2 border" />
           ))}
           {(!notesQ.data || notesQ.data.length === 0) && (
             <div className="text-xs text-muted-foreground text-center py-2">لا يوجد</div>
