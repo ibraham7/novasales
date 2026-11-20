@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "@/lib/toast";
-import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight, Shuffle } from "lucide-react";
+import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight, Shuffle, PhoneCall } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, reorderBoardColumn, createOpportunityInStage, listOppLabels, createOppLabel, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
+import { getPipelinePageMeta, moveOpportunityToStage, listOpportunitiesBoard, getBoardStageCounts, reorderBoardColumn, addTicketFollowup, undoTicketFollowup, createOpportunityInStage, listOppLabels, createOppLabel, upsertStage, getOpportunityWorkspace } from "@/modules/crm";
 import { getMergedChatForOpportunity } from "@/modules/messaging";
 import { setStageQualityLevel } from "@/modules/integrations/conversions.functions";
 import { QUALITY_LEVELS, QUALITY_LEVEL_KEYS, type QualityLevel } from "@/modules/integrations/conversion-model";
@@ -201,6 +201,41 @@ function PipelinePage() {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["pipeline-board"] }),
   });
+
+  // The follow-up counter on a card: each press adds one (the number shows at once; a wrong press can be undone from the message).
+  const followFn = useServerFn(addTicketFollowup);
+  const unfollowFn = useServerFn(undoTicketFollowup);
+  const setFollowupCount = useCallback(
+    (id: string, update: (count: number) => number) =>
+      qc.setQueriesData({ queryKey: ["pipeline-board"] }, (data: any) =>
+        Array.isArray(data) ? data.map((o: any) => (o.id === id ? { ...o, followup_count: update(Number(o.followup_count ?? 0)) } : o)) : data,
+      ),
+    [qc],
+  );
+  const followupMut = useMutation({
+    mutationFn: (id: string) => followFn({ data: { opportunityId: id } }),
+    onMutate: (id) => setFollowupCount(id, (n) => n + 1),
+    onSuccess: ({ count }, id) => {
+      setFollowupCount(id, () => count);
+      toast.success(`تسجيل متابعة رقم ${count}`, {
+        duration: 6000,
+        action: {
+          label: "تراجع",
+          onClick: () => {
+            setFollowupCount(id, (n) => Math.max(0, n - 1));
+            unfollowFn({ data: { opportunityId: id } })
+              .then((r) => setFollowupCount(id, () => r.count))
+              .catch((e: Error) => { toast.error(e.message); qc.invalidateQueries({ queryKey: ["pipeline-board"] }); });
+          },
+        },
+      });
+    },
+    onError: (e: Error, id) => {
+      setFollowupCount(id, (n) => Math.max(0, n - 1));
+      toast.error(e.message);
+    },
+  });
+  const handleFollowup = useCallback((id: string) => followupMut.mutate(id), [followupMut.mutate]);
 
   // Dragging a card onto another card puts it there: inside the column it reorders, from another column it moves it too.
   const reorderFn = useServerFn(reorderBoardColumn);
@@ -761,6 +796,7 @@ function PipelinePage() {
               onQualityChange={(level) => qualityMut.mutate({ stage: s, level })}
               onAssign={handleAssign}
               onReorder={canEditTicket ? handleReorder : undefined}
+              onFollowup={canEditTicket ? handleFollowup : undefined}
               onEdit={canEditTicket ? (o: any) => setEditOpp({ id: o.id, name: o.contact_name ?? "" }) : undefined}
               onRedistribute={canRedistribute && (s.is_lost || /مهمل/.test(s.name ?? "")) ? () => redistributeMut.mutate(s) : undefined}
               redistributing={redistributeMut.isPending}
@@ -801,6 +837,7 @@ function KanbanColumn({
   onAssign,
   onEdit,
   onReorder,
+  onFollowup,
   onRedistribute,
   redistributing,
   stages,
@@ -832,6 +869,8 @@ function KanbanColumn({
   onEdit?: (opp: any) => void;
   /** Called with the column's new order (top to bottom) after a card was dropped on another card. */
   onReorder?: (draggedId: string, stageId: string, orderedIds: string[]) => void;
+  /** One more follow-up on the ticket (the counter button). */
+  onFollowup?: (oppId: string) => void;
   onRedistribute?: () => void;
   redistributing?: boolean;
 }) {
@@ -892,7 +931,7 @@ function KanbanColumn({
         ) : (
           <>
             {items.map((o: any) => (
-              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onEdit={onEdit} onCardDrop={handleCardDrop} onMove={onMove} />
+              <KanbanCard key={o.id} opp={o} members={members} stages={stages} onAssign={onAssign} onEdit={onEdit} onFollowup={onFollowup} onCardDrop={handleCardDrop} onMove={onMove} />
             ))}
             {all > items.length && (
               <Button variant="ghost" size="sm" className="w-full text-xs" onClick={onLoadMore}>
@@ -916,6 +955,7 @@ const KanbanCard = memo(function KanbanCard({
   stages,
   onAssign,
   onEdit,
+  onFollowup,
   onCardDrop,
   onMove,
 }: {
@@ -924,6 +964,7 @@ const KanbanCard = memo(function KanbanCard({
   stages: any[];
   onAssign: (oppId: string, userId: string) => void;
   onEdit?: (opp: any) => void;
+  onFollowup?: (oppId: string) => void;
   /** Dropping another card on this one: `after` says whether it went below the middle of this card. */
   onCardDrop?: (draggedId: string, targetId: string, after: boolean) => void;
   onMove: (oppId: string, stageId: string) => void;
@@ -1063,6 +1104,23 @@ const KanbanCard = memo(function KanbanCard({
             <Badge variant="outline" className="text-[10px]">غير مسند</Badge>
           )}
           <div className="flex items-center gap-0.5 shrink-0">
+          {onFollowup && (
+            <Button
+              size="icon"
+              variant="ghost"
+              title="تسجيل متابعة (يزيد العدّاد واحداً)"
+              aria-label={`تسجيل متابعة، العدد الحالي ${Number(opp.followup_count ?? 0)}`}
+              className="relative h-8 w-8 sm:h-6 sm:w-6 opacity-70 group-hover:opacity-100"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onFollowup(opp.id); }}
+            >
+              <PhoneCall className="h-3.5 w-3.5" />
+              {Number(opp.followup_count ?? 0) > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold leading-none text-white tabular-nums">
+                  {Number(opp.followup_count) > 99 ? "99+" : Number(opp.followup_count)}
+                </span>
+              )}
+            </Button>
+          )}
           <MoveStageMenu opp={opp} stages={stages} onMove={onMove} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

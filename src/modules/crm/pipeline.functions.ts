@@ -625,3 +625,37 @@ export const reorderBoardColumn = createServerFn({ method: "POST" })
     if (error) throw new Error(["PGRST202", "42883", "42703"].includes(error.code) ? "شغّل ملف SQL الخاص بترتيب التذاكر في Supabase أولاً" : error.message);
     return { ok: true, placed: ordered.length };
   });
+
+const FOLLOWUP_SQL_HINT = "شغّل ملف SQL الخاص بعدّاد المتابعة في Supabase أولاً";
+
+async function followupContext(opportunityId: string) {
+  const { supabaseAdmin, getWorkspace } = await import("@/platform/workspace/workspace.server");
+  const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+  const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+  const db = supabaseAdmin as any;
+  const { organizationId } = await getWorkspace();
+  const access = await requireAnyPermission(["crm.opportunities.update", "opportunities.manage", "org.manage"]);
+  const { data: opp } = await db.from("opp_opportunities").select("id,owner_agent_id,department_id").eq("id", opportunityId).eq("organization_id", organizationId).is("deleted_at", null).maybeSingle();
+  if (!opp || !canAccessOpportunityRow(access, opp)) throw new Error("التذكرة غير موجودة أو غير مسموحة");
+  return { db, organizationId, userId: access.userId as string };
+}
+
+/** One more follow-up on a ticket (the counter button on its board card). Returns the ticket's new total. */
+export const addTicketFollowup = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ opportunityId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db, organizationId, userId } = await followupContext(data.opportunityId);
+    const { data: count, error } = await db.rpc("opp_add_followup", { _org: organizationId, _opp: data.opportunityId, _user: userId });
+    if (error) throw new Error(["PGRST202", "42883", "42703", "42P01"].includes(error.code) ? FOLLOWUP_SQL_HINT : error.message);
+    return { count: Number(count) };
+  });
+
+/** Takes back the caller's latest follow-up on the ticket (a press by mistake). */
+export const undoTicketFollowup = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ opportunityId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db, organizationId, userId } = await followupContext(data.opportunityId);
+    const { data: count, error } = await db.rpc("opp_undo_followup", { _org: organizationId, _opp: data.opportunityId, _user: userId });
+    if (error) throw new Error(["PGRST202", "42883", "42703", "42P01"].includes(error.code) ? FOLLOWUP_SQL_HINT : error.message);
+    return { count: Number(count) };
+  });
