@@ -35,6 +35,7 @@ import { TicketEditDialog } from "@/components/crm/ticket-edit-dialog";
 import { TicketValueField } from "@/components/crm/ticket-value-field";
 import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, isBoardSort, parseAmount, placeInColumn, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
 import { sharePercent } from "@/lib/share-percent";
+import { startDragAutoscroll } from "@/lib/drag-autoscroll";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -540,6 +541,8 @@ function PipelinePage() {
   }, [filtered]);
 
   const [dragOver, setDragOver] = useState<string | null>(null);
+  // Dragging a card near a column's top or bottom (or the board's sides) scrolls it.
+  useEffect(() => startDragAutoscroll(), []);
 
   if (isDetailRoute) {
     return <Outlet />;
@@ -925,7 +928,7 @@ function KanbanColumn({
           <Shuffle className="h-3.5 w-3.5 ml-1" /> {redistributing ? "جارٍ التجهيز..." : "إعادة توزيع العملاء"}
         </Button>
       )}
-      <div className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
+      <div data-column-list className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
         {loading && items.length === 0 ? (
           [0, 1, 2].map((i) => <div key={i} className="h-20 rounded-lg bg-background/60 animate-pulse" />)
         ) : (
