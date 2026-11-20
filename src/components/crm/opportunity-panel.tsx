@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDateTime } from "@/lib/utils";
+import { NoteItem } from "@/components/crm/note-item";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
@@ -376,14 +377,8 @@ function NotesTab({ opportunityId, onChanged }: { opportunityId: string; onChang
         {(q.data ?? []).length === 0 ? (
           <div className="text-center text-xs text-muted-foreground py-8">لا توجد ملاحظات بعد</div>
         ) : (
-          q.data!.map((n: { id: string; body: string; author_name: string | null; created_at: string }) => (
-            <div key={n.id} className="rounded-xl border bg-card p-3">
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-                <span>{n.author_name ?? "مستخدم"}</span>
-                <span>{formatDateTime(n.created_at)}</span>
-              </div>
-              <div className="text-sm whitespace-pre-wrap">{n.body}</div>
-            </div>
+          q.data!.map((n: { id: string; body: string; author_name: string | null; created_at: string; can_edit?: boolean }) => (
+            <NoteItem key={n.id} oppId={opportunityId} note={n} dateText={formatDateTime(n.created_at)} className="rounded-xl border bg-card p-3" bodyClassName="text-sm" />
           ))
         )}
       </div>

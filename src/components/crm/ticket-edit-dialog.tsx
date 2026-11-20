@@ -12,6 +12,7 @@ import { LabelPicker, type TicketLabel } from "@/components/crm/ticket-labels";
 import { getTicketQuickEdit, saveTicketQuickEdit, listOppNotes } from "@/modules/crm";
 import { parseAmount } from "@/modules/crm/board-money";
 import { TicketValueField } from "@/components/crm/ticket-value-field";
+import { NoteItem } from "@/components/crm/note-item";
 
 /** The window that opens from the customer's circle on a board card: the same fields as «new ticket», for editing. */
 export function TicketEditDialog({ oppId, title, defaultCurrency, labels, onCreateLabel, creatingLabel, onClose }: {
@@ -87,12 +88,9 @@ export function TicketEditDialog({ oppId, title, defaultCurrency, labels, onCrea
             <div className="space-y-1.5">
               <Label htmlFor="edit-ticket-note" className="text-xs text-muted-foreground">ملاحظات</Label>
               {(notesQ.data ?? []).length > 0 && (
-                <div className="max-h-36 space-y-1.5 overflow-y-auto rounded-md border bg-muted/40 p-2">
+                <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border bg-muted/40 p-2">
                   {(notesQ.data ?? []).map((n: any) => (
-                    <div key={n.id} className="text-sm">
-                      <div className="whitespace-pre-wrap">{n.body}</div>
-                      <div className="text-[10px] text-muted-foreground">{[n.author_name, new Date(n.created_at).toLocaleDateString("ar", { day: "numeric", month: "short" })].filter(Boolean).join(" · ")}</div>
-                    </div>
+                    <NoteItem key={n.id} oppId={oppId} note={n} dateText={new Date(n.created_at).toLocaleDateString("ar", { day: "numeric", month: "short" })} bodyClassName="text-sm" />
                   ))}
                 </div>
               )}
