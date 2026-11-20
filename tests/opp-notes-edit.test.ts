@@ -36,7 +36,7 @@ function setup(opts: { userId?: string; permissions?: string[]; isSuperAdmin?: b
     "@/platform/rbac/rbac.server": { requireAnyPermission: async () => access },
     "@/platform/rbac/data-scope.server": { canAccessOpportunityRow: () => opts.allowed ?? true },
   } });
-  return { list: exports.listOppNotes, update: exports.updateOppNote, db };
+  return { list: exports.listOppNotes, update: exports.updateOppNote, remove: exports.deleteOppNote, db };
 }
 const body = async (db: any, id: string) => (await db.from("opp_notes").select("*").eq("id", id)).data[0].body;
 
@@ -76,4 +76,26 @@ test("the list says which notes the viewer may edit", async () => {
   assert.deepEqual([notes.length, byId[N_MINE], byId[N_OTHER]], [2, true, false]);
   const manager = setup({ permissions: ["opportunities.manage"] });
   assert.ok((await manager.list({ data: { opportunityId: OPP } })).every((n: any) => n.can_edit));
+});
+
+test("the author may delete their own note; a manager may delete anyone's; nobody else, and never across organizations or outside the scope", async () => {
+  const mine = setup();
+  await mine.remove({ data: { noteId: N_MINE } });
+  assert.equal((await mine.db.from("opp_notes").select("*").eq("id", N_MINE)).data.length, 0);
+  assert.equal((await mine.db.from("opp_notes").select("*")).data.length, 2);
+
+  const other = setup();
+  await assert.rejects(other.remove({ data: { noteId: N_OTHER } }), /حذفها/);
+  assert.equal((await other.db.from("opp_notes").select("*").eq("id", N_OTHER)).data.length, 1);
+
+  const manager = setup({ permissions: ["opportunities.manage"] });
+  await manager.remove({ data: { noteId: N_OTHER } });
+  assert.equal((await manager.db.from("opp_notes").select("*").eq("id", N_OTHER)).data.length, 0);
+
+  const a = setup();
+  await assert.rejects(a.remove({ data: { noteId: N_FOREIGN } }), /غير موجودة/);
+  assert.equal((await a.db.from("opp_notes").select("*").eq("id", N_FOREIGN)).data.length, 1);
+  const outside = setup({ allowed: false });
+  await assert.rejects(outside.remove({ data: { noteId: N_MINE } }), /صلاحية حذف/);
+  assert.equal((await outside.db.from("opp_notes").select("*").eq("id", N_MINE)).data.length, 1);
 });
