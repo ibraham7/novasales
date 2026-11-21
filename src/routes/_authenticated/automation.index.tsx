@@ -10,6 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SettingsTab } from "@/components/automation/settings-tab";
+import { RecipesTab } from "@/components/automation/recipes-tab";
+import { MessageLogTab } from "@/components/automation/message-log-tab";
+import { EVENT_OPTIONS, eventLabel } from "@/modules/workflow/labels";
 import {
   Dialog,
   DialogContent,
@@ -180,11 +185,9 @@ function AutomationPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="crm.lead.created">Lead جديد</SelectItem>
-                      <SelectItem value="crm.lead.assigned">Lead تم توزيعه</SelectItem>
-                      <SelectItem value="crm.opportunity.created">فرصة جديدة</SelectItem>
-                      <SelectItem value="crm.opportunity.stage_changed">تغيير مرحلة</SelectItem>
-                      <SelectItem value="messaging.message.received">رسالة واردة</SelectItem>
+                      {EVENT_OPTIONS.filter((e) => e.group !== "زمنية").map((e) => (
+                        <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -199,6 +202,17 @@ function AutomationPage() {
         </Dialog>
       </div>
 
+      <Tabs defaultValue="rules">
+        <TabsList>
+          <TabsTrigger value="rules">القواعد</TabsTrigger>
+          <TabsTrigger value="recipes">قوالب جاهزة</TabsTrigger>
+          <TabsTrigger value="messages">سجل الرسائل</TabsTrigger>
+          <TabsTrigger value="settings">إعدادات الإرسال</TabsTrigger>
+        </TabsList>
+        <TabsContent value="recipes"><RecipesTab canManage={!!q.data?.canManage} /></TabsContent>
+        <TabsContent value="messages"><MessageLogTab /></TabsContent>
+        <TabsContent value="settings"><SettingsTab /></TabsContent>
+        <TabsContent value="rules" className="space-y-6">
       <Card className="p-4 text-sm space-y-2">
         <p>
           اختر حدثًا، وأضف خطوات ثم فعّل الأتمتة. قواعد الأحداث والانتظار تحتاج إلى معالجة دورية
@@ -234,8 +248,8 @@ function AutomationPage() {
                 </Link>
                 <Badge variant="outline">
                   {w.trigger_type === "event"
-                    ? `حدث: ${w.trigger_config?.event ?? "-"}`
-                    : w.trigger_type}
+                    ? `عند: ${eventLabel(w.trigger_config?.event)}`
+                    : w.trigger_type === "manual" ? "يدوي" : "زمني"}
                 </Badge>
                 <Badge variant={w.is_active ? "default" : "secondary"}>
                   {w.is_active ? "مفعّل" : "معطّل"}
@@ -278,6 +292,8 @@ function AutomationPage() {
           <Card className="p-8 text-center text-muted-foreground">لا توجد أتمتة بعد.</Card>
         )}
       </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
