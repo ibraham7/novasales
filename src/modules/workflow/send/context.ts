@@ -93,6 +93,7 @@ export async function loadMessageContext(db: any, organizationId: string, trigge
     vars: {
       name: name ?? "", first_name: first(name), phone: phone ?? "", stage: str(stage?.name) ?? "", assignee: str(owner?.full_name) ?? "",
       source: str(trigger.source) ?? str(opp?.source) ?? "", org: str(org?.name) ?? "", value: money(opp?.value, opp?.currency) ?? "",
+      due_today: trigger.tasks_due_today != null ? String(trigger.tasks_due_today) : "", overdue: trigger.tasks_overdue != null ? String(trigger.tasks_overdue) : "", account: str(trigger.account_name) ?? "",
     },
   };
 }

@@ -42,7 +42,123 @@ export const BASE_RECIPES: Recipe[] = [
   },
 ];
 
-export const RECIPES: Recipe[] = [...BASE_RECIPES];
+const msg = (id: string, label: string, body: string, extra: Record<string, unknown> = {}): RecipeStep =>
+  step(id, label, "message.whatsapp", { kind: "service", account: "ticket", body, ...extra });
+const alertStep = (id: string, to: string, title: string, body: string): RecipeStep => step(id, "تنبيه الفريق", "notify.staff", { to, title, body });
+const DAY_MIN = 1440;
+
+/** Sales recipes. Every one is created switched off; wording is a starting point for the team to edit. */
+export const SALES_RECIPES: Recipe[] = [
+  {
+    id: "welcome-new-ticket",
+    title: "ترحيب بالعميل الجديد",
+    description: "عند فتح تذكرة جديدة يصل العميل ترحيب قصير باسمه. يُرسل فقط لمن راسلنا من قبل (لا بدء محادثة باردة).",
+    category: "عملاء جدد",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "crm.opportunity.created" } },
+    steps: [msg("welcome", "رسالة الترحيب", "{أهلاً|مرحباً} {first_name}، شكراً لتواصلك مع {org}. معك {assignee} وسأساعدك بكل سرور.")],
+  },
+  {
+    id: "no-reply-followups",
+    title: "متابعة العميل الذي لم يردّ (ساعة، يوم، 3 أيام، 7 أيام)",
+    description: "إذا لم يردّ العميل على آخر رسالة منّا بعد ساعة تُرسل متابعة، ثم بعد يوم، ثم 3 أيام، ثم 7 أيام. تتوقف كلها فور ردّ العميل أو انتقال التذكرة لمرحلة أخرى.",
+    category: "متابعة",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "time.no_reply", after_minutes: 60, stop_on: ["customer_reply", "stage_change"] } },
+    steps: [
+      msg("f1", "متابعة بعد ساعة", "{أهلاً|مرحباً} {first_name}، حبيت أتأكد أن رسالتي وصلتك. هل عندك أي سؤال؟"),
+      wait("w1", "انتظار حتى اليوم التالي", DAY_MIN - 60),
+      msg("f2", "متابعة بعد يوم", "{first_name}، ما زلت جاهزاً لمساعدتك. هل تحب أن نكمل؟"),
+      wait("w2", "انتظار يومين", 2 * DAY_MIN),
+      msg("f3", "متابعة بعد 3 أيام", "{أهلاً|مرحباً} {first_name}، أتابع معك بخصوص طلبك. أخبرني متى يناسبك."),
+      wait("w3", "انتظار 4 أيام", 4 * DAY_MIN),
+      msg("f4", "متابعة بعد 7 أيام", "{first_name}، هذه آخر متابعة مني. إن احتجت أي شيء لاحقاً راسلني في أي وقت."),
+    ],
+  },
+  {
+    id: "after-quote-followup",
+    title: "متابعة بعد إرسال عرض السعر",
+    description: "عندما تنتقل التذكرة لمرحلة «عرض سعر» تُرسل متابعة بعد يوم، وتتوقف إن ردّ العميل. غيّر اسم المرحلة في المشغّل ليطابق مرحلتك.",
+    category: "عروض الأسعار",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "crm.opportunity.stage_changed", match: { to_stage_name: "عرض سعر" }, stop_on: ["customer_reply", "stage_change"] } },
+    steps: [wait("w", "انتظار يوم", DAY_MIN), msg("q", "متابعة العرض", "{أهلاً|مرحباً} {first_name}، هل اطّلعت على عرض السعر؟ يسعدني الإجابة عن أي سؤال.")],
+  },
+  {
+    id: "thanks-on-win",
+    title: "شكر العميل عند إتمام الصفقة",
+    description: "عند انتقال التذكرة لمرحلة الفوز يصل العميل شكر. غيّر اسم المرحلة في المشغّل ليطابق مرحلتك.",
+    category: "إغلاق الصفقة",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "crm.opportunity.stage_changed", match: { to_stage_name: "تم الفوز" } } },
+    steps: [msg("thanks", "رسالة الشكر", "شكراً لثقتك {first_name} 🙏 يسعدنا خدمتك في {org}، ونحن بجانبك دائماً.")],
+  },
+  {
+    id: "recontact-lost",
+    title: "إعادة التواصل مع العميل المفقود بعد 30 يوماً",
+    description: "بعد 30 يوماً من انتقال التذكرة للمهمل يُرسل عرض عودة. رسالة ترويجية: لا تُرسل إلا لمن وافق على الترويج، وتحمل جملة إيقاف تلقائياً. غيّر اسم المرحلة ليطابق مرحلتك.",
+    category: "إغلاق الصفقة",
+    audience: "ترويج",
+    trigger: { type: "event", config: { event: "crm.opportunity.stage_changed", match: { to_stage_name: "مهمل" }, stop_on: ["customer_reply"] } },
+    steps: [wait("w", "انتظار 30 يوماً", 30 * DAY_MIN), msg("back", "رسالة العودة", "{أهلاً|مرحباً} {first_name}، عندنا جديد في {org} قد يناسبك. هل تحب أن أخبرك به؟", { kind: "promo" })],
+  },
+  {
+    id: "review-request",
+    title: "طلب تقييم بعد إتمام الصفقة",
+    description: "بعد 3 أيام من الفوز يُطلب من العميل تقييم تجربته. غيّر اسم المرحلة في المشغّل، وضع رابط التقييم في الرسالة.",
+    category: "إغلاق الصفقة",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "crm.opportunity.stage_changed", match: { to_stage_name: "تم الفوز" } } },
+    steps: [wait("w", "انتظار 3 أيام", 3 * DAY_MIN), msg("review", "طلب التقييم", "{first_name}، رأيك يهمنا في {org}. هل تشاركنا تقييم تجربتك؟ (ضع الرابط هنا)")],
+  },
+  {
+    id: "alert-unassigned",
+    title: "تنبيه المدير: تذكرة بلا مندوب",
+    description: "إذا بقيت تذكرة بلا مندوب 30 دقيقة يصل المدراء تنبيه. تنبيه داخلي فقط ويتطلب تفعيل «تنبيهات الفريق».",
+    category: "تنبيهات الفريق",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.unassigned", after_minutes: 30 } },
+    steps: [alertStep("a", "managers", "تذكرة بلا مندوب: {name}", "المصدر: {source} · المرحلة: {stage}")],
+  },
+  {
+    id: "alert-stale",
+    title: "تنبيه المندوب: تذكرة راكدة",
+    description: "إذا لم يحدث أي نشاط على التذكرة 3 أيام يصل المندوب تنبيه. داخلي فقط.",
+    category: "تنبيهات الفريق",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.stale", after_minutes: 3 * DAY_MIN } },
+    steps: [alertStep("a", "assignee", "تذكرة راكدة: {name}", "لا نشاط منذ 3 أيام · المرحلة: {stage}")],
+  },
+  {
+    id: "alert-followup-due",
+    title: "تنبيه المندوب: متابعة متأخرة",
+    description: "عند تأخر مهمة متابعة يصل صاحبها تنبيه. داخلي فقط.",
+    category: "تنبيهات الفريق",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.task_overdue", after_minutes: 0 } },
+    steps: [alertStep("a", "assignee", "متابعة متأخرة", "عندك مهمة تجاوزت موعدها. راجع مهامك.")],
+  },
+  {
+    id: "morning-digest",
+    title: "ملخص الصباح لكل مندوب",
+    description: "كل صباح (9:00 بتوقيت المؤسسة) يصل كل مندوب عنده مهام اليوم أو متأخرة ملخص بعددها. داخلي فقط.",
+    category: "تنبيهات الفريق",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.daily_digest", hour: 9 } },
+    steps: [alertStep("a", "assignee", "ملخص يومك", "مهام اليوم: {due_today} · متأخرة: {overdue}")],
+  },
+  {
+    id: "alert-channel-disconnected",
+    title: "تنبيه: انقطع حساب واتساب",
+    description: "إذا بقي حساب واتساب غير متصل 10 دقائق يصل المدراء تنبيه. داخلي فقط.",
+    category: "تنبيهات الفريق",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.channel_disconnected", after_minutes: 10 } },
+    steps: [alertStep("a", "managers", "انقطع واتساب: {account}", "الحساب غير متصل. افتح صفحة القنوات وأعد الربط.")],
+  },
+];
+
+export const RECIPES: Recipe[] = [...BASE_RECIPES, ...SALES_RECIPES];
 
 /** The workflow definition a recipe creates (steps chained one after the other). */
 export function recipeDefinition(recipe: Recipe) {

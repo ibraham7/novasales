@@ -31,7 +31,7 @@ test("a ticket event gives the customer, number, email, stage, owner, source, va
   const ctx = await loadMessageContext(world(), ORG, { opportunity_id: "o1" }, {});
   assert.deepEqual([ctx.contactId, ctx.opportunityId, ctx.ownerId], ["c1", "o1", "u1"]);
   assert.deepEqual([ctx.phone, ctx.email], ["905321112233", "ahmad@example.com"]);
-  assert.deepEqual(ctx.vars, { name: "أحمد علي", first_name: "أحمد", phone: "905321112233", stage: "عرض سعر", assignee: "مياسة", source: "instagram_inbound", org: "نوفا", value: "1,500 USD" });
+  assert.deepEqual(ctx.vars, { name: "أحمد علي", first_name: "أحمد", phone: "905321112233", stage: "عرض سعر", assignee: "مياسة", source: "instagram_inbound", org: "نوفا", value: "1,500 USD", due_today: "", overdue: "", account: "" });
 });
 
 test("the event's own stage name and new owner win over what is stored (they are what just happened)", async () => {

@@ -92,6 +92,53 @@ export function overdueTaskCandidates(tasks: any[], now: Date, graceMinutes: num
   return out;
 }
 
+/** Open tickets nobody owns for the wait: once per ticket (and again only if it is later unassigned anew). */
+export function unassignedCandidates(opps: any[], now: Date, afterMinutes: number): Candidate[] {
+  const out: Candidate[] = [];
+  for (const o of opps) {
+    if (!open(o) || o.owner_agent_id) continue;
+    const since = o.opened_at ?? null;
+    if (!since) continue;
+    const minutes = (now.getTime() - new Date(since).getTime()) / MIN;
+    if (minutes < afterMinutes) continue;
+    out.push({ key: `unassigned:${o.id}:${since}`, payload: ticketPayload(o, { minutes_unassigned: Math.floor(minutes) }) });
+  }
+  return out;
+}
+
+/** The organization's local date (YYYY-MM-DD) and hour, for the morning digest. */
+export function localParts(now: Date, timezone: string): { date: string; hour: number } {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const get = (t: string) => f.find((p) => p.type === t)?.value ?? "0";
+  return { date: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
+}
+
+/** One digest per agent per local day, only after the chosen hour and only for agents who have something due. */
+export function digestCandidates(tasks: any[], now: Date, timezone: string, hour: number): Candidate[] {
+  const local = localParts(now, timezone);
+  if (local.hour < hour) return [];
+  const per = new Map<string, { due: number; overdue: number }>();
+  for (const t of tasks) {
+    if (t.status !== "open" || !t.due_at || !t.assignee_user_id) continue;
+    const entry = per.get(t.assignee_user_id) ?? { due: 0, overdue: 0 };
+    if (new Date(t.due_at).getTime() < now.getTime() && localParts(new Date(t.due_at), timezone).date < local.date) entry.overdue++;
+    else entry.due++;
+    per.set(t.assignee_user_id, entry);
+  }
+  return [...per].map(([user, c]) => ({ key: `digest:${user}:${local.date}`, payload: { owner_user_id: user, tasks_due_today: c.due, tasks_overdue: c.overdue, digest_date: local.date } }));
+}
+
+/** WhatsApp accounts that are not connected, once per disconnection (the moment it changed). */
+export function disconnectedCandidates(accounts: any[], now: Date, afterMinutes: number): Candidate[] {
+  const out: Candidate[] = [];
+  for (const a of accounts) {
+    if (a.status === "connected" || !a.updated_at) continue;
+    if ((now.getTime() - new Date(a.updated_at).getTime()) / MIN < afterMinutes) continue;
+    out.push({ key: `disconnected:${a.id}:${a.updated_at}`, payload: { account_id: a.id, account_name: a.display_name ?? null, owner_user_id: a.owner_user_id ?? null, status: a.status ?? null } });
+  }
+  return out;
+}
+
 /* ------------------------------ reading the database ------------------------------ */
 
 const OPP_COLUMNS = "id,contact_id,owner_agent_id,stage_id,source,outcome,deleted_at,stage_entered_at,updated_at,opened_at";
@@ -132,6 +179,23 @@ export async function findCandidates(db: any, organizationId: string, event: Tim
     const { data } = await db.from("crm_tasks").select("id,title,status,due_at,assignee_user_id,entity_type,entity_id").eq("organization_id", organizationId).eq("status", "open")
       .lte("due_at", new Date(now.getTime() - after * MIN).toISOString()).gte("due_at", new Date(now.getTime() - 14 * DAY).toISOString()).limit(limit);
     return overdueTaskCandidates(data ?? [], now, after);
+  }
+
+  if (event === "time.unassigned") {
+    const { data } = await db.from("opp_opportunities").select(OPP_COLUMNS).eq("organization_id", organizationId).is("deleted_at", null).is("outcome", null).is("owner_agent_id", null).lte("opened_at", cutoff).limit(limit);
+    return unassignedCandidates(data ?? [], now, after);
+  }
+
+  if (event === "time.daily_digest") {
+    const { data: settings } = await db.from("wf_settings").select("timezone").eq("organization_id", organizationId).maybeSingle();
+    const timezone = settings?.timezone ?? "Europe/Istanbul";
+    const { data } = await db.from("crm_tasks").select("id,status,due_at,assignee_user_id").eq("organization_id", organizationId).eq("status", "open").lte("due_at", new Date(now.getTime() + DAY).toISOString()).gte("due_at", new Date(now.getTime() - 14 * DAY).toISOString()).limit(1000);
+    return digestCandidates(data ?? [], now, timezone, Number(config.hour ?? 9));
+  }
+
+  if (event === "time.channel_disconnected") {
+    const { data } = await db.from("msg_channel_accounts").select("id,display_name,status,owner_user_id,updated_at").eq("organization_id", organizationId).neq("status", "connected").limit(limit);
+    return disconnectedCandidates(data ?? [], now, after);
   }
 
   if (event === "time.stale") {
