@@ -104,3 +104,18 @@ test("applying moves each ticket to the first stage with its new owner, records 
   assert.equal((await applyRedistribution(db, { organizationId: ORG, actorId: "boss", lostStageId: lost, first, moves })).moved, 0);
   assert.equal(db.tables.opp_owner_history.length, 2);
 });
+
+test("the events the database records for a redistribution are skipped, so no automation messages the customers", async () => {
+  const db: any = fakeDb({
+    opp_opportunities: [{ id: "t1", organization_id: ORG, stage_id: "lost", owner_agent_id: "a", deleted_at: null }],
+    domain_events: [
+      { id: "e1", organization_id: ORG, aggregate_type: "opportunity", aggregate_id: "t1", event_type: "crm.opportunity.stage_changed", workflow_status: "pending", created_at: new Date().toISOString() },
+      { id: "e2", organization_id: ORG, aggregate_type: "opportunity", aggregate_id: "t1", event_type: "crm.opportunity.assigned", workflow_status: "pending", created_at: new Date().toISOString() },
+      { id: "e3", organization_id: ORG, aggregate_type: "opportunity", aggregate_id: "t1", event_type: "crm.opportunity.created", workflow_status: "pending", created_at: new Date().toISOString() },
+    ],
+  });
+  const before = new Date(Date.now() - 1000);
+  await applyRedistribution(db, { organizationId: ORG, actorId: "boss", lostStageId: "lost", first: { id: "new", pipeline_id: "p", probability: 10 }, moves: [{ ticketId: "t1", leadId: null, from: "a", to: "b", departmentId: null }], now: before });
+  const status = Object.fromEntries(db.tables.domain_events.map((e: any) => [e.id, e.workflow_status]));
+  assert.deepEqual(status, { e1: "done", e2: "done", e3: "pending" });
+});

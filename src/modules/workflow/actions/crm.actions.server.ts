@@ -37,17 +37,17 @@ const oppMoveStage: ActionHandler = async (config, ctx) => {
     .eq("id", oppId)
     .eq("organization_id", ctx.organizationId);
   if (error) return { ok: false, error: error.message };
-  await db.from("domain_events").insert({
-    organization_id: ctx.organizationId,
-    event_type: "crm.opportunity.stage_changed",
-    aggregate_type: "opportunity",
-    aggregate_id: oppId,
-    payload: {
-      stage_id: config.stage_id ?? null,
-      stage: config.stage_key ?? null,
-      source: "workflow",
-    },
-  });
+  // Moving to a stage_id is recorded by the database (trigger wf_opportunity_events). Only the old stage-key path
+  // (no stage_id), which the trigger does not see, still records its own event.
+  if (!config.stage_id) {
+    await db.from("domain_events").insert({
+      organization_id: ctx.organizationId,
+      event_type: "crm.opportunity.stage_changed",
+      aggregate_type: "opportunity",
+      aggregate_id: oppId,
+      payload: { stage: config.stage_key ?? null, source: "workflow" },
+    });
+  }
   return { ok: true, output: { opportunity_id: oppId } };
 };
 
