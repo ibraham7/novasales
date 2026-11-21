@@ -45,7 +45,7 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
         {triggerType === "event" && (
           <div>
             <Label>الحدث</Label>
-            <Select value={event} onValueChange={(v) => { const { after_minutes: _a, stage_id: _s, ...rest } = config; onConfig({ ...rest, event: v }); }}>
+            <Select value={event} onValueChange={(v) => { const { after_minutes: _a, stage_id: _s, ...rest } = config; onConfig({ ...rest, event: v, ...(v === "time.daily_digest" ? { hour: 9 } : {}) }); }}>
               <SelectTrigger><SelectValue placeholder="اختر الحدث" /></SelectTrigger>
               <SelectContent>
                 {GROUPS.map((group) => (
@@ -62,6 +62,12 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
 
       {triggerType === "event" && time && (
         <div className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">
+          {event === "time.daily_digest" ? (
+            <div>
+              <Label className="text-xs">ساعة الإرسال (0–23، بتوقيت المؤسسة)</Label>
+              <Input type="number" min={0} max={23} value={config.hour ?? 9} onChange={(e) => onConfig({ ...config, hour: Number(e.target.value) })} />
+            </div>
+          ) : (<>
           <div>
             <Label className="text-xs">{event === "time.task_overdue" ? "بعد التأخير بـ (اختياري)" : "بعد مدة"}</Label>
             <Input type="number" min={0} value={amount || ""} onChange={(e) => setDuration(Number(e.target.value), unit)} />
@@ -73,7 +79,7 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
               <SelectContent>{DURATION_UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          {event !== "time.task_overdue" && (
+          {["time.stage_timeout", "time.no_reply", "time.stale"].includes(event) && (
             <div>
               <Label className="text-xs">في مرحلة</Label>
               <Select value={config.stage_id ?? ANY} onValueChange={(v) => { const { stage_id: _drop, ...rest } = config; onConfig(v === ANY ? rest : { ...rest, stage_id: v }); }}>
@@ -85,6 +91,7 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
               </Select>
             </div>
           )}
+          </>)}
         </div>
       )}
 

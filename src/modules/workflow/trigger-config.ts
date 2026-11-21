@@ -7,6 +7,9 @@ export const TIME_EVENTS = {
   "time.no_reply": "عدم ردّ العميل على آخر رسالة منّا",
   "time.stale": "تذكرة راكدة (لا نشاط ولا رسائل)",
   "time.task_overdue": "مهمة أو متابعة متأخرة",
+  "time.unassigned": "تذكرة بلا مندوب مسؤول لمدة",
+  "time.daily_digest": "ملخص الصباح لكل مندوب",
+  "time.channel_disconnected": "انقطاع حساب واتساب لمدة",
 } as const;
 export type TimeEvent = keyof typeof TIME_EVENTS;
 export const isTimeEvent = (event: unknown): event is TimeEvent => typeof event === "string" && event in TIME_EVENTS;
@@ -25,6 +28,9 @@ export function validateTriggerConfig(triggerType: string, config: Record<string
     if (event === "time.task_overdue") {
       // A grace period is optional for tasks: 0 means «as soon as it is overdue».
       if (after !== undefined && !(Number.isInteger(after) && (after as number) >= 0 && (after as number) <= MAX_AFTER_MINUTES)) return "مهلة التأخير يجب أن تكون عدداً صحيحاً من الدقائق";
+    } else if (event === "time.daily_digest") {
+      const hour = config.hour;
+      if (!(Number.isInteger(hour) && (hour as number) >= 0 && (hour as number) <= 23)) return "ساعة الملخص يجب أن تكون من 0 إلى 23";
     } else if (!(Number.isInteger(after) && (after as number) >= MIN_AFTER_MINUTES && (after as number) <= MAX_AFTER_MINUTES)) {
       return `اكتب المدة بالدقائق (من ${MIN_AFTER_MINUTES} إلى ${MAX_AFTER_MINUTES})`;
     }

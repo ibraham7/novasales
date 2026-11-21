@@ -15,6 +15,9 @@ export const MESSAGE_VARIABLES: Record<string, string> = {
   source: "مصدر العميل",
   org: "اسم الشركة",
   value: "قيمة الصفقة",
+  due_today: "عدد مهام اليوم (الملخص)",
+  overdue: "عدد المهام المتأخرة (الملخص)",
+  account: "اسم حساب واتساب",
 };
 
 /** Names used by earlier templates (double braces), mapped to the current ones. */
