@@ -33,7 +33,7 @@ import { RedistributeDialog, type RedistributeMessage } from "@/components/crm/r
 import { LabelChip, LabelPicker } from "@/components/crm/ticket-labels";
 import { TicketEditDialog } from "@/components/crm/ticket-edit-dialog";
 import { TicketValueField } from "@/components/crm/ticket-value-field";
-import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, isBoardSort, parseAmount, placeInColumn, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
+import { BOARD_SORT_LABELS, BOARD_SORTS, formatMoney, formatTotals, floatUnreadFirst, isBoardSort, parseAmount, placeInColumn, sumByCurrency, type BoardSort } from "@/modules/crm/board-money";
 import { sharePercent } from "@/lib/share-percent";
 import { startDragAutoscroll } from "@/lib/drag-autoscroll";
 import { Textarea } from "@/components/ui/textarea";
@@ -104,6 +104,24 @@ function PipelinePage() {
       /* storage can be unavailable */
     }
   }, []);
+  // A ticket with a new message goes to the top of its column (on by default; remembered on this device).
+  const [unreadFirst, setUnreadFirst] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("pipeline-unread-first") === "0") setUnreadFirst(false);
+    } catch {
+      /* storage can be unavailable */
+    }
+  }, []);
+  const toggleUnreadFirst = () =>
+    setUnreadFirst((on) => {
+      try {
+        localStorage.setItem("pipeline-unread-first", on ? "0" : "1");
+      } catch {
+        /* storage can be unavailable */
+      }
+      return !on;
+    });
   const changeSort = (value: BoardSort) => {
     setSort(value);
     try {
@@ -113,7 +131,7 @@ function PipelinePage() {
     }
   };
   const boardQ = useQuery({
-    queryKey: ["pipeline-board", deptFilter, agentFilter, searching, searching ? null : stageLimits, sort],
+    queryKey: ["pipeline-board", deptFilter, agentFilter, searching, searching ? null : stageLimits, sort, unreadFirst],
     queryFn: () =>
       listBoard({
         data: {
@@ -121,6 +139,7 @@ function PipelinePage() {
           ...(agentFilter === "all" ? {} : { ownerAgentId: agentFilter }),
           all: searching,
           ...(sort !== "newest" ? { sort } : {}),
+          ...(unreadFirst && !searching ? { withUnread: true } : {}),
           ...(searching ? {} : { perStage: PER_STAGE, limits: stageLimits }),
         },
       }),
@@ -537,8 +556,9 @@ function PipelinePage() {
       arr.push(o);
       map.set(o.stage_id, arr);
     });
+    if (unreadFirst) for (const [stageId, arr] of map) map.set(stageId, floatUnreadFirst(arr));
     return map;
-  }, [filtered]);
+  }, [filtered, unreadFirst]);
 
   const [dragOver, setDragOver] = useState<string | null>(null);
   // Dragging a card near a column's top or bottom (or the board's sides) scrolls it.
@@ -743,6 +763,16 @@ function PipelinePage() {
             ))}
           </SelectContent>
         </Select>
+        <Button
+          variant={unreadFirst ? "default" : "outline"}
+          size="sm"
+          onClick={toggleUnreadFirst}
+          className="h-9"
+          title="التذكرة اللي تصلها رسالة جديدة تصعد فوراً لأول العمود"
+          aria-pressed={unreadFirst}
+        >
+          الرسائل الجديدة أولاً
+        </Button>
         {(agentFilter !== "all" || deptFilter !== "all" || channelFilter !== "all" || unreadOnly || search) && (
           <Button
             variant="ghost"
