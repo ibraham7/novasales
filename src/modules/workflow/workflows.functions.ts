@@ -52,6 +52,10 @@ export const saveWorkflow = createServerFn({ method: "POST" })
     await ensureActionsRegistered();
     for (const step of data.definition.steps ?? [])
       if (step.type === "action" && !getAction(step.action)) throw new Error("الإجراء غير مدعوم");
+    // Message and alert steps: a missing text or an unknown {variable} is found now, not by a customer.
+    const { validateMessageSteps } = await import("./send/message-config");
+    const messageProblem = validateMessageSteps(data.definition.steps ?? []);
+    if (messageProblem) throw new Error(messageProblem);
     const row: Record<string, any> = {
       organization_id: organizationId,
       name: data.name,
@@ -88,7 +92,12 @@ export const toggleWorkflow = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { organizationId, db, canManage, access } = await workflowAccess(true);
     const wf = await ownWorkflow(db, data.id, organizationId);
-    if (data.is_active) validateWorkflowDefinition(wf.definition, true);
+    if (data.is_active) {
+      validateWorkflowDefinition(wf.definition, true);
+      const { validateMessageSteps } = await import("./send/message-config");
+      const messageProblem = validateMessageSteps(wf.definition?.steps ?? []);
+      if (messageProblem) throw new Error(messageProblem);
+    }
     const { error } = await db
       .from("wf_workflows")
       .update({ is_active: data.is_active })

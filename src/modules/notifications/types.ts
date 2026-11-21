@@ -9,6 +9,7 @@ export const NOTIFICATION_TYPES = {
   sale_status: { label: "تحديث حالة عملية بيع", description: "عند تأكيد عملية بيع أو إلغائها أو حذفها", group: "المبيعات" },
   task_assigned: { label: "إسناد مهمة", description: "عند إسناد مهمة أو متابعة إليك", group: "المهام" },
   task_due: { label: "مهمة أو متابعة مستحقة", description: "عند حلول موعد مهمة أو متابعة", group: "المهام" },
+  automation: { label: "تنبيهات الأتمتة", description: "تنبيهات تلقائية للفريق (عميل بلا متابعة، فرصة راكدة…)", group: "الأتمتة" },
   manual: { label: "رسائل من الإدارة", description: "إشعارات يرسلها المدير يدوياً", group: "الإدارة" },
 } as const;
 

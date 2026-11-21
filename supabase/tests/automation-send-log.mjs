@@ -12,6 +12,9 @@ await pg.exec(`create role anon;create role authenticated;create role service_ro
 const sql = await readFile("supabase/migrations/20261121130000_automation_send_log.sql", "utf8");
 await pg.exec(sql);
 await pg.exec(sql); // safe to run twice
+const alerts = await readFile("supabase/migrations/20261121140000_automation_alerts_switch.sql", "utf8");
+await pg.exec(alerts);
+await pg.exec(alerts); // safe to run twice
 const U = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 const a = U(1), b = U(2);
 await pg.query("insert into organizations values($1),($2)", [a, b]);
@@ -20,6 +23,9 @@ await pg.query("insert into organizations values($1),($2)", [a, b]);
 await pg.query("insert into wf_settings(organization_id) values($1)", [a]);
 const s = (await pg.query("select * from wf_settings where organization_id=$1", [a])).rows[0];
 assert.deepEqual([s.sending_enabled, s.timezone, s.send_window_start, s.send_window_end, s.daily_limit], [false, "Europe/Istanbul", "09:00", "20:00", 100]);
+
+// 1b) staff alerts are OFF by default too
+assert.equal((await pg.query("select alerts_enabled from wf_settings where organization_id=$1", [a])).rows[0].alerts_enabled, false);
 
 // 2) settings are checked: bad times, limits and gaps are refused
 const bad = async (sqlText, params = []) => { try { await pg.query(sqlText, params); return false; } catch { return true; } };
@@ -58,4 +64,4 @@ assert.equal((await pg.query("select count(*)::int n from wf_message_log where o
 const g = await pg.query(`select has_table_privilege('authenticated','public.wf_settings','select') c1, has_table_privilege('authenticated','public.wf_message_log','insert') c2,
  has_table_privilege('service_role','public.wf_settings','update') s1, has_table_privilege('service_role','public.wf_message_log','insert') s2`);
 assert.deepEqual(g.rows[0], { c1: false, c2: false, s1: true, s2: true });
-console.log("Local PostgreSQL automation send log: sending OFF by default, constraints, once-only message key, server-only passed");
+console.log("Local PostgreSQL automation send log: sending and staff alerts OFF by default, constraints, once-only message key, server-only passed");

@@ -4,6 +4,8 @@ export interface ActionContext {
   organizationId: string;
   runId: string;
   workflowId: string;
+  /** The step this action runs as (used for the once-only key of messages). */
+  stepId?: string;
   triggerPayload: Record<string, unknown>;
   runContext: Record<string, unknown>;
 }
@@ -38,14 +40,16 @@ let _initialized = false;
 export async function ensureActionsRegistered() {
   if (_initialized) return;
   _initialized = true;
-  const [messaging, crm, assign, platform] = await Promise.all([
+  const [messaging, crm, assign, platform, message] = await Promise.all([
     import("./messaging.send.server"),
     import("./crm.actions.server"),
     import("./assignments.actions.server"),
     import("./platform.actions.server"),
+    import("./message.actions.server"),
   ]);
   messaging.register();
   crm.register();
   assign.register();
   platform.register();
+  message.register();
 }
