@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ArrowRight, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RUN_STATUS_LABELS, STEP_TYPE_LABELS, actionLabel, describeStep } from "@/modules/workflow/labels";
 import { Button } from "@/components/ui/button";
 import { listRuns, getRunDetail } from "@/modules/workflow";
 
@@ -79,7 +80,7 @@ function RunsPage() {
               >
                 <div className="flex items-center gap-2">
                   <Icon className={`h-4 w-4 ${STATUS_COLOR[r.status]}`} />
-                  <Badge variant="outline">{r.status}</Badge>
+                  <Badge variant="outline">{RUN_STATUS_LABELS[r.status] ?? r.status}</Badge>
                   <span className="text-xs text-muted-foreground">
                     {new Date(r.started_at).toLocaleString()}
                   </span>
@@ -98,43 +99,46 @@ function RunsPage() {
             <Card className="p-4">
               <h3 className="font-semibold mb-3">تفاصيل الخطوات</h3>
               <div className="space-y-2">
-                {(d.data?.steps ?? []).map((s: any) => (
+                {(d.data?.steps ?? []).map((s: any) => {
+                  const view = describeStep(s);
+                  return (
                   <div
                     key={s.id}
                     className="border-l-2 pr-3"
                     style={{
                       borderColor:
-                        s.status === "ok"
+                        view.tone === "ok"
                           ? "#10b981"
-                          : s.status === "failed"
+                          : view.tone === "failed"
                             ? "#ef4444"
                             : "#f59e0b",
                     }}
                   >
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">#{s.step_index}</Badge>
-                      <code className="text-xs">{s.step_type}</code>
-                      {s.action && <Badge>{s.action}</Badge>}
+                      <span className="text-xs">{STEP_TYPE_LABELS[s.step_type] ?? s.step_type}</span>
+                      {s.action && <Badge>{actionLabel(s.action)}</Badge>}
                       <Badge
                         variant={
-                          s.status === "ok"
+                          view.tone === "ok"
                             ? "default"
-                            : s.status === "failed"
+                            : view.tone === "failed"
                               ? "destructive"
                               : "secondary"
                         }
                       >
-                        {s.status}
+                        {view.badge}
                       </Badge>
                     </div>
-                    {s.error && <div className="text-xs text-red-500 mt-1">{s.error}</div>}
+                    {view.detail && <div className={`text-xs mt-1 ${view.tone === "failed" ? "text-red-500" : "text-muted-foreground"}`}>{view.detail}</div>}
                     {s.output && Object.keys(s.output).length > 0 && (
                       <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-auto">
                         {JSON.stringify(s.output, null, 2)}
                       </pre>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
           ) : (

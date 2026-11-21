@@ -31,6 +31,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getWorkflow, saveWorkflow, listActionsCatalog } from "@/modules/workflow";
+import { listPipelines } from "@/modules/crm";
+import { MessageStepForm, defaultMessageConfig } from "@/components/automation/message-step-form";
+import { TriggerForm, type StageOption } from "@/components/automation/trigger-form";
+import { DurationInput } from "@/components/automation/duration-input";
+import { STEP_TYPE_LABELS, actionLabel } from "@/modules/workflow/labels";
+import { MESSAGE_ACTIONS } from "@/modules/workflow/send/message-config";
+
+const isMessageAction = (action: unknown): boolean => (MESSAGE_ACTIONS as readonly string[]).includes(String(action));
 
 export const Route = createFileRoute("/_authenticated/automation/$id/")({
   head: () => ({ meta: [{ title: "تعديل الأتمتة - NovaSales" }] }),
@@ -80,11 +88,15 @@ function EditPage() {
   const actionsFn = useServerFn(listActionsCatalog);
   const q = useQuery({ queryKey: ["workflow", id], queryFn: () => getFn({ data: { id } }) });
   const actionsQ = useQuery({ queryKey: ["actions"], queryFn: () => actionsFn() });
+  const pipelinesFn = useServerFn(listPipelines);
+  const pipelinesQ = useQuery({ queryKey: ["pipelines"], queryFn: () => pipelinesFn(), staleTime: 5 * 60_000 });
+  const stageOptions: StageOption[] = (pipelinesQ.data ?? []).flatMap((p: any) => (p.stages ?? []).map((st: any) => ({ id: st.id, name: st.name, pipeline: p.name })));
 
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [triggerType, setTriggerType] = useState<"event" | "manual" | "schedule">("event");
-  const [triggerEvent, setTriggerEvent] = useState("crm.lead.assigned");
+  // The whole trigger setting (event, duration, stage, stop choices, match…): nothing the person did not touch is lost.
+  const [triggerConfig, setTriggerConfig] = useState<Record<string, any>>({ event: "crm.lead.assigned" });
   const [steps, setSteps] = useState<any[]>([]);
 
   useEffect(() => {
@@ -93,7 +105,7 @@ function EditPage() {
       setName(w.name);
       setDesc(w.description ?? "");
       setTriggerType(w.trigger_type);
-      setTriggerEvent(w.trigger_config?.event ?? "");
+      setTriggerConfig(w.trigger_config ?? {});
       setSteps(w.definition?.steps ?? []);
     }
   }, [q.data]);
@@ -111,7 +123,7 @@ function EditPage() {
           description: desc,
           is_active: q.data?.workflow?.is_active ?? false,
           trigger_type: triggerType,
-          trigger_config: triggerType === "event" ? { event: triggerEvent } : {},
+          trigger_config: triggerType === "event" ? triggerConfig : {},
           definition: {
             version: (q.data?.workflow?.definition?.version ?? 1) + 1,
             engine: "v1",
@@ -201,50 +213,22 @@ function EditPage() {
       </div>
 
       <Card className="p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <Label>الاسم</Label>
-            <Input
-              required
-              aria-label="اسم الأتمتة"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>نوع المُشغّل</Label>
-            <Select value={triggerType} onValueChange={(v) => setTriggerType(v as any)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="event">حدث</SelectItem>
-                <SelectItem value="manual">يدوي</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div>
+          <Label>الاسم</Label>
+          <Input
+            required
+            aria-label="اسم الأتمتة"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
-        {triggerType === "event" && (
-          <div>
-            <Label>الحدث</Label>
-            <Select value={triggerEvent} onValueChange={setTriggerEvent}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="crm.lead.created">crm.lead.created</SelectItem>
-                <SelectItem value="crm.lead.assigned">crm.lead.assigned</SelectItem>
-                <SelectItem value="crm.opportunity.created">crm.opportunity.created</SelectItem>
-                <SelectItem value="crm.opportunity.stage_changed">
-                  crm.opportunity.stage_changed
-                </SelectItem>
-                <SelectItem value="messaging.message.received">
-                  messaging.message.received
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <TriggerForm
+          triggerType={triggerType}
+          onTriggerType={setTriggerType}
+          config={triggerConfig}
+          onConfig={setTriggerConfig}
+          stages={stageOptions}
+        />
         <div>
           <Label>الوصف</Label>
           <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} />
@@ -283,7 +267,7 @@ function EditPage() {
                         onChange={(e) => updateStep(i, { label: e.target.value })}
                         placeholder="اسم الخطوة"
                       />
-                      <Badge variant="outline">{s.type}</Badge>
+                      <Badge variant="outline">{STEP_TYPE_LABELS[s.type] ?? s.type}</Badge>
                       <code className="text-xs text-muted-foreground">{s.id}</code>
                     </div>
                     {s.type === "action" && (
@@ -292,7 +276,16 @@ function EditPage() {
                           <Label className="text-xs">الإجراء</Label>
                           <Select
                             value={s.action}
-                            onValueChange={(v) => updateStep(i, { action: v })}
+                            onValueChange={(v) =>
+                              updateStep(i, {
+                                action: v,
+                                // A message or alert step starts from its own form defaults; the old JSON drafts are dropped.
+                                ...(isMessageAction(v) && !isMessageAction(s.action) ? { config: defaultMessageConfig(v) } : {}),
+                                ...(isMessageAction(v) && s.action !== v && isMessageAction(s.action) ? { config: defaultMessageConfig(v) } : {}),
+                                _jsonDrafts: undefined,
+                                _jsonErrors: undefined,
+                              })
+                            }
                           >
                             <SelectTrigger>
                               <SelectValue />
@@ -300,38 +293,37 @@ function EditPage() {
                             <SelectContent>
                               {(actionsQ.data?.actions ?? []).map((a: string) => (
                                 <SelectItem key={a} value={a}>
-                                  {a}
+                                  {actionLabel(a)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
-                        <div>
-                          <Label className="text-xs">الإعدادات (JSON)</Label>
-                          <Textarea
-                            className="font-mono text-xs"
-                            rows={3}
-                            value={s._jsonDrafts?.config ?? JSON.stringify(s.config ?? {}, null, 2)}
-                            aria-invalid={s._jsonErrors?.config || undefined}
-                            onBlur={() =>
-                              s._jsonErrors?.config &&
-                              toast.error("صيغة JSON غير صحيحة؛ صححها قبل الحفظ")
-                            }
-                            onChange={(e) => editJson(i, "config", e.target.value)}
-                          />
-                        </div>
+                        {!isMessageAction(s.action) && (
+                          <div>
+                            <Label className="text-xs">الإعدادات (JSON)</Label>
+                            <Textarea
+                              className="font-mono text-xs"
+                              rows={3}
+                              value={s._jsonDrafts?.config ?? JSON.stringify(s.config ?? {}, null, 2)}
+                              aria-invalid={s._jsonErrors?.config || undefined}
+                              onBlur={() =>
+                                s._jsonErrors?.config &&
+                                toast.error("صيغة JSON غير صحيحة؛ صححها قبل الحفظ")
+                              }
+                              onChange={(e) => editJson(i, "config", e.target.value)}
+                            />
+                          </div>
+                        )}
                       </div>
+                    )}
+                    {s.type === "action" && isMessageAction(s.action) && (
+                      <MessageStepForm action={s.action} config={s.config ?? {}} onChange={(config) => updateStep(i, { config })} />
                     )}
                     {s.type === "delay" && (
                       <div>
-                        <Label className="text-xs">الدقائق</Label>
-                        <Input
-                          type="number"
-                          value={s.duration_minutes}
-                          onChange={(e) =>
-                            updateStep(i, { duration_minutes: Number(e.target.value) })
-                          }
-                        />
+                        <Label className="text-xs">انتظر مدة</Label>
+                        <DurationInput minutes={Number(s.duration_minutes) || 0} onChange={(duration_minutes) => updateStep(i, { duration_minutes })} label="مدة الانتظار" />
                       </div>
                     )}
                     {s.type === "wait_for_event" && (
@@ -344,14 +336,8 @@ function EditPage() {
                           />
                         </div>
                         <div>
-                          <Label className="text-xs">مهلة (دقائق)</Label>
-                          <Input
-                            type="number"
-                            value={s.timeout_minutes}
-                            onChange={(e) =>
-                              updateStep(i, { timeout_minutes: Number(e.target.value) })
-                            }
-                          />
+                          <Label className="text-xs">مهلة الانتظار</Label>
+                          <DurationInput minutes={Number(s.timeout_minutes) || 0} onChange={(timeout_minutes) => updateStep(i, { timeout_minutes })} label="مهلة الانتظار" />
                         </div>
                         <div className="col-span-2">
                           <Label className="text-xs">شرط المطابقة (JSON)</Label>
