@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { getAutomationSettings, saveAutomationSettings } from "@/modules/workflow";
 
@@ -63,6 +64,11 @@ export function SettingsTab() {
         <div><Label>أطول فاصل بين رسالتين (ثانية)</Label><Input type="number" min={0} value={form.gap_max_seconds} disabled={!canManage} onChange={(e) => set({ gap_max_seconds: Number(e.target.value) })} /></div>
         <div className="sm:col-span-2"><Label>إلغاء الرسالة المؤجلة بعد (دقيقة)</Label><Input type="number" min={5} value={form.defer_ttl_minutes} disabled={!canManage} onChange={(e) => set({ defer_ttl_minutes: Number(e.target.value) })} />
           <p className="text-xs text-muted-foreground mt-1">رسالة أُجّلت خارج ساعات الإرسال أو بسبب الحد اليومي تُلغى إن لم تُرسل خلال هذه المدة.</p></div>
+      </Card>
+      <Card className="p-4 space-y-2">
+        <Label>وضع التجربة: الأرقام الوحيدة المسموح الإرسال لها (اختياري)</Label>
+        <Textarea rows={3} dir="ltr" disabled={!canManage} placeholder={"905xxxxxxxxx\nمثال: رقم واحد في كل سطر"} value={(form.test_recipients ?? []).join("\n")} onChange={(e) => set({ test_recipients: e.target.value.split(/[\n,]+/).map((x: string) => x.trim()).filter(Boolean) })} />
+        <p className="text-xs text-muted-foreground">إذا كتبت هنا أرقاماً أو إيميلات فلن تُرسل الأتمتة إلا إليها، وأي عميل آخر يُتخطّى مع السبب. اتركه فارغاً في الاستعمال العادي. استعمله دائماً عند تجربة الأتمتة.</p>
       </Card>
       <Button disabled={!canManage || mut.isPending} onClick={() => mut.mutate(form)}>حفظ الإعدادات</Button>
     </div>

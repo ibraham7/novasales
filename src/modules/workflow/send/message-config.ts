@@ -22,6 +22,8 @@ export function validateMessageStep(action: string, config: Record<string, unkno
     if (config.kind !== undefined && config.kind !== "service" && config.kind !== "promo") return "نوع الرسالة: خدمة أو ترويج";
     if (config.account !== undefined && config.account !== "ticket" && config.account !== "owner") return "رقم الواتساب المرسِل: محادثة التذكرة أو رقم المندوب";
     if (config.channel_account_id !== undefined && !(typeof config.channel_account_id === "string" && UUID.test(config.channel_account_id))) return "معرّف حساب الواتساب غير صحيح";
+    const once = config.once_per_contact_days;
+    if (once !== undefined && !(Number.isInteger(once) && (once as number) >= 0 && (once as number) <= 3650)) return "«مرة واحدة لكل عميل» يجب أن تكون عدد أيام من 0 إلى 3650";
     if (action === "message.email") {
       const subject = textProblem("موضوع الرسالة", config.subject, 200);
       if (subject) return subject;

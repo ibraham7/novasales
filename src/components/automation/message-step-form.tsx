@@ -101,6 +101,12 @@ export function MessageStepForm({ action, config, onChange }: { action: string; 
               الكلمات بين أقواس مثل <code dir="ltr">{"{مرحباً|أهلاً}"}</code> تُختار واحدة منها لكل عميل. ({wordingCount(String(config.body ?? ""))} صياغة ممكنة)
             </p>
           </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <input type="checkbox" id="once-per-contact" checked={Number(config.once_per_contact_days) > 0} onChange={(e) => set({ once_per_contact_days: e.target.checked ? 30 : 0 })} />
+            <label htmlFor="once-per-contact">أرسلها مرة واحدة فقط لكل عميل خلال</label>
+            <input type="number" min={1} max={3650} className="w-20 rounded border bg-background px-2 py-1" disabled={!(Number(config.once_per_contact_days) > 0)} value={Number(config.once_per_contact_days) > 0 ? Number(config.once_per_contact_days) : ""} onChange={(e) => set({ once_per_contact_days: Math.max(1, Number(e.target.value) || 1) })} />
+            <span>يوماً</span>
+          </div>
           {kind === "service" && (
             <label className="flex items-center gap-2 text-xs">
               <input type="checkbox" checked={config.allow_first_contact === true} onChange={(e) => set({ allow_first_contact: e.target.checked })} />

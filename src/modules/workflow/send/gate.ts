@@ -3,6 +3,7 @@
  * «send», «skip» (with a reason, never sent) or «defer» (hold until a time). The checks run in this order:
  *   1. the same message for the same event was already sent or is waiting      → skip
  *   2. automatic sending is switched off for the organization (the default)    → skip
+ *   2b. test mode: a recipient list is set and this one is not on it           → skip
  *   3. the customer asked not to be messaged (stop list)                       → skip
  *   4. promotional message without the customer's explicit consent             → skip
  *      service message to someone who never wrote to us (unless allowed)       → skip
@@ -26,6 +27,8 @@ export type GateSettings = {
   gap_max_seconds: number;
   /** How long a held message may wait before it is dropped as expired. */
   defer_ttl_minutes: number;
+  /** Test mode: when not empty, automatic messages go ONLY to these numbers / emails. */
+  test_recipients: string[];
 };
 
 /** What an organization without saved settings gets: automatic sending OFF. */
@@ -38,7 +41,16 @@ export const DEFAULT_SETTINGS: GateSettings = {
   gap_min_seconds: 45,
   gap_max_seconds: 180,
   defer_ttl_minutes: 720,
+  test_recipients: [],
 };
+
+/** Does this recipient match one of the allowed ones? Numbers compare by their last 10 digits (05… and 905… are the same line). */
+export function isTestRecipient(list: string[], to: string | null | undefined): boolean {
+  if (!to) return false;
+  const isEmail = to.includes("@");
+  const tail = (v: string) => v.replace(/\D/g, "").slice(-10);
+  return list.some((x) => (isEmail ? x.trim().toLowerCase() === to.trim().toLowerCase() : !x.includes("@") && tail(x).length >= 7 && tail(x) === tail(to)));
+}
 
 export type GateFacts = {
   channel: SendChannel;
@@ -48,6 +60,7 @@ export type GateFacts = {
   duplicate: boolean;
   blocked: boolean;
   promoConsent: boolean;
+  recipient?: string | null;
   hasPriorContact: boolean;
   allowFirstContact: boolean;
   /** Messages already sent today (in the organization's time zone) from the same sender. */
@@ -63,7 +76,7 @@ export type GateDecision =
   | { action: "skip"; code: SkipCode; reason: string }
   | { action: "defer"; code: DeferCode; reason: string; notBefore: Date };
 
-export type SkipCode = "duplicate" | "sending_off" | "opted_out" | "no_promo_consent" | "no_prior_contact" | "bad_settings";
+export type SkipCode = "duplicate" | "sending_off" | "opted_out" | "no_promo_consent" | "no_prior_contact" | "bad_settings" | "not_test_recipient";
 export type DeferCode = "outside_hours" | "daily_limit" | "gap";
 
 /** Arabic reasons for every outcome, also for those decided outside the gate (kept together so the run log reads one way). */
@@ -74,6 +87,7 @@ export const REASONS: Record<string, string> = {
   no_promo_consent: "رسالة ترويجية وليس لدى العميل موافقة صريحة",
   no_prior_contact: "لم يراسلنا هذا العميل من قبل؛ رسائل الخدمة تُرسل لمن راسلنا فقط",
   bad_settings: "إعدادات الإرسال غير صالحة",
+  not_test_recipient: "وضع التجربة مفعّل: هذا الرقم ليس ضمن الأرقام المسموح الإرسال لها",
   outside_hours: "خارج ساعات الإرسال؛ ستُرسل عند فتحها",
   daily_limit: "بلغنا الحد اليومي؛ ستُرسل عند فتح ساعات الإرسال القادمة",
   gap: "فاصل بين الرسائل؛ ستُرسل بعد لحظات",
@@ -103,6 +117,7 @@ export function evaluateGate(f: GateFacts): GateDecision {
   const skip = (code: SkipCode): GateDecision => ({ action: "skip", code, reason: REASONS[code]! });
   if (f.duplicate) return skip("duplicate");
   if (!f.settings.sending_enabled) return skip("sending_off");
+  if ((f.settings.test_recipients?.length ?? 0) > 0 && !isTestRecipient(f.settings.test_recipients, f.recipient)) return skip("not_test_recipient");
   if (f.blocked) return skip("opted_out");
   if (f.kind === "promo" && !f.promoConsent) return skip("no_promo_consent");
   if (f.kind === "service" && !f.hasPriorContact && !f.allowFirstContact) return skip("no_prior_contact");

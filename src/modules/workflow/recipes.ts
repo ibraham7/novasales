@@ -52,11 +52,11 @@ export const SALES_RECIPES: Recipe[] = [
   {
     id: "welcome-new-ticket",
     title: "ترحيب بالعميل الجديد",
-    description: "عند فتح تذكرة جديدة يصل العميل ترحيب قصير باسمه. يُرسل فقط لمن راسلنا من قبل (لا بدء محادثة باردة).",
+    description: "عند فتح تذكرة جديدة يصل العميل ترحيب قصير باسمه، مرة واحدة فقط لكل عميل خلال سنة (حتى لو فُتحت له عدة تذاكر). يُرسل فقط لمن راسلنا من قبل.",
     category: "عملاء جدد",
     audience: "خدمة",
     trigger: { type: "event", config: { event: "crm.opportunity.created" } },
-    steps: [msg("welcome", "رسالة الترحيب", "{أهلاً|مرحباً} {first_name}، شكراً لتواصلك مع {org}. معك {assignee} وسأساعدك بكل سرور.")],
+    steps: [msg("welcome", "رسالة الترحيب", "{أهلاً|مرحباً} {first_name}، شكراً لتواصلك مع {org}. معك {assignee} وسأساعدك بكل سرور.", { once_per_contact_days: 365 })],
   },
   {
     id: "no-reply-followups",
