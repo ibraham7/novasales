@@ -66,3 +66,15 @@ export function placeInColumn(columnIds: string[], draggedId: string, targetId: 
   const same = without.length === columnIds.length && without.every((id, i) => id === columnIds[i]);
   return same ? null : without;
 }
+
+/**
+ * A column's tickets with the ones that have a new (unread) message first, the latest message on top; the
+ * others follow in the order they came in. Keeps the input untouched.
+ */
+export function floatUnreadFirst<T extends { unread_count?: number | null; last_message_at?: string | null }>(items: T[]): T[] {
+  const unread = items.filter((o) => Number(o.unread_count ?? 0) > 0);
+  if (!unread.length) return items;
+  unread.sort((a, b) => String(b.last_message_at ?? "").localeCompare(String(a.last_message_at ?? "")));
+  const first = new Set<T>(unread);
+  return [...unread, ...items.filter((o) => !first.has(o))];
+}

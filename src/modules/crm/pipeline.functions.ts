@@ -86,6 +86,8 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
       limits: z.record(z.number().int().min(1).max(500)).optional(),
       /** ترتيب التذاكر داخل كل مرحلة (الافتراضي: الأحدث أولاً) */
       sort: z.enum(["newest", "oldest", "value_desc", "value_asc", "manual"]).optional(),
+      /** Also load every ticket with an unread message, even if it is beyond the newest few of its stage, so it can go to the top. */
+      withUnread: z.boolean().optional(),
     }).parse(d ?? {})
   )
   .handler(async ({ data }) => {
@@ -136,6 +138,14 @@ export const listOpportunitiesBoard = createServerFn({ method: "GET" })
           stageRows.map((st: any) => checkedRows(build(sort).eq("stage_id", st.id).limit(data.limits?.[st.id] ?? data.perStage!))),
         );
         for (const page of pages) out.push(...page);
+        // A ticket with a new message must reach the top of its column even when it is older than the newest few.
+        if (data.withUnread) {
+          const have = new Set(out.map((o) => o.id));
+          const sessions = await checkedRows(db.from("msg_sessions").select("id").eq("organization_id", organizationId).gte("unread_count", 1).limit(2000)).catch(() => [] as any[]);
+          const links = sessions.length ? await readByIds(db, "crm_opportunity_sessions", "opportunity_id,session_ref", sessions.map((x: any) => x.id), organizationId, "session_ref").catch(() => [] as any[]) : [];
+          const wanted = [...new Set(links.map((l: any) => l.opportunity_id as string))].filter((id) => !have.has(id));
+          for (let i = 0; i < wanted.length; i += 100) out.push(...(await checkedRows(build(sort).in("id", wanted.slice(i, i + 100)))));
+        }
       } else {
         const query = build(sort);
         const limit = data.all ? 3000 : 500;

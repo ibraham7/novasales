@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatMoney, formatTotals, isBoardSort, parseAmount, placeInColumn, sumByCurrency } from "../src/modules/crm/board-money.ts";
+import { formatMoney, formatTotals, floatUnreadFirst, isBoardSort, parseAmount, placeInColumn, sumByCurrency } from "../src/modules/crm/board-money.ts";
 
 test("totals are kept per currency; empty, zero and invalid values count for nothing", () => {
   const totals = sumByCurrency([{ value: 100, currency: "USD" }, { value: "250.5", currency: "USD" }, { value: 4000, currency: "TRY" }, { value: 0, currency: "USD" }, { value: null }, { value: -5, currency: "USD" }, { value: "abc" }]);
@@ -47,4 +47,19 @@ test("dropping a card on another puts it above or below it; nothing changes when
   assert.equal(placeInColumn(column, "b", "a", true), null);
   assert.equal(placeInColumn(column, "a", "b", false), null);
   assert.equal(placeInColumn(column, "x", "missing", true), null);
+});
+
+test("tickets with a new message go to the top, the latest message first; the rest keep their order", () => {
+  const items = [
+    { id: "a", unread_count: 0, last_message_at: "2026-11-21T10:00:00Z" },
+    { id: "b", unread_count: 2, last_message_at: "2026-11-21T08:00:00Z" },
+    { id: "c", unread_count: 0, last_message_at: null },
+    { id: "d", unread_count: 1, last_message_at: "2026-11-21T09:30:00Z" },
+    { id: "e" },
+  ];
+  assert.deepEqual(floatUnreadFirst(items).map((o) => o.id), ["d", "b", "a", "c", "e"]);
+  // nothing unread: the very same list comes back
+  const calm = items.filter((o) => !o.unread_count);
+  assert.equal(floatUnreadFirst(calm), calm);
+  assert.deepEqual(items.map((o) => o.id), ["a", "b", "c", "d", "e"]);
 });
