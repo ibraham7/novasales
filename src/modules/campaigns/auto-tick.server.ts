@@ -28,6 +28,13 @@ export function startCampaignTicker() {
       console.error("[email] run failed", error instanceof Error ? error.message : error);
     }
     try {
+      const { runWorkflowTick } = await import("@/modules/workflow/auto-tick.server");
+      const result = await runWorkflowTick();
+      if (result && (result.processed || result.failed || result.skipped)) console.log(`[workflow] processed ${result.processed}, failed ${result.failed}, skipped ${result.skipped}`);
+    } catch (error) {
+      console.error("[workflow] run failed", error instanceof Error ? error.message : error);
+    }
+    try {
       const { tickRedistributionSends } = await import("@/modules/assignments/redistribute-send.server");
       const { processed } = await tickRedistributionSends();
       if (processed) console.log(`[redistribute] sent ${processed}`);

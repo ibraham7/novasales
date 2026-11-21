@@ -204,6 +204,11 @@ export const assignOpportunity = createServerFn({ method: "POST" })
       })
       .eq("id", opp.id);
     if (updErr) throw new Error(updErr.message);
+    // This flow records its own «assigned» event below (with the welcome details); drop the one the database recorded.
+    {
+      const { skipTriggerEvents } = await import("@/modules/workflow/skip-events");
+      await skipTriggerEvents(db, { organizationId, opportunityIds: [opp.id], types: ["crm.opportunity.assigned"], since: new Date(Date.now() - 60_000).toISOString() });
+    }
 
     // Assignment audit row
     await db.from("asg_assignments").insert({

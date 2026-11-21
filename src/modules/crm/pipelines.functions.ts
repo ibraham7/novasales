@@ -346,13 +346,8 @@ export const moveOpportunityToStage = createServerFn({ method: "POST" })
         ref_id: opp.id,
         metadata: { stage_id: stage.id, stage_name: stage.name },
       }),
-      db.from("domain_events").insert({
-        organization_id: organizationId,
-        event_type: "crm.opportunity.stage_changed",
-        aggregate_type: "opportunity",
-        aggregate_id: opp.id,
-        payload: { stage_id: stage.id },
-      }),
+      // The «stage changed» event itself is recorded by the database (trigger wf_opportunity_events), with the previous
+      // and new stage, the customer and the owner. Recording it here too would run every automation twice.
     ]);
     return { ok: true };
   });

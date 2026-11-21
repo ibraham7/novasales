@@ -4,6 +4,7 @@
  * Planning is pure and the writes take the database as a parameter, so both are tested without Supabase.
  * Nothing here sends a message to a customer.
  */
+import { skipTriggerEvents } from "../workflow/skip-events.ts";
 
 export type Ticket = { id: string; lead_id: string | null; owner_agent_id: string | null; department_id: string | null; contact_id?: string | null };
 export type Move = { ticketId: string; leadId: string | null; from: string | null; to: string; departmentId: string | null; contactId?: string | null };
@@ -116,6 +117,8 @@ export async function applyRedistribution(db: any, input: { organizationId: stri
       const applied = part.filter((m) => done.has(m.ticketId));
       moved += applied.length;
       appliedMoves.push(...applied);
+      // The database recorded stage/owner events for these moves; none may start an automation that messages customers.
+      if (applied.length) await skipTriggerEvents(db, { organizationId: input.organizationId, opportunityIds: applied.map((m) => m.ticketId), types: ["crm.opportunity.stage_changed", "crm.opportunity.assigned"], since: stamp });
       const leadIds = applied.map((m) => m.leadId).filter((x): x is string => !!x);
       if (leadIds.length) {
         const { error: leadError } = await db.from("crm_leads").update({ owner_user_id: agent }).eq("organization_id", input.organizationId).in("id", leadIds);
