@@ -48,6 +48,10 @@ export const saveWorkflow = createServerFn({ method: "POST" })
     validateWorkflowDefinition(data.definition, data.is_active);
     if (data.trigger_type === "event" && !data.trigger_config.event)
       throw new Error("اختر حدثًا لتشغيل الأتمتة");
+    // Time-based events need their duration; «stop when…» choices must be known ones.
+    const { validateTriggerConfig } = await import("./trigger-config");
+    const triggerProblem = validateTriggerConfig(data.trigger_type, data.trigger_config);
+    if (triggerProblem) throw new Error(triggerProblem);
     const { ensureActionsRegistered, getAction } = await import("./actions/registry.server");
     await ensureActionsRegistered();
     for (const step of data.definition.steps ?? [])

@@ -27,6 +27,9 @@ export async function dispatchEvent(evt: {
   type: string;
   payload: Record<string, unknown>;
 }): Promise<void> {
+  // 0) Stop what must stop (a customer reply, a moved ticket) and understand exact stop/yes/no answers, BEFORE anything new starts.
+  const { runPreDispatch } = await import("./pre-dispatch.server");
+  await runPreDispatch({ id: evt.id, organizationId: evt.organizationId, type: evt.type, payload: evt.payload as Record<string, any> });
   // 1) Start new runs for matching workflows
   const { data: wfs, error: workflowError } = await db
     .from("wf_workflows")
