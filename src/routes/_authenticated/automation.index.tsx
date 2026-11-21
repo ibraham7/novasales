@@ -203,7 +203,7 @@ function AutomationPage() {
       </div>
 
       <Tabs defaultValue="rules">
-        <TabsList>
+        <TabsList className="max-w-full overflow-x-auto justify-start">
           <TabsTrigger value="rules">القواعد</TabsTrigger>
           <TabsTrigger value="recipes">قوالب جاهزة</TabsTrigger>
           <TabsTrigger value="messages">سجل الرسائل</TabsTrigger>

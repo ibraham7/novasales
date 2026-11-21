@@ -8,7 +8,7 @@
  * closed as «interrupted» later and is never retried.
  */
 import { dayStart } from "../../campaigns/send-schedule.ts";
-import { DEFAULT_SETTINGS, REASONS, evaluateGate, type GateDecision, type GateSettings, type SendChannel, type SendKind } from "./gate.ts";
+import { DEFAULT_SETTINGS, REASONS, evaluateGate, isTestRecipient, type GateDecision, type GateSettings, type SendChannel, type SendKind } from "./gate.ts";
 
 export type SendRequest = {
   organizationId: string;
@@ -60,6 +60,7 @@ const pickSettings = (row: any): Partial<GateSettings> => ({
   gap_min_seconds: row.gap_min_seconds,
   gap_max_seconds: row.gap_max_seconds,
   defer_ttl_minutes: row.defer_ttl_minutes,
+  test_recipients: Array.isArray(row.test_recipients) ? row.test_recipients : [],
 });
 
 /** Is this address on the organization's «do not send» list? (The same list the outbound campaigns use.) */
@@ -131,7 +132,7 @@ async function decide(deps: SendDeps, req: SendRequest, now: Date, duplicate: bo
   const { db } = deps;
   const settings = await loadSendSettings(db, req.organizationId);
   // Only look up what the decision may need, so a switched-off organization costs two queries.
-  const off = !settings.sending_enabled;
+  const off = !settings.sending_enabled || ((settings.test_recipients?.length ?? 0) > 0 && !isTestRecipient(settings.test_recipients, req.to));
   const [blocked, prior, consent, stats] = off || duplicate
     ? [false, false, false, { sentToday: 0, lastSentAt: null as Date | null }]
     : await Promise.all([
@@ -141,7 +142,7 @@ async function decide(deps: SendDeps, req: SendRequest, now: Date, duplicate: bo
         sentStats(db, req, settings, now),
       ]);
   const decision = evaluateGate({
-    channel: req.channel, kind: req.kind, now, settings, duplicate,
+    channel: req.channel, kind: req.kind, now, settings, duplicate, recipient: req.to,
     blocked, promoConsent: consent, hasPriorContact: prior, allowFirstContact: !!req.allowFirstContact,
     sentToday: stats.sentToday, lastSentAt: stats.lastSentAt, gapSeed: stats.lastSentAt?.toISOString(),
   });

@@ -27,6 +27,7 @@ export const getAutomationSettings = createServerFn({ method: "GET" }).handler(a
       gap_min_seconds: row.gap_min_seconds ?? DEFAULT_SETTINGS.gap_min_seconds,
       gap_max_seconds: row.gap_max_seconds ?? DEFAULT_SETTINGS.gap_max_seconds,
       defer_ttl_minutes: row.defer_ttl_minutes ?? DEFAULT_SETTINGS.defer_ttl_minutes,
+      test_recipients: Array.isArray(row.test_recipients) ? (row.test_recipients as string[]) : [],
     },
   };
 });
@@ -44,6 +45,7 @@ export const saveAutomationSettings = createServerFn({ method: "POST" })
         gap_min_seconds: z.number().int().min(0).max(3600),
         gap_max_seconds: z.number().int().min(0).max(3600),
         defer_ttl_minutes: z.number().int().min(5).max(10080),
+        test_recipients: z.array(z.string().trim().min(5).max(120)).max(20).default([]),
       })
       .parse(d),
   )

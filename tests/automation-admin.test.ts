@@ -26,7 +26,7 @@ function setup(seed: Record<string, any[]> = {}, opts: { canManage?: boolean; ge
     exports,
     require: (name: string) => (name === "@tanstack/react-start" ? { createServerFn } : name === "./access.server" ? { workflowAccess: async (write?: boolean) => { if (write && !access.canManage) throw new Error("Forbidden"); return access; } } : { z }),
     __deps: {
-      "./send/gate": { DEFAULT_SETTINGS: { sending_enabled: false, timezone: "Europe/Istanbul", send_window_start: "09:00", send_window_end: "20:00", daily_limit: 100, gap_min_seconds: 45, gap_max_seconds: 180, defer_ttl_minutes: 720 } },
+      "./send/gate": { DEFAULT_SETTINGS: { sending_enabled: false, timezone: "Europe/Istanbul", send_window_start: "09:00", send_window_end: "20:00", daily_limit: 100, gap_min_seconds: 45, gap_max_seconds: 180, defer_ttl_minutes: 720, test_recipients: [] } },
       "../campaigns/send-schedule": { scheduleProblem: (s: any) => (s.windowEnd <= s.windowStart ? "ساعات الإرسال غير صحيحة" : null) },
       "./recipes": { RECIPES, recipeDefinition },
       "./definition": { validateWorkflowDefinition: () => {} },

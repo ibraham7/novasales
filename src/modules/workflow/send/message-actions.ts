@@ -30,6 +30,18 @@ export const ALERTS_OFF_REASON = "تنبيهات الفريق مطفأة لهذ�
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
+/** «Once per customer»: true when this same step already sent (or holds) a message to this customer within the last N days. */
+export async function alreadySentToContact(db: any, input: { organizationId: string; workflowId: string; stepId?: string | null; contactId: string | null; days: number; now: Date }): Promise<boolean> {
+  if (!(input.days > 0) || !input.contactId) return false;
+  const since = new Date(input.now.getTime() - input.days * 86_400_000).toISOString();
+  let q = db.from("wf_message_log").select("id").eq("organization_id", input.organizationId).eq("workflow_id", input.workflowId).eq("contact_id", input.contactId).in("status", ["sent", "sending", "deferred"]).gte("created_at", since).limit(1);
+  if (input.stepId) q = q.eq("step_id", input.stepId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? []).length > 0;
+}
+const ONCE_REASON = "أُرسلت هذه الرسالة لهذا العميل من قبل (مرة واحدة لكل عميل)";
+
 function fromOutcome(o: SendOutcome, extra: Record<string, unknown>): ActionResult {
   if (o.status === "failed") return { ok: false, error: o.reason ?? "فشل الإرسال", output: { outcome: "failed", code: o.code, reason: o.reason, log_id: o.logId, ...extra } };
   return { ok: true, output: { outcome: o.status, code: o.code, reason: o.reason, log_id: o.logId, ...(o.notBefore ? { not_before: o.notBefore } : {}), ...extra } };
@@ -43,6 +55,7 @@ export function createMessageActions(deps: MessageActionDeps): Record<"message.w
   const whatsapp: ActionHandler = async (config, ctx) => {
     const message = await loadMessageContext(db, ctx.organizationId, ctx.triggerPayload, config);
     const kind = config.kind === "promo" ? "promo" : "service";
+    if (await alreadySentToContact(db, { organizationId: ctx.organizationId, workflowId: ctx.workflowId, stepId: ctx.stepId, contactId: message.contactId, days: Number(config.once_per_contact_days ?? 0), now: clock() })) return { ok: true, output: { outcome: "skipped", code: "once_per_contact", reason: ONCE_REASON, channel: "whatsapp", kind } };
     const rendered = renderMessage(String(config.body ?? ""), message.vars, deps.random);
     const outcome = await sendThroughGate(
       { db, senders: deps.senders, now: clock() },
@@ -59,6 +72,7 @@ export function createMessageActions(deps: MessageActionDeps): Record<"message.w
   const email: ActionHandler = async (config, ctx) => {
     const message = await loadMessageContext(db, ctx.organizationId, ctx.triggerPayload, config);
     const kind = config.kind === "promo" ? "promo" : "service";
+    if (await alreadySentToContact(db, { organizationId: ctx.organizationId, workflowId: ctx.workflowId, stepId: ctx.stepId, contactId: message.contactId, days: Number(config.once_per_contact_days ?? 0), now: clock() })) return { ok: true, output: { outcome: "skipped", code: "once_per_contact", reason: ONCE_REASON, channel: "email", kind } };
     const body = renderMessage(String(config.body ?? ""), message.vars, deps.random);
     const outcome = await sendThroughGate(
       { db, senders: deps.senders, now: clock() },
