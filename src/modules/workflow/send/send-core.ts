@@ -224,14 +224,15 @@ const requestFromRow = (row: any): SendRequest => ({
  * One round over the held messages that are due: an expired one is dropped, the others pass the gate again with
  * fresh facts (the customer may have asked to stop since). Only rows this round claims are touched.
  */
-export async function retryDeferred(deps: SendDeps, limit = 50): Promise<{ sent: number; deferred: number; skipped: number; failed: number }> {
+export async function retryDeferred(deps: SendDeps, limit = 50, organizationId?: string): Promise<{ sent: number; deferred: number; skipped: number; failed: number }> {
   const now = deps.now ?? new Date();
   const { db } = deps;
   const stamp = now.toISOString();
   const out = { sent: 0, deferred: 0, skipped: 0, failed: 0 };
   // A row stuck in «sending» for 10 minutes: closed as interrupted, never retried.
-  await db.from("wf_message_log").update({ status: "failed", reason_code: "interrupted", reason: REASONS.interrupted, updated_at: stamp }).eq("status", "sending").lt("updated_at", new Date(now.getTime() - 10 * 60_000).toISOString());
-  const { data: due, error } = await db.from("wf_message_log").select("*").eq("status", "deferred").lte("not_before", stamp).order("not_before").limit(limit);
+  const scoped = (q: any) => (organizationId ? q.eq("organization_id", organizationId) : q);
+  await scoped(db.from("wf_message_log").update({ status: "failed", reason_code: "interrupted", reason: REASONS.interrupted, updated_at: stamp }).eq("status", "sending").lt("updated_at", new Date(now.getTime() - 10 * 60_000).toISOString()));
+  const { data: due, error } = await scoped(db.from("wf_message_log").select("*").eq("status", "deferred").lte("not_before", stamp).order("not_before").limit(limit));
   if (error) {
     if (MISSING.has(error.code)) return out;
     throw new Error(error.message);
@@ -258,4 +259,14 @@ export async function retryDeferred(deps: SendDeps, limit = 50): Promise<{ sent:
     }
   }
   return out;
+}
+
+/** Are staff alerts switched on for this organization? OFF unless someone turned them on (also OFF before the SQL is run). */
+export async function loadAlertsEnabled(db: any, organizationId: string): Promise<boolean> {
+  const { data, error } = await db.from("wf_settings").select("alerts_enabled").eq("organization_id", organizationId).maybeSingle();
+  if (error) {
+    if (MISSING.has(error.code) || error.code === "42703") return false;
+    throw new Error(error.message);
+  }
+  return data?.alerts_enabled === true;
 }

@@ -249,6 +249,7 @@ export async function advanceRun(runId: string): Promise<void> {
           organizationId: run.organization_id,
           runId,
           workflowId: run.workflow_id,
+          stepId: step.id,
           triggerPayload: (run.context?.trigger ?? {}) as Record<string, unknown>,
           runContext: (run.context?.data ?? {}) as Record<string, unknown>,
         });
