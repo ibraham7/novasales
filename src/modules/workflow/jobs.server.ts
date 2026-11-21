@@ -17,5 +17,21 @@ export async function tickWorkflows(organizationId?: string) {
   } catch (e) {
     console.error("[workflow] held messages failed", e instanceof Error ? e.message : e);
   }
-  return { ...result, messages };
+  // Time-based triggers (stayed in a stage, no reply, stale, overdue task). A scan on the worker's own round is at most
+  // once every 5 minutes; the manual «process now» button of one organization always scans.
+  let time: { workflows: number; found: number; started: number; failed: number } | null = null;
+  try {
+    if (organizationId || Date.now() - lastTimeScan >= TIME_SCAN_EVERY_MS) {
+      lastTimeScan = Date.now();
+      const { scanTimeTriggers } = await import("./time-triggers");
+      const { startRun } = await import("./executor.server");
+      time = await scanTimeTriggers({ db, startRun }, organizationId);
+    }
+  } catch (e) {
+    console.error("[workflow] time triggers failed", e instanceof Error ? e.message : e);
+  }
+  return { ...result, messages, time };
 }
+
+const TIME_SCAN_EVERY_MS = 5 * 60_000;
+let lastTimeScan = 0;
