@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { CalendarGrid, type MeetingRow } from "@/components/calendar/calendar-grid";
 import { MeetingDialog, type MeetingDraft } from "@/components/calendar/meeting-dialog";
 import { MeetingDetails } from "@/components/calendar/meeting-details";
-import { disableCalendar, enableCalendar, getCalendarState, listCalendarOwners, listMeetings } from "@/modules/calendar";
+import { disableCalendar, enableCalendar, exportMeetingsIcs, getCalendarState, listCalendarOwners, listMeetings } from "@/modules/calendar";
 import { fetchRange, moveAnchor, rangeFor, type CalendarView } from "@/modules/calendar/view";
 import { localParts, addDays } from "@/modules/calendar/time";
 
@@ -27,6 +27,7 @@ function CalendarPage() {
   const ownersFn = useServerFn(listCalendarOwners);
   const enableFn = useServerFn(enableCalendar);
   const disableFn = useServerFn(disableCalendar);
+  const icsFn = useServerFn(exportMeetingsIcs);
   const state = useQuery({ queryKey: ["cal-state"], queryFn: () => stateFn(), retry: false });
   const tz = state.data?.viewerTimezone ?? "UTC";
   const today = useMemo(() => localParts(Date.now(), tz).date, [tz]);
@@ -50,6 +51,18 @@ function CalendarPage() {
     mutationFn: (on: boolean) => (on ? enableFn() : disableFn()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["cal-state"] }); toast.success("تم تحديث حالة التقويم"); },
     onError: (e: any) => toast.error(e.message),
+  });
+
+  // Download the visible range (the person's own meetings, or the chosen agent's for a manager) as an ICS file.
+  const download = useMutation({
+    mutationFn: () => icsFn({ data: { from: range!.from, to: range!.to, ownerId: owner || null } }),
+    onSuccess: ({ ics }) => {
+      const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "meetings.ics"; a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (e: any) => toast.error(e.message || "تعذر التصدير"),
   });
 
   if (state.isLoading) return <div className="p-6 text-center">جارِ التحميل...</div>;
@@ -122,6 +135,7 @@ function CalendarPage() {
       )}
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={() => setShowInactive((v) => !v)} className="rounded-full border px-3 py-0.5 text-xs font-semibold text-muted-foreground">{showInactive ? "إخفاء الملغاة" : "إظهار الملغاة"}</button>
+        <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={download.isPending} onClick={() => download.mutate()}>تصدير ICS</Button>
         {s.canManage && <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={toggle.isPending} onClick={() => { if (confirm("إيقاف التقويم لهذه المؤسسة؟ لن يستطيع أحد حجز اجتماعات جديدة. المواعيد الحالية تبقى محفوظة.")) toggle.mutate(false); }}>إيقاف التقويم</Button>}
       </div>
       <MeetingDialog open={dialog.open} onOpenChange={(o) => setDialog((p) => ({ ...p, open: o }))} tz={tz} today={today} canViewAll={s.canViewAll} meeting={dialog.meeting} draft={dialog.draft} />

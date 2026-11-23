@@ -65,6 +65,7 @@ import { listPipelines } from "@/modules/crm";
 import { getMergedChatForOpportunity, sendMessageFn, sendMediaMessageFn, deleteMessageFn, editMessageFn, syncOpportunityHistory, reactToMessageFn } from "@/modules/messaging";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { BookMeetingButton } from "@/components/calendar/book-meeting-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -149,6 +150,7 @@ function PipelineOppDetail() {
         )}
         <div className="ms-auto flex items-center gap-2">
           <SyncHistoryButton oppId={oppId} />
+          <BookMeetingButton opportunityId={oppId} contactId={ws.contact?.id ?? null} contactName={ws.contact?.name ?? null} />
           <DeleteOpportunityButton oppId={oppId} contactName={ws.contact?.name ?? null} onDeleted={() => nav({ to: "/pipeline" })} />
         </div>
       </div>

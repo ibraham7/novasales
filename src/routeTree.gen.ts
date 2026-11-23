@@ -62,6 +62,7 @@ import { Route as AuthenticatedSettingsInvitationsRouteImport } from './routes/_
 import { Route as AuthenticatedSettingsIntegrationsRouteImport } from './routes/_authenticated/settings.integrations'
 import { Route as AuthenticatedSettingsCustomFieldsRouteImport } from './routes/_authenticated/settings.custom-fields'
 import { Route as AuthenticatedSettingsConversionsRouteImport } from './routes/_authenticated/settings.conversions'
+import { Route as AuthenticatedSettingsCalendarRouteImport } from './routes/_authenticated/settings.calendar'
 import { Route as AuthenticatedSettingsBroadcastsRouteImport } from './routes/_authenticated/settings.broadcasts'
 import { Route as AuthenticatedSettingsBillingRouteImport } from './routes/_authenticated/settings.billing'
 import { Route as AuthenticatedPipelineTrashRouteImport } from './routes/_authenticated/pipeline.trash'
@@ -366,6 +367,12 @@ const AuthenticatedSettingsConversionsRoute =
     path: '/conversions',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsCalendarRoute =
+  AuthenticatedSettingsCalendarRouteImport.update({
+    id: '/calendar',
+    path: '/calendar',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsBroadcastsRoute =
   AuthenticatedSettingsBroadcastsRouteImport.update({
     id: '/broadcasts',
@@ -544,6 +551,7 @@ export interface FileRoutesByFullPath {
   '/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
   '/settings/broadcasts': typeof AuthenticatedSettingsBroadcastsRoute
+  '/settings/calendar': typeof AuthenticatedSettingsCalendarRoute
   '/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
@@ -618,6 +626,7 @@ export interface FileRoutesByTo {
   '/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/settings/billing': typeof AuthenticatedSettingsBillingRoute
   '/settings/broadcasts': typeof AuthenticatedSettingsBroadcastsRoute
+  '/settings/calendar': typeof AuthenticatedSettingsCalendarRoute
   '/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
@@ -697,6 +706,7 @@ export interface FileRoutesById {
   '/_authenticated/pipeline/trash': typeof AuthenticatedPipelineTrashRoute
   '/_authenticated/settings/billing': typeof AuthenticatedSettingsBillingRoute
   '/_authenticated/settings/broadcasts': typeof AuthenticatedSettingsBroadcastsRoute
+  '/_authenticated/settings/calendar': typeof AuthenticatedSettingsCalendarRoute
   '/_authenticated/settings/conversions': typeof AuthenticatedSettingsConversionsRoute
   '/_authenticated/settings/custom-fields': typeof AuthenticatedSettingsCustomFieldsRoute
   '/_authenticated/settings/integrations': typeof AuthenticatedSettingsIntegrationsRoute
@@ -776,6 +786,7 @@ export interface FileRouteTypes {
     | '/pipeline/trash'
     | '/settings/billing'
     | '/settings/broadcasts'
+    | '/settings/calendar'
     | '/settings/conversions'
     | '/settings/custom-fields'
     | '/settings/integrations'
@@ -850,6 +861,7 @@ export interface FileRouteTypes {
     | '/pipeline/trash'
     | '/settings/billing'
     | '/settings/broadcasts'
+    | '/settings/calendar'
     | '/settings/conversions'
     | '/settings/custom-fields'
     | '/settings/integrations'
@@ -928,6 +940,7 @@ export interface FileRouteTypes {
     | '/_authenticated/pipeline/trash'
     | '/_authenticated/settings/billing'
     | '/_authenticated/settings/broadcasts'
+    | '/_authenticated/settings/calendar'
     | '/_authenticated/settings/conversions'
     | '/_authenticated/settings/custom-fields'
     | '/_authenticated/settings/integrations'
@@ -1361,6 +1374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsConversionsRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/calendar': {
+      id: '/_authenticated/settings/calendar'
+      path: '/calendar'
+      fullPath: '/settings/calendar'
+      preLoaderRoute: typeof AuthenticatedSettingsCalendarRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/broadcasts': {
       id: '/_authenticated/settings/broadcasts'
       path: '/broadcasts'
@@ -1586,6 +1606,7 @@ const AuthenticatedPipelineRouteWithChildren =
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsBillingRoute: typeof AuthenticatedSettingsBillingRoute
   AuthenticatedSettingsBroadcastsRoute: typeof AuthenticatedSettingsBroadcastsRoute
+  AuthenticatedSettingsCalendarRoute: typeof AuthenticatedSettingsCalendarRoute
   AuthenticatedSettingsConversionsRoute: typeof AuthenticatedSettingsConversionsRoute
   AuthenticatedSettingsCustomFieldsRoute: typeof AuthenticatedSettingsCustomFieldsRoute
   AuthenticatedSettingsIntegrationsRoute: typeof AuthenticatedSettingsIntegrationsRoute
@@ -1603,6 +1624,7 @@ interface AuthenticatedSettingsRouteChildren {
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsBillingRoute: AuthenticatedSettingsBillingRoute,
   AuthenticatedSettingsBroadcastsRoute: AuthenticatedSettingsBroadcastsRoute,
+  AuthenticatedSettingsCalendarRoute: AuthenticatedSettingsCalendarRoute,
   AuthenticatedSettingsConversionsRoute: AuthenticatedSettingsConversionsRoute,
   AuthenticatedSettingsCustomFieldsRoute:
     AuthenticatedSettingsCustomFieldsRoute,

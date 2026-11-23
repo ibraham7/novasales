@@ -60,10 +60,12 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
     label: "التكاملات",
     anyOf: ["api_keys.manage", "plugins.manage"],
   },
+  { prefix: "/settings/calendar", label: "التقويم", anyOf: ["calendar.view", "calendar.view_all", "calendar.book", "calendar.manage"] },
   {
     prefix: "/settings",
     label: "الإعدادات",
   },
+  { prefix: "/calendar", label: "التقويم", anyOf: ["calendar.view", "calendar.view_all", "calendar.book", "calendar.manage"] },
 
   {
     prefix: "/automation",

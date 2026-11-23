@@ -109,3 +109,63 @@ export const suggestMeetingTimes = createServerFn({ method: "POST" })
     const { actor, db } = await calendarAccess();
     return (await import("./service")).suggestTimes(db, actor, data);
   });
+
+const hhmm = z.string().regex(/^\d{2}:\d{2}$/);
+const weekday = z.number().int().min(0).max(6);
+const week = z.object({ weekday, start: hhmm, end: hhmm });
+
+export const listEntityMeetings = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => z.object({ opportunityId: id.nullable().optional(), leadId: id.nullable().optional(), contactId: id.nullable().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./service")).listEntityMeetings(db, actor, data);
+  });
+
+export const exportMeetingsIcs = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => z.object({ from: iso, to: iso, ownerId: id.nullable().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return { ics: await (await import("./service")).exportMeetingsIcs(db, actor, data) };
+  });
+
+export const getCalendarConfig = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => z.object({ userId: id.nullable().optional() }).parse(d ?? {}))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./settings")).getCalendarConfig(db, actor, data);
+  });
+
+export const saveCalendarOrgSettings = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ timezone: z.string().trim().min(3).max(64), workingDays: z.array(weekday).min(1).max(7), workStart: hhmm, workEnd: hhmm }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./settings")).saveOrgSettings(db, actor, data);
+  });
+
+export const saveCalendarSchedule = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ userId: id.nullable().optional(), availability: z.array(week).max(7), breaks: z.array(week).max(30), agentTimezone: z.string().trim().max(64).nullable().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./settings")).saveSchedule(db, actor, data);
+  });
+
+export const addCalendarTimeOff = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ userId: id.nullable().optional(), from: z.string().length(10), to: z.string().length(10), reason: z.string().max(200).nullable().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./settings")).addTimeOff(db, actor, data);
+  });
+
+export const deleteCalendarTimeOff = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./settings")).deleteTimeOff(db, actor, data.id);
+  });
+
+export const saveCalendarMeetingType = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: id.nullable().optional(), name: z.string().min(1).max(80), durationMinutes: z.number().int().min(5).max(600), color: z.string().regex(/^#[0-9a-fA-F]{6}$/), isActive: z.boolean().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./settings")).saveMeetingType(db, actor, data);
+  });
