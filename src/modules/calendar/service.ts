@@ -42,7 +42,7 @@ export async function getCalendarState(db: any, actor: Actor) {
   const s = await loadSettings(db, actor.organizationId);
   const { data: prefs } = await db.from("cal_agent_prefs").select("timezone").eq("organization_id", actor.organizationId).eq("user_id", actor.userId).maybeSingle();
   return {
-    enabled: s.enabled, timezone: s.timezone as string, viewerTimezone: (prefs?.timezone || s.timezone) as string,
+    viewerId: actor.userId, enabled: s.enabled, timezone: s.timezone as string, viewerTimezone: (prefs?.timezone || s.timezone) as string,
     workStart: hhmm(s.work_start), workEnd: hhmm(s.work_end), workingDays: (s.working_days as number[]).map(Number),
     canViewAll: actor.canViewAll, canBook: actor.canBook, canManage: actor.canManage,
   };
