@@ -35,6 +35,15 @@ const money = (value: unknown, currency: unknown): string | null => {
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n)} ${str(currency) ?? "USD"}`;
 };
 
+/** «الاثنين 23 نوفمبر» and «10:00» for a UTC moment in a time zone (Latin digits, so the customer reads the same numbers as the calendar). */
+export function formatMeeting(startsAtIso: string, timeZone: string): { meeting_date: string; meeting_time: string } {
+  const at = new Date(startsAtIso);
+  if (Number.isNaN(at.getTime())) return { meeting_date: "", meeting_time: "" };
+  const date = new Intl.DateTimeFormat("ar-u-nu-latn", { timeZone, weekday: "long", day: "numeric", month: "long" }).format(at);
+  const time = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+  return { meeting_date: date, meeting_time: time };
+}
+
 export async function loadMessageContext(db: any, organizationId: string, trigger: Record<string, unknown>, config: Record<string, unknown>): Promise<MessageContext> {
   const one = async (table: string, id: string | null, columns: string) => {
     if (!id) return null;
@@ -88,12 +97,23 @@ export async function loadMessageContext(db: any, organizationId: string, trigge
     ownerAccountId = acc?.[0]?.id ?? null;
   }
 
+  // A meeting in the trigger (reminders, confirmations): date and time in the agent's (or the organization's) zone, Latin digits.
+  let meetingVars: Record<string, string> = { meeting_date: "", meeting_time: "", meeting_type: "", meeting_place: "" };
+  if (str(trigger.starts_at)) {
+    const [settings, prefs] = await Promise.all([
+      db.from("cal_settings").select("timezone").eq("organization_id", organizationId).maybeSingle(),
+      ownerId ? db.from("cal_agent_prefs").select("timezone").eq("organization_id", organizationId).eq("user_id", ownerId).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    meetingVars = { ...meetingVars, ...formatMeeting(str(trigger.starts_at)!, prefs.data?.timezone || settings.data?.timezone || "Europe/Istanbul"), meeting_type: str(trigger.meeting_type) ?? "", meeting_place: str(trigger.location) ?? "" };
+  }
+
   return {
     contactId, opportunityId, ownerId, phone, email, ticketAccountId, ownerAccountId,
     vars: {
       name: name ?? "", first_name: first(name), phone: phone ?? "", stage: str(stage?.name) ?? "", assignee: str(owner?.full_name) ?? "",
       source: str(trigger.source) ?? str(opp?.source) ?? "", org: str(org?.name) ?? "", value: money(opp?.value, opp?.currency) ?? "",
-      due_today: trigger.tasks_due_today != null ? String(trigger.tasks_due_today) : "", overdue: trigger.tasks_overdue != null ? String(trigger.tasks_overdue) : "", account: str(trigger.account_name) ?? "",
+      due_today: trigger.tasks_due_today != null ? String(trigger.tasks_due_today) : "", overdue: trigger.tasks_overdue != null ? String(trigger.tasks_overdue) : "", account: str(trigger.account_name) ?? "", ...meetingVars,
+      meetings_today: trigger.meetings_today != null ? String(trigger.meetings_today) : "",
     },
   };
 }

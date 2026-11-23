@@ -128,6 +128,38 @@ export function digestCandidates(tasks: any[], now: Date, timezone: string, hour
   return [...per].map(([user, c]) => ({ key: `digest:${user}:${local.date}`, payload: { owner_user_id: user, tasks_due_today: c.due, tasks_overdue: c.overdue, digest_date: local.date } }));
 }
 
+/**
+ * Meetings that start within `beforeMinutes` (and have not started), once per meeting time and per wait. A reminder whose
+ * moment had already passed when the meeting was booked is NOT sent (a «tomorrow» reminder for a meeting booked an hour ago).
+ */
+export function meetingStartsCandidates(meetings: any[], now: Date, beforeMinutes: number): Candidate[] {
+  const out: Candidate[] = [];
+  for (const m of meetings) {
+    if (m.status !== "booked" && m.status !== "confirmed") continue;
+    const start = new Date(m.starts_at).getTime();
+    if (!(start > now.getTime()) || (start - now.getTime()) / MIN > beforeMinutes) continue;
+    if (m.created_at && new Date(m.created_at).getTime() > start - beforeMinutes * MIN) continue;
+    out.push({ key: `meeting_start:${m.id}:${new Date(m.starts_at).toISOString()}:${beforeMinutes}`, payload: { meeting_id: m.id, owner_user_id: m.owner_user_id, contact_id: m.contact_id ?? null, lead_id: m.lead_id ?? null, opportunity_id: m.opportunity_id ?? null, starts_at: new Date(m.starts_at).toISOString(), ends_at: new Date(m.ends_at).toISOString(), meeting_type: m.type_name ?? null, channel: m.channel ?? null, location: m.channel === "link" || m.channel === "in_person" ? (m.location ?? null) : null, minutes_before: Math.round((start - now.getTime()) / MIN) } });
+  }
+  return out;
+}
+
+/** One digest per agent per local day, after the chosen hour, only for agents with meetings today. */
+export function meetingsDigestCandidates(meetings: any[], now: Date, timezone: string, hour: number): Candidate[] {
+  const local = localParts(now, timezone);
+  if (local.hour < hour) return [];
+  const per = new Map<string, { count: number; first: number }>();
+  for (const m of meetings) {
+    if (m.status !== "booked" && m.status !== "confirmed" && m.status !== "in_progress") continue;
+    const start = new Date(m.starts_at).getTime();
+    if (localParts(new Date(start), timezone).date !== local.date) continue;
+    const entry = per.get(m.owner_user_id) ?? { count: 0, first: Infinity };
+    entry.count++; entry.first = Math.min(entry.first, start);
+    per.set(m.owner_user_id, entry);
+  }
+  return [...per].map(([user, e]) => ({ key: `meetings_digest:${user}:${local.date}`, payload: { owner_user_id: user, meetings_today: e.count, first_meeting_at: new Date(e.first).toISOString(), digest_date: local.date } }));
+}
+
 /** WhatsApp accounts that are not connected, once per disconnection (the moment it changed). */
 export function disconnectedCandidates(accounts: any[], now: Date, afterMinutes: number): Candidate[] {
   const out: Candidate[] = [];
@@ -191,6 +223,24 @@ export async function findCandidates(db: any, organizationId: string, event: Tim
     const timezone = settings?.timezone ?? "Europe/Istanbul";
     const { data } = await db.from("crm_tasks").select("id,status,due_at,assignee_user_id").eq("organization_id", organizationId).eq("status", "open").lte("due_at", new Date(now.getTime() + DAY).toISOString()).gte("due_at", new Date(now.getTime() - 14 * DAY).toISOString()).limit(1000);
     return digestCandidates(data ?? [], now, timezone, Number(config.hour ?? 9));
+  }
+
+  if (event === "time.meeting_starts_in") {
+    const before = Number(config.before_minutes ?? 0);
+    const { data } = await db.from("cal_meetings").select("id,owner_user_id,contact_id,lead_id,opportunity_id,meeting_type_id,starts_at,ends_at,status,channel,location,created_at").eq("organization_id", organizationId)
+      .in("status", ["booked", "confirmed"]).gte("starts_at", now.toISOString()).lte("starts_at", new Date(now.getTime() + before * MIN).toISOString()).limit(limit);
+    const typeIds = [...new Set((data ?? []).map((m: any) => m.meeting_type_id).filter(Boolean))] as string[];
+    const types = typeIds.length ? (await db.from("cal_meeting_types").select("id,name").eq("organization_id", organizationId).in("id", typeIds)).data ?? [] : [];
+    const names = new Map<string, string>(types.map((t: any) => [t.id, t.name]));
+    return meetingStartsCandidates((data ?? []).map((m: any) => ({ ...m, type_name: names.get(m.meeting_type_id) ?? null })), now, before);
+  }
+
+  if (event === "time.meetings_digest") {
+    const { data: settings } = await db.from("cal_settings").select("timezone").eq("organization_id", organizationId).maybeSingle();
+    const timezone = settings?.timezone ?? "Europe/Istanbul";
+    const { data } = await db.from("cal_meetings").select("id,owner_user_id,starts_at,status").eq("organization_id", organizationId).in("status", ["booked", "confirmed", "in_progress"])
+      .gte("starts_at", new Date(now.getTime() - DAY).toISOString()).lte("starts_at", new Date(now.getTime() + DAY).toISOString()).limit(1000);
+    return meetingsDigestCandidates(data ?? [], now, timezone, Number(config.hour ?? 8));
   }
 
   if (event === "time.channel_disconnected") {

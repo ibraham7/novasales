@@ -10,7 +10,7 @@ export type Recipe = {
   id: string;
   title: string;
   description: string;
-  category: "تجربة" | "عملاء جدد" | "متابعة" | "عروض الأسعار" | "إغلاق الصفقة" | "تنبيهات الفريق";
+  category: "تجربة" | "عملاء جدد" | "متابعة" | "عروض الأسعار" | "إغلاق الصفقة" | "تنبيهات الفريق" | "الاجتماعات";
   /** What it sends: «خدمة» replies to people who wrote to us; «ترويج» only to those who agreed; «داخلي» goes to staff only. */
   audience: "خدمة" | "ترويج" | "داخلي";
   trigger: { type: "event"; config: Record<string, any> };
@@ -158,7 +158,99 @@ export const SALES_RECIPES: Recipe[] = [
   },
 ];
 
-export const RECIPES: Recipe[] = [...BASE_RECIPES, ...SALES_RECIPES];
+/** Meeting recipes (calendar). All created switched off; customer messages still need «إرسال الرسائل للعملاء» in the send settings. */
+export const CALENDAR_RECIPES: Recipe[] = [
+  {
+    id: "meeting-reminder-day",
+    title: "تذكير العميل قبل الاجتماع بيوم",
+    description: "قبل موعد الاجتماع بـ 24 ساعة تصل العميل رسالة بتاريخ ووقت الاجتماع. لا تُرسل إن حُجز الاجتماع قبل أقل من يوم من موعده.",
+    category: "الاجتماعات",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "time.meeting_starts_in", before_minutes: 1440 } },
+    steps: [msg("remind", "تذكير قبل يوم", "{أهلاً|مرحباً} {first_name}، نذكّرك باجتماعنا {meeting_date} الساعة {meeting_time}. إن احتجت تغيير الموعد أخبرنا.")],
+  },
+  {
+    id: "meeting-reminder-hour",
+    title: "تذكير العميل قبل الاجتماع بساعة",
+    description: "قبل موعد الاجتماع بساعة تصل العميل رسالة تذكير قصيرة.",
+    category: "الاجتماعات",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "time.meeting_starts_in", before_minutes: 60 } },
+    steps: [msg("remind", "تذكير قبل ساعة", "{first_name}، اجتماعنا اليوم الساعة {meeting_time}. بانتظارك.")],
+  },
+  {
+    id: "meeting-confirm-reply",
+    title: "تأكيد الاجتماع بردّ العميل «نعم»",
+    description: "قبل الاجتماع بيوم يُسأل العميل أن يردّ «نعم» للتأكيد. عند ردّه يتحول الاجتماع إلى «مؤكَّد» تلقائياً؛ وإن لم يردّ خلال 12 ساعة يصل المندوب تنبيه. يعمل الردّ عندما يكون الاجتماع مرتبطاً بفرصة.",
+    category: "الاجتماعات",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "time.meeting_starts_in", before_minutes: 1440 } },
+    steps: [
+      msg("ask", "سؤال التأكيد", "{أهلاً|مرحباً} {first_name}، موعدنا {meeting_date} الساعة {meeting_time}. هل تؤكد حضورك؟ ردّ بكلمة: نعم"),
+      { id: "wait", type: "wait_for_event", label: "انتظار ردّ «نعم»", event: "messaging.reply.yes", match: { opportunity_id: "{{trigger.opportunity_id}}" }, timeout_minutes: 720, onEvent: "confirm", onTimeout: "noanswer" },
+      step("confirm", "تأكيد الاجتماع", "calendar.meeting.confirm", {}),
+      { id: "end-confirmed", type: "end", label: "تم التأكيد" },
+      alertStep("noanswer", "assignee", "لم يؤكد العميل الاجتماع: {name}", "الاجتماع {meeting_date} الساعة {meeting_time}. تواصل معه."),
+      { id: "end-unanswered", type: "end", label: "بلا ردّ" },
+    ],
+  },
+  {
+    id: "meeting-agent-prestart",
+    title: "تنبيه المندوب قبل اجتماعه بـ 15 دقيقة",
+    description: "قبل بدء الاجتماع بـ 15 دقيقة يصل المندوب تنبيه داخلي. داخلي فقط.",
+    category: "الاجتماعات",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.meeting_starts_in", before_minutes: 15 } },
+    steps: [alertStep("a", "assignee", "اجتماعك بعد قليل: {name}", "{meeting_type} الساعة {meeting_time}")],
+  },
+  {
+    id: "meetings-morning-digest",
+    title: "ملخص اجتماعات اليوم لكل مندوب",
+    description: "كل صباح (8:00 بتوقيت المؤسسة) يصل كل مندوب عنده اجتماعات اليوم تنبيه بعددها. داخلي فقط.",
+    category: "الاجتماعات",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "time.meetings_digest", hour: 8 } },
+    steps: [alertStep("a", "assignee", "اجتماعاتك اليوم", "عندك {meetings_today} اجتماع اليوم.")],
+  },
+  {
+    id: "meeting-created-notify",
+    title: "تنبيه المندوب عند حجز اجتماع له",
+    description: "عند حجز اجتماع جديد يصل المندوب المسؤول تنبيه بنوعه وموعده. داخلي فقط.",
+    category: "الاجتماعات",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "calendar.meeting.created" } },
+    steps: [alertStep("a", "assignee", "اجتماع جديد: {name}", "{meeting_type} {meeting_date} الساعة {meeting_time}")],
+  },
+  {
+    id: "meeting-cancelled-notify",
+    title: "تنبيه المندوب عند إلغاء اجتماع",
+    description: "عند إلغاء اجتماع يصل المندوب المسؤول تنبيه. داخلي فقط.",
+    category: "الاجتماعات",
+    audience: "داخلي",
+    trigger: { type: "event", config: { event: "calendar.meeting.cancelled" } },
+    steps: [alertStep("a", "assignee", "أُلغي اجتماع: {name}", "{meeting_type} {meeting_date} الساعة {meeting_time}")],
+  },
+  {
+    id: "meeting-thanks",
+    title: "شكر العميل بعد الاجتماع",
+    description: "عند تسجيل انتهاء الاجتماع تصل العميل رسالة شكر قصيرة.",
+    category: "الاجتماعات",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "calendar.meeting.completed" } },
+    steps: [msg("thanks", "رسالة الشكر", "شكراً لوقتك {first_name}. سعدنا بلقائك، وأنا بانتظار أي سؤال عندك.")],
+  },
+  {
+    id: "meeting-no-show",
+    title: "متابعة العميل الذي لم يحضر",
+    description: "عند تسجيل «لم يحضر» تصل العميل رسالة لطيفة تعرض إعادة الجدولة.",
+    category: "الاجتماعات",
+    audience: "خدمة",
+    trigger: { type: "event", config: { event: "calendar.meeting.no_show" } },
+    steps: [msg("again", "عرض إعادة الجدولة", "{أهلاً|مرحباً} {first_name}، فاتنا لقاؤك اليوم. هل تحب أن نحدد موعداً آخر يناسبك؟")],
+  },
+];
+
+export const RECIPES: Recipe[] = [...BASE_RECIPES, ...SALES_RECIPES, ...CALENDAR_RECIPES];
 
 /** The workflow definition a recipe creates (steps chained one after the other). */
 export function recipeDefinition(recipe: Recipe) {

@@ -309,3 +309,24 @@ export async function exportMeetingsIcs(db: any, actor: Actor, input: { from: st
   const rows = await listMeetings(db, actor, { from: input.from, to: input.to, ownerId: input.ownerId ?? (actor.canViewAll ? null : actor.userId) });
   return buildIcs(rows as any[], { now: input.now ?? new Date(), name: "NovaSales" });
 }
+
+/* ----------------------------- changes made by an automation ----------------------------- */
+
+/**
+ * An automation moves a meeting to another status (a customer answered «نعم» to a confirmation). Same rules as a person
+ * (the allowed moves), scoped to the organization, and calm: a meeting that is already there, finished or gone is
+ * «skipped» with a reason, never an error. It records who did it as nobody (the system).
+ */
+export async function setMeetingStatusBySystem(db: any, organizationId: string, meetingId: string | null, to: MeetingStatus, reason?: string | null): Promise<{ outcome: "done" | "skipped"; reason: string | null }> {
+  if (!meetingId) return { outcome: "skipped", reason: "لا يوجد اجتماع مرتبط بهذا المسار" };
+  const { data: current, error } = await db.from("cal_meetings").select("id,status").eq("id", meetingId).eq("organization_id", organizationId).maybeSingle();
+  if (error) throw new Error(calendarError(error));
+  if (!current) return { outcome: "skipped", reason: NOT_FOUND };
+  if (current.status === to) return { outcome: "skipped", reason: "الاجتماع بهذه الحالة أصلاً" };
+  if (!canMove(current.status, to)) return { outcome: "skipped", reason: "لا يمكن نقل الاجتماع من حالته الحالية" };
+  const patch: Record<string, unknown> = { status: to };
+  if (to === "cancelled") patch.cancellation_reason = clean(reason) ?? "أُلغي تلقائياً";
+  const { error: updateError } = await db.from("cal_meetings").update(patch).eq("id", meetingId).eq("organization_id", organizationId);
+  if (updateError) throw new Error(calendarError(updateError));
+  return { outcome: "done", reason: null };
+}
