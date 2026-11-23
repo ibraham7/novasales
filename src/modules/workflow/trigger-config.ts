@@ -10,6 +10,7 @@ export const TIME_EVENTS = {
   "time.unassigned": "تذكرة بلا مندوب مسؤول لمدة",
   "time.daily_digest": "ملخص الصباح لكل مندوب",
   "time.channel_disconnected": "انقطاع حساب واتساب لمدة",
+  "time.meeting_reminder": "تذكير قبل موعد الاجتماع بمدة تختارها",
 } as const;
 export type TimeEvent = keyof typeof TIME_EVENTS;
 export const isTimeEvent = (event: unknown): event is TimeEvent => typeof event === "string" && event in TIME_EVENTS;

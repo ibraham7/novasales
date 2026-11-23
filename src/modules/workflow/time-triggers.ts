@@ -139,6 +139,45 @@ export function disconnectedCandidates(accounts: any[], now: Date, afterMinutes:
   return out;
 }
 
+/** «خلال ساعة»، «خلال يومين»…: the time left, written for a customer. */
+export function leadText(minutes: number): string {
+  const unit = (n: number, one: string, two: string, few: string, many: string) => (n === 1 ? `خلال ${one}` : n === 2 ? `خلال ${two}` : n <= 10 ? `خلال ${n} ${few}` : `خلال ${n} ${many}`);
+  if (minutes >= 1440 && minutes % 1440 === 0) return unit(minutes / 1440, "يوم", "يومين", "أيام", "يوماً");
+  if (minutes >= 60 && minutes % 60 === 0) return unit(minutes / 60, "ساعة", "ساعتين", "ساعات", "ساعة");
+  return unit(minutes, "دقيقة", "دقيقتين", "دقائق", "دقيقة");
+}
+
+/**
+ * Meetings that are due a reminder «X minutes before». A reminder is due from X minutes before the start; if the scan was late it
+ * still goes out, but only for a short while (a quarter of X, at most 6 hours) and never after the start. A meeting booked too
+ * close to its start for this reminder gets none (a «day before» reminder is not sent for a meeting booked an hour ahead).
+ * The key holds the start time, so a moved meeting is reminded again for its new time. Booked and confirmed meetings only;
+ * a meeting with nobody to write to is left out.
+ */
+export function meetingReminderCandidates(meetings: any[], now: Date, beforeMinutes: number, timezone: string, typeNames: Map<string, string> = new Map()): Candidate[] {
+  const out: Candidate[] = [];
+  const late = Math.min(beforeMinutes / 4, 360);
+  for (const m of meetings) {
+    if (m.status !== "booked" && m.status !== "confirmed") continue;
+    if (!m.contact_id && !m.opportunity_id && !m.lead_id) continue;
+    const start = new Date(m.starts_at).getTime();
+    const left = (start - now.getTime()) / MIN;
+    if (!(left > 0) || left > beforeMinutes || left < beforeMinutes - late) continue;
+    if (m.created_at && new Date(m.created_at).getTime() > start - (beforeMinutes - late) * MIN) continue;
+    const at = new Date(start);
+    const day = new Intl.DateTimeFormat("ar", { timeZone: timezone, weekday: "long", day: "numeric", month: "long" }).format(at);
+    const time = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+    out.push({
+      key: `meeting_reminder:${m.id}:${new Date(m.starts_at).toISOString()}:${beforeMinutes}`,
+      payload: {
+        meeting_id: m.id, meeting_starts_at: new Date(m.starts_at).toISOString(), meeting_day: day, meeting_time: time, meeting_type: (m.meeting_type_id && typeNames.get(m.meeting_type_id)) || "", meeting_in: leadText(beforeMinutes),
+        reminder_before_minutes: beforeMinutes, opportunity_id: m.opportunity_id ?? null, contact_id: m.contact_id ?? null, lead_id: m.lead_id ?? null, owner_user_id: m.owner_user_id ?? null,
+      },
+    });
+  }
+  return out;
+}
+
 /* ------------------------------ reading the database ------------------------------ */
 
 const OPP_COLUMNS = "id,contact_id,owner_agent_id,stage_id,source,outcome,deleted_at,stage_entered_at,updated_at,opened_at";
@@ -174,6 +213,18 @@ export async function findCandidates(db: any, organizationId: string, event: Tim
   const cutoff = new Date(now.getTime() - after * MIN).toISOString();
 
   if (event === "time.stage_timeout") return stageTimeoutCandidates(await oldOpenTickets(db, organizationId, cutoff, stageId, limit), now, after, stageId);
+
+  if (event === "time.meeting_reminder") {
+    const { data } = await db.from("cal_meetings").select("id,status,starts_at,created_at,contact_id,lead_id,opportunity_id,owner_user_id,meeting_type_id").eq("organization_id", organizationId).in("status", ["booked", "confirmed"])
+      .gte("starts_at", now.toISOString()).lte("starts_at", new Date(now.getTime() + after * MIN).toISOString()).order("starts_at").limit(limit);
+    const meetings = data ?? [];
+    if (!meetings.length) return [];
+    const [{ data: cal }, { data: types }] = await Promise.all([
+      db.from("cal_settings").select("timezone").eq("organization_id", organizationId).maybeSingle(),
+      db.from("cal_meeting_types").select("id,name").eq("organization_id", organizationId),
+    ]);
+    return meetingReminderCandidates(meetings, now, after, cal?.timezone ?? "Europe/Istanbul", new Map((types ?? []).map((t: any) => [t.id as string, t.name as string])));
+  }
 
   if (event === "time.task_overdue") {
     const { data } = await db.from("crm_tasks").select("id,title,status,due_at,assignee_user_id,entity_type,entity_id").eq("organization_id", organizationId).eq("status", "open")

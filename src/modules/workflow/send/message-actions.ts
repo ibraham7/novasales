@@ -12,6 +12,7 @@
 import type { ActionHandler, ActionResult } from "../actions/registry.server.ts";
 import { loadMessageContext, pickWhatsappAccount } from "./context.ts";
 import { loadAlertsEnabled, sendThroughGate, type SendOutcome, type Senders } from "./send-core.ts";
+import { MEETING_CHANGED_REASON, meetingStillValid, reminderMeeting } from "./meeting-guard.ts";
 import { renderMessage } from "./template.ts";
 
 export type NotifyFn = (input: { organizationId: string; type: "automation"; userIds: string[]; title: string; body?: string; url?: string; dedupeKey?: string; logNoDevice?: boolean }) => Promise<{ configured?: boolean; targeted: number; accepted: number; noDevice: number; duplicates: number }>;
@@ -28,6 +29,11 @@ export type MessageActionDeps = {
 export const PROMO_FOOTER = "\n\nلإيقاف الرسائل الترويجية ردّ بكلمة: إيقاف";
 export const ALERTS_OFF_REASON = "تنبيهات الفريق مطفأة لهذه المؤسسة (إعدادات الأتمتة)";
 
+/** A meeting reminder must not be held past the start of the meeting. */
+const notAfter = (trigger: Record<string, unknown> | undefined): Date | null => {
+  const m = reminderMeeting(trigger);
+  return m ? new Date(m.startsAt) : null;
+};
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
 /** «Once per customer»: true when this same step already sent (or holds) a message to this customer within the last N days. */
@@ -56,6 +62,7 @@ export function createMessageActions(deps: MessageActionDeps): Record<"message.w
     const message = await loadMessageContext(db, ctx.organizationId, ctx.triggerPayload, config);
     const kind = config.kind === "promo" ? "promo" : "service";
     if (await alreadySentToContact(db, { organizationId: ctx.organizationId, workflowId: ctx.workflowId, stepId: ctx.stepId, contactId: message.contactId, days: Number(config.once_per_contact_days ?? 0), now: clock() })) return { ok: true, output: { outcome: "skipped", code: "once_per_contact", reason: ONCE_REASON, channel: "whatsapp", kind } };
+    if (!(await meetingStillValid(db, ctx.organizationId, ctx.triggerPayload, clock()))) return { ok: true, output: { outcome: "skipped", code: "meeting_changed", reason: MEETING_CHANGED_REASON, channel: "whatsapp", kind } };
     const rendered = renderMessage(String(config.body ?? ""), message.vars, deps.random);
     const outcome = await sendThroughGate(
       { db, senders: deps.senders, now: clock() },
@@ -63,7 +70,7 @@ export function createMessageActions(deps: MessageActionDeps): Record<"message.w
         organizationId: ctx.organizationId, workflowId: ctx.workflowId, runId: ctx.runId, stepId: ctx.stepId ?? null,
         opportunityId: message.opportunityId, contactId: message.contactId, channel: "whatsapp", kind,
         to: message.phone, accountId: pickWhatsappAccount(config.account, message, str(config.channel_account_id)),
-        body: rendered ? rendered + (kind === "promo" ? PROMO_FOOTER : "") : "", dedupeKey: dedupe(ctx), allowFirstContact: config.allow_first_contact === true,
+        body: rendered ? rendered + (kind === "promo" ? PROMO_FOOTER : "") : "", dedupeKey: dedupe(ctx), allowFirstContact: config.allow_first_contact === true, notAfter: notAfter(ctx.triggerPayload),
       },
     );
     return fromOutcome(outcome, { channel: "whatsapp", kind });
@@ -73,6 +80,7 @@ export function createMessageActions(deps: MessageActionDeps): Record<"message.w
     const message = await loadMessageContext(db, ctx.organizationId, ctx.triggerPayload, config);
     const kind = config.kind === "promo" ? "promo" : "service";
     if (await alreadySentToContact(db, { organizationId: ctx.organizationId, workflowId: ctx.workflowId, stepId: ctx.stepId, contactId: message.contactId, days: Number(config.once_per_contact_days ?? 0), now: clock() })) return { ok: true, output: { outcome: "skipped", code: "once_per_contact", reason: ONCE_REASON, channel: "email", kind } };
+    if (!(await meetingStillValid(db, ctx.organizationId, ctx.triggerPayload, clock()))) return { ok: true, output: { outcome: "skipped", code: "meeting_changed", reason: MEETING_CHANGED_REASON, channel: "email", kind } };
     const body = renderMessage(String(config.body ?? ""), message.vars, deps.random);
     const outcome = await sendThroughGate(
       { db, senders: deps.senders, now: clock() },
@@ -80,7 +88,7 @@ export function createMessageActions(deps: MessageActionDeps): Record<"message.w
         organizationId: ctx.organizationId, workflowId: ctx.workflowId, runId: ctx.runId, stepId: ctx.stepId ?? null,
         opportunityId: message.opportunityId, contactId: message.contactId, channel: "email", kind, to: message.email,
         subject: renderMessage(String(config.subject ?? ""), message.vars, deps.random), body: body ? body + (kind === "promo" ? PROMO_FOOTER : "") : "",
-        dedupeKey: dedupe(ctx), allowFirstContact: config.allow_first_contact === true,
+        dedupeKey: dedupe(ctx), allowFirstContact: config.allow_first_contact === true, notAfter: notAfter(ctx.triggerPayload),
       },
     );
     return fromOutcome(outcome, { channel: "email", kind });
