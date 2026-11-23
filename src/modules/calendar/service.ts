@@ -286,3 +286,26 @@ export async function suggestTimes(db: any, actor: Actor, input: { durationMin?:
   }
   return suggestSlots({ agents, durationMin: duration as number, now, count: Math.min(input.count ?? 3, 10) });
 }
+
+/* ----------------------------- meetings of one customer / opportunity ----------------------------- */
+
+/** The meetings linked to an opportunity, lead or contact (newest first), limited to what the actor may see. */
+export async function listEntityMeetings(db: any, actor: Actor, input: { opportunityId?: string | null; leadId?: string | null; contactId?: string | null }) {
+  if (!input.opportunityId && !input.leadId && !input.contactId) fail("حدّد الفرصة أو العميل");
+  let q = db.from("cal_meetings").select("*").eq("organization_id", actor.organizationId).limit(50);
+  if (input.opportunityId) q = q.eq("opportunity_id", input.opportunityId);
+  else if (input.leadId) q = q.eq("lead_id", input.leadId);
+  else q = q.eq("contact_id", input.contactId);
+  if (!actor.canViewAll) q = q.eq("owner_user_id", actor.userId);
+  const { data, error } = await q;
+  if (error) throw new Error(calendarError(error));
+  const rows = ((data ?? []) as any[]).sort((a, b) => b.starts_at.localeCompare(a.starts_at));
+  return decorate(db, actor.organizationId, rows);
+}
+
+/** The actor's meetings (or one agent's, for a manager) as an ICS file. Nothing but times and the type leaves. */
+export async function exportMeetingsIcs(db: any, actor: Actor, input: { from: string; to: string; ownerId?: string | null; now?: Date }) {
+  const { buildIcs } = await import("./ics.ts");
+  const rows = await listMeetings(db, actor, { from: input.from, to: input.to, ownerId: input.ownerId ?? (actor.canViewAll ? null : actor.userId) });
+  return buildIcs(rows as any[], { now: input.now ?? new Date(), name: "NovaSales" });
+}

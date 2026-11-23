@@ -1,3 +1,4 @@
+import { BookMeetingButton } from "@/components/calendar/book-meeting-button";
 import {
   Link,
   createFileRoute,
@@ -841,6 +842,10 @@ function ChatView() {
             <ProductPickerDialog
               chatId={chatId}
             />
+
+            {opp?.contact?.id && (
+              <BookMeetingButton className="flex items-center gap-1" contactId={opp.contact.id} contactName={opp.contact.name} opportunityId={opp.opportunity?.id ?? null} onInsertText={(value) => setText((current) => (current ? `${current} ${value}` : value))} />
+            )}
 
             {opp?.contact
               ?.id &&
