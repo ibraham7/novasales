@@ -6,7 +6,7 @@ import { STOP_REASONS, isTimeEvent } from "@/modules/workflow/trigger-config";
 
 export type StageOption = { id: string; name: string; pipeline: string };
 
-const GROUPS = ["عملاء وتذاكر", "رسائل", "زمنية"] as const;
+const GROUPS = ["عملاء وتذاكر", "رسائل", "التقويم", "زمنية"] as const;
 const ANY = "__any__";
 
 /** The trigger of a workflow: which event, how long (for the time ones), which stage, and when to stop. */
@@ -20,14 +20,15 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
   const set = (patch: Record<string, any>) => onConfig({ ...config, ...patch });
   const event = String(config.event ?? "");
   const time = isTimeEvent(event);
-  const { amount, unit } = splitDuration(Number(config.after_minutes ?? 0));
+  const durationKey = event === "time.meeting_starts_in" ? "before_minutes" : "after_minutes";
+  const { amount, unit } = splitDuration(Number(config[durationKey] ?? 0));
   const stops: string[] = Array.isArray(config.stop_on) ? config.stop_on : [];
   const toggleStop = (reason: string, on: boolean) => {
     const next = on ? [...new Set([...stops, reason])] : stops.filter((r) => r !== reason);
     const { stop_on: _drop, ...rest } = config;
     onConfig(next.length ? { ...rest, stop_on: next } : rest);
   };
-  const setDuration = (nextAmount: number, nextUnit: DurationUnit) => set({ after_minutes: joinDuration(Number.isFinite(nextAmount) ? nextAmount : 0, nextUnit) });
+  const setDuration = (nextAmount: number, nextUnit: DurationUnit) => set({ [durationKey]: joinDuration(Number.isFinite(nextAmount) ? nextAmount : 0, nextUnit) });
 
   return (
     <div className="space-y-3">
@@ -45,7 +46,7 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
         {triggerType === "event" && (
           <div>
             <Label>الحدث</Label>
-            <Select value={event} onValueChange={(v) => { const { after_minutes: _a, stage_id: _s, ...rest } = config; onConfig({ ...rest, event: v, ...(v === "time.daily_digest" ? { hour: 9 } : {}) }); }}>
+            <Select value={event} onValueChange={(v) => { const { after_minutes: _a, before_minutes: _b, stage_id: _s, ...rest } = config; onConfig({ ...rest, event: v, ...(v === "time.daily_digest" ? { hour: 9 } : v === "time.meetings_digest" ? { hour: 8 } : {}) }); }}>
               <SelectTrigger><SelectValue placeholder="اختر الحدث" /></SelectTrigger>
               <SelectContent>
                 {GROUPS.map((group) => (
@@ -62,14 +63,14 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
 
       {triggerType === "event" && time && (
         <div className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">
-          {event === "time.daily_digest" ? (
+          {event === "time.daily_digest" || event === "time.meetings_digest" ? (
             <div>
               <Label className="text-xs">ساعة الإرسال (0–23، بتوقيت المؤسسة)</Label>
               <Input type="number" min={0} max={23} value={config.hour ?? 9} onChange={(e) => onConfig({ ...config, hour: Number(e.target.value) })} />
             </div>
           ) : (<>
           <div>
-            <Label className="text-xs">{event === "time.task_overdue" ? "بعد التأخير بـ (اختياري)" : "بعد مدة"}</Label>
+            <Label className="text-xs">{event === "time.task_overdue" ? "بعد التأخير بـ (اختياري)" : event === "time.meeting_starts_in" ? "قبل الاجتماع بـ" : "بعد مدة"}</Label>
             <Input type="number" min={0} value={amount || ""} onChange={(e) => setDuration(Number(e.target.value), unit)} />
           </div>
           <div>

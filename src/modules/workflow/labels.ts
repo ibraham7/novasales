@@ -4,7 +4,7 @@
  */
 import { TIME_EVENTS } from "./trigger-config.ts";
 
-export const EVENT_OPTIONS: { value: string; label: string; group: "عملاء وتذاكر" | "رسائل" | "زمنية" }[] = [
+export const EVENT_OPTIONS: { value: string; label: string; group: "عملاء وتذاكر" | "رسائل" | "التقويم" | "زمنية" }[] = [
   { value: "crm.lead.created", label: "عميل محتمل جديد", group: "عملاء وتذاكر" },
   { value: "crm.lead.assigned", label: "إسناد عميل محتمل لمندوب", group: "عملاء وتذاكر" },
   { value: "crm.opportunity.created", label: "تذكرة (فرصة) جديدة", group: "عملاء وتذاكر" },
@@ -13,6 +13,12 @@ export const EVENT_OPTIONS: { value: string; label: string; group: "عملاء �
   { value: "messaging.message.received", label: "وصلت رسالة من عميل", group: "رسائل" },
   { value: "messaging.reply.yes", label: "ردّ العميل بـ «نعم»", group: "رسائل" },
   { value: "messaging.reply.no", label: "ردّ العميل بـ «لا»", group: "رسائل" },
+  { value: "calendar.meeting.created", label: "اجتماع جديد", group: "التقويم" },
+  { value: "calendar.meeting.rescheduled", label: "إعادة جدولة اجتماع", group: "التقويم" },
+  { value: "calendar.meeting.confirmed", label: "تأكيد اجتماع", group: "التقويم" },
+  { value: "calendar.meeting.completed", label: "انتهاء اجتماع", group: "التقويم" },
+  { value: "calendar.meeting.cancelled", label: "إلغاء اجتماع", group: "التقويم" },
+  { value: "calendar.meeting.no_show", label: "عدم حضور العميل للاجتماع", group: "التقويم" },
   ...Object.entries(TIME_EVENTS).map(([value, label]) => ({ value, label, group: "زمنية" as const })),
 ];
 export const eventLabel = (event: string | null | undefined): string => EVENT_OPTIONS.find((e) => e.value === event)?.label ?? event ?? "—";
@@ -29,6 +35,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "crm.lead.assign": "إسناد العميل لمندوب",
   "crm.lead.transfer": "نقل العميل لمندوب آخر",
   "platform.event.emit": "إطلاق حدث",
+  "calendar.meeting.confirm": "تأكيد الاجتماع",
+  "calendar.meeting.cancel": "إلغاء الاجتماع",
 };
 export const actionLabel = (action: string | null | undefined): string => (action && ACTION_LABELS[action]) || action || "—";
 

@@ -40,16 +40,18 @@ let _initialized = false;
 export async function ensureActionsRegistered() {
   if (_initialized) return;
   _initialized = true;
-  const [messaging, crm, assign, platform, message] = await Promise.all([
+  const [messaging, crm, assign, platform, message, calendar] = await Promise.all([
     import("./messaging.send.server"),
     import("./crm.actions.server"),
     import("./assignments.actions.server"),
     import("./platform.actions.server"),
     import("./message.actions.server"),
+    import("./calendar.actions.server"),
   ]);
   messaging.register();
   crm.register();
   assign.register();
   platform.register();
   message.register();
+  calendar.register();
 }
