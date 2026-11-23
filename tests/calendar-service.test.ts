@@ -36,7 +36,7 @@ test("off by default: nothing can be booked or suggested until a manager switche
   const { db, rpcCalls } = setup({}, { [A]: false });
   await rejects(svc.createMeeting(db, agent1, input()), "التقويم غير مفعّل لهذه المؤسسة");
   await rejects(svc.suggestTimes(db, agent1, { durationMin: 30 }), "التقويم غير مفعّل لهذه المؤسسة");
-  assert.deepEqual(await svc.getCalendarState(db, agent1), { enabled: false, timezone: "Europe/Istanbul", viewerTimezone: "Europe/Istanbul", workStart: "09:00", workEnd: "18:00", workingDays: [1, 2, 3, 4, 5], canViewAll: false, canBook: true, canManage: false });
+  assert.deepEqual(await svc.getCalendarState(db, agent1), { viewerId: agent1.userId, enabled: false, timezone: "Europe/Istanbul", viewerTimezone: "Europe/Istanbul", workStart: "09:00", workEnd: "18:00", workingDays: [1, 2, 3, 4, 5], canViewAll: false, canBook: true, canManage: false });
   await rejects(svc.enableCalendar(db, agent1), "ليس لديك صلاحية إدارة التقويم");
   assert.equal(rpcCalls.length, 0);
   await svc.enableCalendar(db, manager);

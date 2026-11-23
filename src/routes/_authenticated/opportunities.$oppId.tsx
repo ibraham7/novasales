@@ -24,7 +24,6 @@ import {
   updateTask,
 } from "@/modules/crm";
 import { OwnershipCard } from "@/components/ownership-card";
-import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/opportunities/$oppId")({
   head: ({ params }) => ({
@@ -40,25 +39,16 @@ function OpportunityDetailPage() {
   const { oppId } = Route.useParams();
   const qc = useQueryClient();
 
-  const oppQ = useQuery({
-    queryKey: ["opp", oppId],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("opp_opportunities").select("*").eq("id", oppId).maybeSingle();
-      if (error) throw new Error(error.message);
-      return data;
-    },
-  });
-
-  const contactQ = useQuery({
-    queryKey: ["opp-contact", oppQ.data?.contact_id],
-    enabled: !!oppQ.data?.contact_id,
-    queryFn: async () => {
-      const cid = oppQ.data?.contact_id;
-      if (!cid) return null;
-      const { data } = await supabase.from("crm_contacts").select("*").eq("id", cid).maybeSingle();
-      return data;
-    },
-  });
+  // Read through the server (it checks access and the organization). The browser client cannot read these tables directly,
+  // which used to leave this page empty.
+  const getWs = useServerFn(getOpportunityWorkspace);
+  const wsQ = useQuery({ queryKey: ["opp-workspace", oppId], queryFn: () => getWs({ data: { opportunityId: oppId } }) });
+  const oppQ = {
+    data: wsQ.data
+      ? { ...wsQ.data.opportunity, owner_agent_id: wsQ.data.owner?.id ?? null, department_id: wsQ.data.department?.id ?? null } as any
+      : null,
+  };
+  const contactQ = { data: wsQ.data?.contact ? ({ display_name: wsQ.data.contact.name } as any) : null };
 
   const listPipesFn = useServerFn(listPipelines);
   const pipesQ = useQuery({ queryKey: ["pipelines"], queryFn: () => listPipesFn() });
@@ -67,7 +57,7 @@ function OpportunityDetailPage() {
     mutationFn: (stageId: string) => moveFn({ data: { opportunityId: oppId, stageId } }),
     onSuccess: () => {
       toast.success("تم النقل");
-      qc.invalidateQueries({ queryKey: ["opp", oppId] });
+      qc.invalidateQueries({ queryKey: ["opp-workspace", oppId] });
       qc.invalidateQueries({ queryKey: ["timeline", "opportunity", oppId] });
     },
     onError: (e: Error) => toast.error(e.message),

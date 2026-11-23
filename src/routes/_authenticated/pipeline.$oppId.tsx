@@ -1782,10 +1782,12 @@ function DeleteOpportunityButton({
   contactName: string | null;
   onDeleted: () => void;
 }) {
-  const canDelete =
-    usePermission("crm.opportunities.delete") ||
-    usePermission("opportunities.delete") ||
-    usePermission("opportunities.manage");
+  // All three hooks must run on every render: chaining them with «||» skips some once the first is true,
+  // which changes the hook count when permissions finish loading and crashes the page (React error 311).
+  const canDeleteA = usePermission("crm.opportunities.delete");
+  const canDeleteB = usePermission("opportunities.delete");
+  const canDeleteC = usePermission("opportunities.manage");
+  const canDelete = canDeleteA || canDeleteB || canDeleteC;
   const qc = useQueryClient();
   const doDelete = useServerFn(softDeleteOpportunity);
   const [open, setOpen] = useState(false);

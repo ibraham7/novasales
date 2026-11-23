@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createMeeting, listCalendarOwners, listMeetingTypes, suggestMeetingTimes, updateMeeting } from "@/modules/calendar";
+import { createMeeting, getCalendarState, listCalendarOwners, listMeetingTypes, suggestMeetingTimes, updateMeeting } from "@/modules/calendar";
 import { listContacts } from "@/modules/crm";
 import { CHANNELS, CHANNEL_LABELS } from "@/modules/calendar/status";
 import { fromMinutes, zonedToUtc } from "@/modules/calendar/time";
@@ -42,6 +42,8 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
   const [contactName, setContactName] = useState("");
   const [search, setSearch] = useState("");
 
+  // Same cached query the page already uses; only needed to know who «أنا» is.
+  const stateQ = useQuery({ queryKey: ["cal-state"], queryFn: () => stateFn(), staleTime: 5 * 60_000, enabled: props.open });
   const ownersQ = useQuery({ queryKey: ["cal-owners"], queryFn: () => owners(), enabled: props.open });
   const typesQ = useQuery({ queryKey: ["cal-types"], queryFn: () => types(), enabled: props.open });
   const contactsQ = useQuery({ queryKey: ["cal-contact-search", search], queryFn: () => contacts({ data: { search } }), enabled: props.open && search.trim().length >= 2 && !contactId });
@@ -115,7 +117,7 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <Label>المندوب</Label>
-              <Select value={ownerId || (ownersQ.data?.[0]?.id ?? "")} onValueChange={setOwnerId} disabled={!props.canViewAll}>
+              <Select value={ownerId || stateQ.data?.viewerId || ""} onValueChange={setOwnerId} disabled={!props.canViewAll}>
                 <SelectTrigger><SelectValue placeholder="أنا" /></SelectTrigger>
                 <SelectContent>{(ownersQ.data ?? []).map((o: any) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}</SelectContent>
               </Select>
@@ -157,7 +159,7 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => props.onOpenChange(false)}>إلغاء</Button>
-          <Button disabled={save.isPending} onClick={() => save.mutate()}>{meeting ? "حفظ" : "حجز"}</Button>
+          <Button disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? (meeting ? "جارٍ الحفظ..." : "جارٍ الحجز...") : meeting ? "حفظ" : "حجز"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
