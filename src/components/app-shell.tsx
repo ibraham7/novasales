@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 
 import {
+  CalendarDays,
   BarChart3,
   Building2,
   CreditCard,
@@ -40,6 +41,7 @@ import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMarketingAccess } from "@/modules/marketing/marketing.functions";
+import { getCalendarState } from "@/modules/calendar/calendar.functions";
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -167,6 +169,18 @@ const NAV = [
   },
 
   {
+    to: "/calendar",
+    icon: CalendarDays,
+    label: "التقويم",
+    anyOf: [
+      "calendar.view",
+      "calendar.view_all",
+      "calendar.book",
+      "calendar.manage",
+    ],
+  },
+
+  {
     to: "/marketing",
     icon: Target,
     label: "التسويق",
@@ -267,6 +281,18 @@ export function AppShell({
   });
   const marketingAllowed = marketingAccess.data?.allowed === true;
 
+  // The calendar stays out of the menu until the organization switched it on.
+  const calendarStateFn = useServerFn(getCalendarState);
+  const calendarAllowed = hasAnyPermission(perms, ["calendar.view", "calendar.view_all", "calendar.book", "calendar.manage"]);
+  const calendarState = useQuery({
+    queryKey: ["cal-state"],
+    queryFn: () => calendarStateFn(),
+    enabled: calendarAllowed && !isSuperAdmin,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const calendarOn = calendarState.data?.enabled === true;
+
   const items = isSuperAdmin
     ? [
       {
@@ -280,6 +306,7 @@ export function AppShell({
     : NAV.filter(
       (item) =>
         (item.to !== "/marketing" || marketingAllowed) &&
+        (item.to !== "/calendar" || calendarOn) &&
         (item.anyOf === null ||
         hasAnyPermission(
           perms,

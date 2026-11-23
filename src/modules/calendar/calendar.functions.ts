@@ -51,6 +51,11 @@ export const disableCalendar = createServerFn({ method: "POST" }).handler(async 
   return (await import("./service")).disableCalendar(db, actor);
 });
 
+export const listCalendarOwners = createServerFn({ method: "GET" }).handler(async () => {
+  const { actor, db } = await calendarAccess();
+  return (await import("./service")).listOwners(db, actor);
+});
+
 export const listMeetingTypes = createServerFn({ method: "GET" }).handler(async () => {
   const { actor, db } = await calendarAccess();
   return (await import("./service")).listMeetingTypes(db, actor);
