@@ -69,8 +69,14 @@ export async function loadMessageContext(db: any, organizationId: string, trigge
 
   // WhatsApp numbers: the one the customer is chatting on, and one belonging to the ticket's owner.
   let ticketAccountId: string | null = null;
-  if (opportunityId) {
-    const { data: links } = await db.from("crm_opportunity_sessions").select("session_ref").eq("organization_id", organizationId).eq("opportunity_id", opportunityId).limit(20);
+  // Without a ticket (e.g. a meeting booked from the calendar) the customer's own tickets are used, so their chat is still found.
+  let chatOpportunityIds: string[] = opportunityId ? [opportunityId] : [];
+  if (!opportunityId && contactId) {
+    const { data: own } = await db.from("opp_opportunities").select("id").eq("organization_id", organizationId).eq("contact_id", contactId).is("deleted_at", null).order("opened_at", { ascending: false }).limit(10);
+    chatOpportunityIds = (own ?? []).map((o: any) => o.id as string);
+  }
+  if (chatOpportunityIds.length) {
+    const { data: links } = await db.from("crm_opportunity_sessions").select("session_ref").eq("organization_id", organizationId).in("opportunity_id", chatOpportunityIds).limit(20);
     const sessionIds = (links ?? []).map((l: any) => l.session_ref);
     if (sessionIds.length) {
       const { data: sessions } = await db.from("msg_sessions").select("id,channel_account_id,last_message_at").eq("organization_id", organizationId).in("id", sessionIds);

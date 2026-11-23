@@ -146,3 +146,11 @@ test("a reminder held for the sending hours is dropped at the meeting start, not
   const row = (await db.from("wf_message_log").select("*")).data.find((x: any) => x.status === "deferred");
   assert.equal(new Date(row.expires_at).toISOString(), payload.meeting_starts_at);
 });
+
+test("a meeting with no ticket (booked from the calendar) still finds the customer's own WhatsApp chat", async () => {
+  const { actions, sent } = setup("booked", true);
+  const payload = { ...payloadFor(NOW), opportunity_id: null };
+  const r = await actions["message.whatsapp"](STEP, run(payload));
+  assert.equal(r.output?.outcome, "sent");
+  assert.equal(sent[0].accountId, "acc-1");
+});
