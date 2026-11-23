@@ -40,7 +40,12 @@ async function requireEnabled(db: any, organizationId: string) {
 
 export async function getCalendarState(db: any, actor: Actor) {
   const s = await loadSettings(db, actor.organizationId);
-  return { enabled: s.enabled, timezone: s.timezone as string, canViewAll: actor.canViewAll, canBook: actor.canBook, canManage: actor.canManage };
+  const { data: prefs } = await db.from("cal_agent_prefs").select("timezone").eq("organization_id", actor.organizationId).eq("user_id", actor.userId).maybeSingle();
+  return {
+    enabled: s.enabled, timezone: s.timezone as string, viewerTimezone: (prefs?.timezone || s.timezone) as string,
+    workStart: hhmm(s.work_start), workEnd: hhmm(s.work_end), workingDays: (s.working_days as number[]).map(Number),
+    canViewAll: actor.canViewAll, canBook: actor.canBook, canManage: actor.canManage,
+  };
 }
 
 /** Switches the calendar on for the actor's organization. The first time it also creates the default meeting types. */
@@ -61,6 +66,21 @@ export async function listMeetingTypes(db: any, actor: Actor) {
   const { data, error } = await db.from("cal_meeting_types").select("id,name,duration_minutes,color,sort_order,is_active").eq("organization_id", actor.organizationId).eq("is_active", true);
   if (error) throw new Error(calendarError(error));
   return ((data ?? []) as any[]).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+/** Who a meeting can be booked for: a manager gets the organization's active members, an agent only themselves. */
+export async function listOwners(db: any, actor: Actor) {
+  if (!actor.canViewAll) {
+    const { data } = await db.from("profiles").select("id,full_name").eq("id", actor.userId).maybeSingle();
+    return [{ id: actor.userId, name: data?.full_name || "أنا" }];
+  }
+  const { data: members, error } = await db.from("org_memberships").select("user_id").eq("organization_id", actor.organizationId).eq("is_active", true);
+  if (error) throw new Error(calendarError(error));
+  const ids = ((members ?? []) as any[]).map((m) => m.user_id);
+  if (!ids.length) return [];
+  const { data: people } = await db.from("profiles").select("id,full_name").in("id", ids);
+  const names = new Map<string, string>(((people ?? []) as any[]).map((p) => [p.id, p.full_name || ""]));
+  return ids.map((id) => ({ id, name: names.get(id) || "بلا اسم" })).sort((a, b) => a.name.localeCompare(b.name, "ar"));
 }
 
 /* ----------------------------- the agent's week ----------------------------- */

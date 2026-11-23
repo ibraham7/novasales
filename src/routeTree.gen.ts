@@ -32,6 +32,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedChannelsRouteImport } from './routes/_authenticated/channels'
+import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedBuyersRouteImport } from './routes/_authenticated/buyers'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
@@ -198,6 +199,11 @@ const AuthenticatedChatRoute = AuthenticatedChatRouteImport.update({
 const AuthenticatedChannelsRoute = AuthenticatedChannelsRouteImport.update({
   id: '/channels',
   path: '/channels',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedCalendarRoute = AuthenticatedCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedBuyersRoute = AuthenticatedBuyersRouteImport.update({
@@ -503,6 +509,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/buyers': typeof AuthenticatedBuyersRoute
+  '/calendar': typeof AuthenticatedCalendarRoute
   '/channels': typeof AuthenticatedChannelsRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/contacts': typeof AuthenticatedContactsRoute
@@ -578,6 +585,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/buyers': typeof AuthenticatedBuyersRoute
+  '/calendar': typeof AuthenticatedCalendarRoute
   '/channels': typeof AuthenticatedChannelsRoute
   '/contacts': typeof AuthenticatedContactsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
@@ -654,6 +662,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/buyers': typeof AuthenticatedBuyersRoute
+  '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
   '/_authenticated/channels': typeof AuthenticatedChannelsRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/contacts': typeof AuthenticatedContactsRoute
@@ -732,6 +741,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/admin'
     | '/buyers'
+    | '/calendar'
     | '/channels'
     | '/chat'
     | '/contacts'
@@ -807,6 +817,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/buyers'
+    | '/calendar'
     | '/channels'
     | '/contacts'
     | '/dashboard'
@@ -882,6 +893,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/_authenticated/admin'
     | '/_authenticated/buyers'
+    | '/_authenticated/calendar'
     | '/_authenticated/channels'
     | '/_authenticated/chat'
     | '/_authenticated/contacts'
@@ -1137,6 +1149,13 @@ declare module '@tanstack/react-router' {
       path: '/channels'
       fullPath: '/channels'
       preLoaderRoute: typeof AuthenticatedChannelsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/calendar': {
+      id: '/_authenticated/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof AuthenticatedCalendarRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/buyers': {
@@ -1610,6 +1629,7 @@ const AuthenticatedSettingsRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedBuyersRoute: typeof AuthenticatedBuyersRoute
+  AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
   AuthenticatedChannelsRoute: typeof AuthenticatedChannelsRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedContactsRoute: typeof AuthenticatedContactsRoute
@@ -1638,6 +1658,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
   AuthenticatedBuyersRoute: AuthenticatedBuyersRoute,
+  AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
   AuthenticatedChannelsRoute: AuthenticatedChannelsRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedContactsRoute: AuthenticatedContactsRoute,

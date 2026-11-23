@@ -36,7 +36,7 @@ test("off by default: nothing can be booked or suggested until a manager switche
   const { db, rpcCalls } = setup({}, { [A]: false });
   await rejects(svc.createMeeting(db, agent1, input()), "التقويم غير مفعّل لهذه المؤسسة");
   await rejects(svc.suggestTimes(db, agent1, { durationMin: 30 }), "التقويم غير مفعّل لهذه المؤسسة");
-  assert.deepEqual(await svc.getCalendarState(db, agent1), { enabled: false, timezone: "Europe/Istanbul", canViewAll: false, canBook: true, canManage: false });
+  assert.deepEqual(await svc.getCalendarState(db, agent1), { enabled: false, timezone: "Europe/Istanbul", viewerTimezone: "Europe/Istanbul", workStart: "09:00", workEnd: "18:00", workingDays: [1, 2, 3, 4, 5], canViewAll: false, canBook: true, canManage: false });
   await rejects(svc.enableCalendar(db, agent1), "ليس لديك صلاحية إدارة التقويم");
   assert.equal(rpcCalls.length, 0);
   await svc.enableCalendar(db, manager);
@@ -187,4 +187,11 @@ test("every read and write of an organization's data is scoped to the actor's or
     const ok = has("organization_id", A) || (call.table === "cal_meetings" && call.filters.some(([, c]: any) => c === "owner_user_id"));
     assert.ok(ok, `${call.table} ${call.op} is not scoped: ${JSON.stringify(call.filters)}`);
   }
+});
+
+test("who a meeting can be booked for: an agent only themselves, a manager the active members of their own organization", async () => {
+  const { db } = setup({ profiles: [{ id: "a1", full_name: "مندوب 1" }, { id: "a2", full_name: "مندوب 2" }, { id: "b1", full_name: "مندوب ب" }] });
+  assert.deepEqual(await svc.listOwners(db, agent1), [{ id: "a1", name: "مندوب 1" }]);
+  const owners = await svc.listOwners(db, manager);
+  assert.deepEqual(owners.map((o: any) => o.id).sort(), ["a1", "a2", "mgr", "shared"], "no member of organization B");
 });
