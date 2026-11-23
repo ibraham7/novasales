@@ -69,7 +69,7 @@ export function TriggerForm({ triggerType, onTriggerType, config, onConfig, stag
             </div>
           ) : (<>
           <div>
-            <Label className="text-xs">{event === "time.task_overdue" ? "بعد التأخير بـ (اختياري)" : "بعد مدة"}</Label>
+            <Label className="text-xs">{event === "time.task_overdue" ? "بعد التأخير بـ (اختياري)" : event === "time.meeting_reminder" ? "قبل الموعد بـ" : "بعد مدة"}</Label>
             <Input type="number" min={0} value={amount || ""} onChange={(e) => setDuration(Number(e.target.value), unit)} />
           </div>
           <div>

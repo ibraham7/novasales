@@ -8,6 +8,7 @@
  * closed as «interrupted» later and is never retried.
  */
 import { dayStart } from "../../campaigns/send-schedule.ts";
+import { MEETING_CHANGED_REASON, meetingStillValid } from "./meeting-guard.ts";
 import { DEFAULT_SETTINGS, REASONS, evaluateGate, isTestRecipient, type GateDecision, type GateSettings, type SendChannel, type SendKind } from "./gate.ts";
 
 export type SendRequest = {
@@ -28,6 +29,8 @@ export type SendRequest = {
   /** Identifies the message for the event it answers, e.g. `${workflowId}:${stepId}:${eventId}`. */
   dedupeKey: string;
   allowFirstContact?: boolean;
+  /** A held message is dropped if it is still waiting at this time (e.g. the start of a meeting it reminds of). */
+  notAfter?: Date | null;
 };
 
 export type SenderResult = { ok: boolean; error?: string };
@@ -205,7 +208,8 @@ export async function sendThroughGate(deps: SendDeps, req: SendRequest): Promise
     return { status: "skipped", code: decision.code, reason: decision.reason, logId: id };
   }
   if (decision.action === "defer") {
-    const expires = new Date(now.getTime() + settings.defer_ttl_minutes * 60_000);
+    const ttl = new Date(now.getTime() + settings.defer_ttl_minutes * 60_000);
+    const expires = req.notAfter && req.notAfter.getTime() < ttl.getTime() ? req.notAfter : ttl;
     const id = await insertLog(db, { ...logBase(req), status: "deferred", reason_code: decision.code, reason: decision.reason, not_before: decision.notBefore.toISOString(), expires_at: expires.toISOString() });
     if (!id) return { status: "skipped", code: "duplicate", reason: REASONS.duplicate!, logId: null };
     return { status: "deferred", code: decision.code, reason: decision.reason, logId: id, notBefore: decision.notBefore.toISOString() };
@@ -245,6 +249,15 @@ export async function retryDeferred(deps: SendDeps, limit = 50, organizationId?:
       await db.from("wf_message_log").update({ status: "skipped", reason_code: "expired", reason: REASONS.expired, updated_at: stamp }).eq("id", row.id);
       out.skipped++;
       continue;
+    }
+    // A reminder for a meeting that was cancelled, moved or has passed is dropped, not sent late.
+    if (row.run_id) {
+      const { data: run } = await db.from("wf_runs").select("context").eq("id", row.run_id).maybeSingle();
+      if (!(await meetingStillValid(db, row.organization_id, run?.context?.trigger, now))) {
+        await db.from("wf_message_log").update({ status: "skipped", reason_code: "meeting_changed", reason: MEETING_CHANGED_REASON, updated_at: stamp }).eq("id", row.id);
+        out.skipped++;
+        continue;
+      }
     }
     const req = requestFromRow(row);
     const { decision } = await decide(deps, req, now, false);

@@ -18,6 +18,10 @@ export const MESSAGE_VARIABLES: Record<string, string> = {
   due_today: "عدد مهام اليوم (الملخص)",
   overdue: "عدد المهام المتأخرة (الملخص)",
   account: "اسم حساب واتساب",
+  meeting_day: "يوم الاجتماع وتاريخه (تذكير الاجتماع)",
+  meeting_time: "ساعة الاجتماع (تذكير الاجتماع)",
+  meeting_type: "نوع الاجتماع (تذكير الاجتماع)",
+  meeting_in: "المدة المتبقية، مثل «خلال ساعة» (تذكير الاجتماع)",
 };
 
 /** Names used by earlier templates (double braces), mapped to the current ones. */
