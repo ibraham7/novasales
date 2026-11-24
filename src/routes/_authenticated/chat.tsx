@@ -300,6 +300,16 @@ function ChatLayout() {
 
             {canDelete && (
 
+              <div className="flex items-center gap-1.5">
+
+                <Link to="/pipeline/trash" className="h-8 px-2 rounded-md border text-xs hover:bg-accent flex items-center gap-1" title="المحادثات والتذاكر المنقولة إلى المهملات">
+
+                  <Trash2 className="h-3.5 w-3.5" />
+
+                  المهملات
+
+                </Link>
+
 
               <button type="button" onClick={() => (selecting ? stopSelecting() : setSelecting(true))} className="h-8 px-2 rounded-md border text-xs hover:bg-accent flex items-center gap-1" aria-pressed={selecting}>
 
@@ -312,6 +322,8 @@ function ChatLayout() {
 
               </button>
 
+
+              </div>
 
             )}
 
