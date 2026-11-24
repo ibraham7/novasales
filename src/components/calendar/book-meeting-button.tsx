@@ -12,7 +12,7 @@ import { MeetingDialog } from "./meeting-dialog";
 import { MeetingDetails } from "./meeting-details";
 
 /**
- * «حجز اجتماع» next to a customer, an opportunity or a chat. It appears only when the calendar is switched on for the
+ * «حجز موعد» next to a customer, an opportunity or a chat. It appears only when the calendar is switched on for the
  * organization and the person may book. In a chat it can also offer free times and put one into the message box
  * (the person reads and sends it; nothing is sent from here).
  */
@@ -37,14 +37,14 @@ export function BookMeetingButton(props: { contactId?: string | null; contactNam
   return (
     <>
       <div className={props.className ?? "flex flex-wrap items-center gap-2"}>
-        <Button size="sm" variant="outline" className="gap-1" onClick={() => setOpen(true)}><CalendarPlus className="h-4 w-4" />حجز اجتماع</Button>
-        {count > 0 && <Button size="sm" variant="ghost" onClick={() => setListOpen(true)}>اجتماعاته ({count})</Button>}
+        <Button size="sm" variant="outline" className="gap-1" onClick={() => setOpen(true)}><CalendarPlus className="h-4 w-4" />حجز موعد</Button>
+        {count > 0 && <Button size="sm" variant="ghost" onClick={() => setListOpen(true)}>مواعيده ({count})</Button>}
         {props.onInsertText && <Button size="sm" variant="ghost" onClick={() => setOfferOpen(true)}>اقترح أوقاتاً</Button>}
       </div>
       <MeetingDialog open={open} onOpenChange={setOpen} tz={tz} today={today} canViewAll={state.data.canViewAll} draft={{ contactId: props.contactId ?? null, contactName: props.contactName ?? null, opportunityId: props.opportunityId ?? null, leadId: props.leadId ?? null }} />
       <Dialog open={listOpen} onOpenChange={setListOpen}>
         <DialogContent dir="rtl" className="max-w-md">
-          <DialogHeader><DialogTitle>الاجتماعات</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>المواعيد</DialogTitle></DialogHeader>
           <div className="space-y-2">
             {(mine.data ?? []).map((m: any) => (
               <button key={m.id} type="button" onClick={() => { setListOpen(false); setSelected(m.id); }} className="flex w-full items-center justify-between rounded border px-3 py-2 text-start text-sm hover:bg-muted">

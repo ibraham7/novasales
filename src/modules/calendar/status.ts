@@ -28,8 +28,8 @@ export const canMove = (from: string, to: string): boolean => from === to || (MO
 
 /** The buttons of the details panel for a meeting in this status. */
 export const ACTIONS: Record<MeetingStatus, { to: MeetingStatus; label: string }[]> = {
-  booked: [{ to: "confirmed", label: "تأكيد" }, { to: "in_progress", label: "بدء الاجتماع" }, { to: "completed", label: "إنهاء" }, { to: "no_show", label: "لم يحضر" }, { to: "cancelled", label: "إلغاء" }],
-  confirmed: [{ to: "in_progress", label: "بدء الاجتماع" }, { to: "completed", label: "إنهاء" }, { to: "no_show", label: "لم يحضر" }, { to: "cancelled", label: "إلغاء" }],
+  booked: [{ to: "confirmed", label: "تأكيد" }, { to: "in_progress", label: "بدء الموعد" }, { to: "completed", label: "إنهاء" }, { to: "no_show", label: "لم يحضر" }, { to: "cancelled", label: "إلغاء" }],
+  confirmed: [{ to: "in_progress", label: "بدء الموعد" }, { to: "completed", label: "إنهاء" }, { to: "no_show", label: "لم يحضر" }, { to: "cancelled", label: "إلغاء" }],
   in_progress: [{ to: "completed", label: "إنهاء" }, { to: "cancelled", label: "إلغاء" }],
   completed: [],
   cancelled: [],

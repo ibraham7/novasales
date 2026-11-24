@@ -65,10 +65,10 @@ test("statuses: allowed moves match the database guard; final ones cannot move; 
 test("error messages: codes and constraint names become plain Arabic and never show database details", () => {
   assert.equal(calendarError({ message: "CAL_OWNER_BUSY" }), "المندوب مشغول بهذا الوقت");
   assert.equal(calendarError({ message: 'conflicting key value violates exclusion constraint "cal_meetings_owner_no_overlap" DETAIL: Key (owner_user_id, tstzrange)=(…)' }), "المندوب مشغول بهذا الوقت");
-  assert.equal(calendarError({ message: 'violates check constraint "cal_meetings_outcome_after_completed"' }), "تُسجَّل نتيجة الاجتماع بعد انتهائه فقط");
+  assert.equal(calendarError({ message: 'violates check constraint "cal_meetings_outcome_after_completed"' }), "تُسجَّل نتيجة الموعد بعد انتهائه فقط");
   const unknown = calendarError({ message: "relation cal_meetings uuid 1234 failed" });
-  assert.equal(unknown, "تعذر حفظ الاجتماع، حاول مرة أخرى");
+  assert.equal(unknown, "تعذر حفظ الموعد، حاول مرة أخرى");
   assert.ok(!/cal_meetings|1234/.test(unknown));
   assert.equal(ruleMessage(null), null);
-  assert.equal(ruleMessage("CAL_ON_BREAK"), "الاجتماع يتعارض مع استراحة المندوب");
+  assert.equal(ruleMessage("CAL_ON_BREAK"), "الموعد يتعارض مع استراحة المندوب");
 });

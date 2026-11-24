@@ -39,13 +39,13 @@ export function MeetingDetails(props: { id: string | null; tz: string; canBook: 
   return (
     <Dialog open={!!props.id} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md" dir="rtl">
-        <DialogHeader><DialogTitle>تفاصيل الاجتماع</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>تفاصيل الموعد</DialogTitle></DialogHeader>
         {q.isLoading && <p className="text-sm text-muted-foreground">جارِ التحميل...</p>}
         {q.isError && <p role="alert" className="text-sm text-destructive">{(q.error as Error).message}</p>}
         {m && (
           <div className="space-y-3 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <strong className="text-base">{m.contact_name || m.title || m.type_name || "اجتماع"}</strong>
+              <strong className="text-base">{m.contact_name || m.title || m.type_name || "موعد"}</strong>
               <Badge variant="secondary">{STATUS_LABELS[m.status as MeetingStatus] ?? m.status}</Badge>
               {m.type_name && <Badge variant="outline">{m.type_name}</Badge>}
             </div>
@@ -78,7 +78,7 @@ export function MeetingDetails(props: { id: string | null; tz: string; canBook: 
             )}
             {props.canBook && canSetOutcome(m.status) && (
               <div className="space-y-2 rounded-md border p-3">
-                <div className="font-medium">نتيجة الاجتماع</div>
+                <div className="font-medium">نتيجة الموعد</div>
                 <Textarea rows={2} placeholder="ملاحظة النتيجة (اختياري)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
                 <div className="flex flex-wrap gap-2">
                   {OUTCOMES.map((o) => <Button key={o} size="sm" variant={m.outcome === o ? "default" : "outline"} disabled={saveOutcome.isPending} onClick={() => saveOutcome.mutate(o)}>{OUTCOME_LABELS[o]}</Button>)}

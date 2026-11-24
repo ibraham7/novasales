@@ -50,3 +50,15 @@ test("minutes of the day, with an end exactly at midnight counted as 24:00", () 
   assert.equal(minutesOfDay("2026-11-23T21:00:00Z", "Europe/Istanbul"), 0);
   assert.equal(minutesOfDay("2026-11-23T21:00:00Z", "Europe/Istanbul", true), 1440);
 });
+
+test("the now line: local date, HH:mm label and distance from the top; none outside the shown hours", async () => {
+  const { nowMarker } = await import("../src/modules/calendar/view.ts");
+  // 08:20Z is 11:20 in Istanbul (UTC+3); the grid shows 09:00 to 18:00 at 64px per hour.
+  const at = Date.parse("2026-11-23T08:20:30Z");
+  const m = nowMarker(at, "Europe/Istanbul", 540, 1080, 64)!;
+  assert.deepEqual([m.date, m.label], ["2026-11-23", "11:20"]);
+  assert.ok(Math.abs(m.top - (140 / 60) * 64) < 1e-9);
+  assert.equal(nowMarker(Date.parse("2026-11-23T05:00:00Z"), "Europe/Istanbul", 540, 1080, 64), null, "08:00 is before the grid");
+  assert.equal(nowMarker(Date.parse("2026-11-23T15:00:00Z"), "Europe/Istanbul", 540, 1080, 64), null, "18:00 is after the grid");
+  assert.equal(nowMarker(Date.parse("2026-11-23T21:30:00Z"), "Europe/Istanbul", 0, 1440, 64)!.date, "2026-11-24", "the local day, not the UTC one");
+});

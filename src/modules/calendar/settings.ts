@@ -115,7 +115,7 @@ export async function saveMeetingType(db: any, actor: Actor, input: { id?: strin
   if (!actor.canManage) fail("ليس لديك صلاحية إدارة التقويم");
   const name = input.name.trim();
   if (!name || name.length > 80) fail("اكتب اسم النوع (حتى 80 حرفاً)");
-  if (!Number.isInteger(input.durationMinutes) || input.durationMinutes < 5 || input.durationMinutes > 600) fail("مدة الاجتماع من 5 إلى 600 دقيقة");
+  if (!Number.isInteger(input.durationMinutes) || input.durationMinutes < 5 || input.durationMinutes > 600) fail("مدة الموعد من 5 إلى 600 دقيقة");
   if (!/^#[0-9a-fA-F]{6}$/.test(input.color)) fail("اللون غير صحيح");
   const row = { name, duration_minutes: input.durationMinutes, color: input.color, ...(input.isActive === undefined ? {} : { is_active: input.isActive }) };
   if (input.id) {

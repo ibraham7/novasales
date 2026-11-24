@@ -169,7 +169,7 @@ const clean = (v: string | null | undefined) => (typeof v === "string" && v.trim
 
 async function endFor(db: any, organizationId: string, startsAt: string, endsAt: string | undefined, typeId: string | null | undefined) {
   if (endsAt) return endsAt;
-  if (!typeId) return fail("اكتب وقت نهاية الاجتماع أو اختر نوعاً له مدة");
+  if (!typeId) return fail("اكتب وقت نهاية الموعد أو اختر نوعاً له مدة");
   const { data } = await db.from("cal_meeting_types").select("duration_minutes").eq("id", typeId).eq("organization_id", organizationId).maybeSingle();
   if (!data) fail(ruleMessage("CAL_CROSS_ORG")!);
   return new Date(Date.parse(startsAt) + data.duration_minutes * 60_000).toISOString();
@@ -191,7 +191,7 @@ export async function createMeeting(db: any, actor: Actor, input: MeetingInput) 
   await requireMember(db, actor.organizationId, ownerId);
   await checkLinks(db, actor.organizationId, input);
   const channel = input.channel ?? "call";
-  if (!(CHANNELS as readonly string[]).includes(channel)) fail("قناة الاجتماع غير معروفة");
+  if (!(CHANNELS as readonly string[]).includes(channel)) fail("قناة الموعد غير معروفة");
   const endsAt = await endFor(db, actor.organizationId, input.startsAt, input.endsAt, input.meetingTypeId);
   await checkTime(db, actor.organizationId, ownerId, input.startsAt, endsAt);
   const { data, error } = await db.from("cal_meetings").insert({
@@ -222,7 +222,7 @@ export async function updateMeeting(db: any, actor: Actor, id: string, patch: Me
   if (patch.location !== undefined) next.location = clean(patch.location);
   if (patch.internalNotes !== undefined) next.internal_notes = clean(patch.internalNotes);
   if (patch.channel !== undefined) {
-    if (!(CHANNELS as readonly string[]).includes(patch.channel)) fail("قناة الاجتماع غير معروفة");
+    if (!(CHANNELS as readonly string[]).includes(patch.channel)) fail("قناة الموعد غير معروفة");
     next.channel = patch.channel;
   }
   const startsAt = patch.startsAt ?? current.starts_at;
@@ -256,7 +256,7 @@ export async function setMeetingStatus(db: any, actor: Actor, id: string, status
 /** The outcome of a finished meeting. It records what happened; it never moves the opportunity to another stage. */
 export async function recordOutcome(db: any, actor: Actor, id: string, outcome: string, note?: string | null) {
   if (!actor.canBook) fail("ليس لديك صلاحية تعديل المواعيد");
-  if (!(OUTCOMES as readonly string[]).includes(outcome)) fail("نتيجة الاجتماع غير معروفة");
+  if (!(OUTCOMES as readonly string[]).includes(outcome)) fail("نتيجة الموعد غير معروفة");
   const current = await ownMeeting(db, actor, id);
   if (!canSetOutcome(current.status)) fail(ruleMessage("CAL_OUTCOME_NOT_ALLOWED")!);
   const { data, error } = await db.from("cal_meetings").update({ outcome, outcome_note: clean(note), updated_by: actor.userId }).eq("id", id).eq("organization_id", actor.organizationId).select("*").maybeSingle();
@@ -276,7 +276,7 @@ export async function suggestTimes(db: any, actor: Actor, input: { durationMin?:
     if (!data) fail(ruleMessage("CAL_CROSS_ORG")!);
     duration = data.duration_minutes;
   }
-  if (!duration || duration < 5 || duration > 600) fail("مدة الاجتماع غير صحيحة");
+  if (!duration || duration < 5 || duration > 600) fail("مدة الموعد غير صحيحة");
   const owners = (actor.canViewAll ? (input.ownerIds?.length ? input.ownerIds : [actor.userId]) : [actor.userId]).slice(0, 10);
   const now = input.now ?? Date.now();
   const agents = [];
