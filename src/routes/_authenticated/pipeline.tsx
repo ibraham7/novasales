@@ -615,10 +615,6 @@ function PipelinePage() {
     return finish;
   }, [boardShown]);
 
-  if (isDetailRoute) {
-    return <Outlet />;
-  }
-
   // Each column shows its share of ALL the tickets in this pipeline (not the stage's win probability).
   // Counts come from the whole stage when no filter is on, otherwise from what is shown.
   const countsExact = !searching && channelFilter === "all" && !unreadOnly;
@@ -634,8 +630,16 @@ function PipelinePage() {
     (d: any) => !allowedDepartmentIds || allowedDepartmentIds.includes(d.id),
   );
 
+  // While a ticket is open the board is NOT removed: it stays in the page, invisible and in place, so every scroll position inside
+  // it (the board sideways, each column) is kept by the browser itself and nothing has to be put back when the user returns.
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col p-6 gap-4 overflow-hidden" dir="rtl">
+    <div className="relative">
+      {isDetailRoute && <Outlet />}
+    <div
+      className={cn("h-[calc(100vh-4rem)] flex flex-col p-6 gap-4 overflow-hidden", isDetailRoute && "invisible absolute inset-x-0 top-0 pointer-events-none")}
+      aria-hidden={isDetailRoute}
+      dir="rtl"
+    >
       <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -890,6 +894,7 @@ function PipelinePage() {
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 }
