@@ -10,7 +10,7 @@ export type MeetingRow = {
   contact_name: string | null; type_name: string | null; type_color: string | null; owner_name: string | null;
   attendees?: { id: string; name: string | null }[];
 };
-const HOUR = 64;
+const HOUR = 88;
 const INACTIVE = new Set(["cancelled", "no_show"]);
 const tone: Record<string, string> = {
   booked: "bg-muted text-foreground", confirmed: "bg-primary/15 text-foreground", in_progress: "bg-amber-100 text-amber-950 dark:bg-amber-900/40 dark:text-amber-50",
@@ -100,13 +100,21 @@ export function CalendarGrid(props: {
                   const s = minutesOfDay(m.starts_at, tz), e = minutesOfDay(m.ends_at, tz, true);
                   const { top, height: h } = blockGeometry(s, e, first, HOUR);
                   const p = placed.get(m.id) ?? { col: 0, cols: 1 };
+                  const short = h < 52;
+                  const tint = !INACTIVE.has(m.status) && m.status !== "completed" && /^#[0-9a-f]{6}$/i.test(m.type_color ?? "") ? `${m.type_color}26` : undefined;
                   return (
-                    <button key={m.id} type="button" onClick={(ev) => { ev.stopPropagation(); props.onPick(m); }} title={`${time(m.starts_at, tz)} · ${label(m)} · ${STATUS_LABELS[m.status as keyof typeof STATUS_LABELS] ?? m.status}`}
-                      className={cn("absolute overflow-hidden rounded-md border-s-4 px-1.5 py-0.5 text-start text-[11px] leading-4 shadow-sm hover:z-10", tone[m.status], INACTIVE.has(m.status) && "opacity-60")}
-                      style={{ top, height: h - 2, insetInlineStart: `${(p.col / p.cols) * 100}%`, width: `calc(${100 / p.cols}% - 3px)`, borderColor: m.type_color ?? undefined }}>
-                      <strong className="block truncate">{label(m)}</strong>
-                      <span className="block truncate opacity-80">{time(m.starts_at, tz)}{m.type_name ? ` · ${m.type_name}` : ""}</span>
-                      {props.showOwner && h >= 56 && <span className="block truncate opacity-70">{m.owner_name}</span>}
+                    <button key={m.id} type="button" onClick={(ev) => { ev.stopPropagation(); props.onPick(m); }} title={`${time(m.starts_at, tz)}–${time(m.ends_at, tz)} · ${label(m)}${m.type_name ? ` · ${m.type_name}` : ""} · ${STATUS_LABELS[m.status as keyof typeof STATUS_LABELS] ?? m.status}`}
+                      className={cn("absolute overflow-hidden rounded-md border-s-4 px-2 py-1 text-start text-xs leading-5 shadow-sm hover:z-10 hover:shadow-md", tone[m.status], INACTIVE.has(m.status) && "opacity-60")}
+                      style={{ top, height: h - 2, insetInlineStart: `${(p.col / p.cols) * 100}%`, width: `calc(${100 / p.cols}% - 3px)`, borderColor: m.type_color ?? undefined, backgroundColor: tint }}>
+                      {short ? (
+                        <span className="block truncate"><strong>{label(m)}</strong> · {time(m.starts_at, tz)}</span>
+                      ) : (
+                        <>
+                          <strong className="block truncate text-[13px]">{label(m)}</strong>
+                          <span className="block truncate opacity-90">{time(m.starts_at, tz)}–{time(m.ends_at, tz)}{m.type_name ? ` · ${m.type_name}` : ""}</span>
+                          {props.showOwner && h >= 78 && <span className="block truncate opacity-70">{m.owner_name}</span>}
+                        </>
+                      )}
                     </button>
                   );
                 })}
