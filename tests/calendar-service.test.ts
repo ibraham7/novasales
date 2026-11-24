@@ -272,3 +272,14 @@ test("changing the people of a meeting replaces them; moving it checks they are 
   await svc.updateMeeting(db, manager, m.id, { attendeeIds: [] });
   assert.equal(db.tables.cal_meeting_attendees.length, 0);
 });
+
+test("deleting a meeting: whoever may handle it, in their own organization; others get «not found»; a read-only user cannot", async () => {
+  const { db } = setup({ cal_meetings: [meeting("m1", A, "a1", "09:00", "09:30"), meeting("m2", A, "a2", "10:00", "10:30"), meeting("mB", B, "b1", "09:00", "09:30")] });
+  await rejects(svc.deleteMeeting(db, readOnly, "m1"), "ليس لديك صلاحية حذف المواعيد");
+  await rejects(svc.deleteMeeting(db, agent1, "m2"), /غير موجود/);
+  await rejects(svc.deleteMeeting(db, manager, "mB"), /غير موجود/);
+  assert.equal(db.tables.cal_meetings.length, 3, "nothing was removed by the refused attempts");
+  assert.deepEqual(await svc.deleteMeeting(db, agent1, "m1"), { ok: true });
+  assert.deepEqual(await svc.deleteMeeting(db, manager, "m2"), { ok: true });
+  assert.deepEqual(db.tables.cal_meetings.map((m: any) => m.id), ["mB"]);
+});

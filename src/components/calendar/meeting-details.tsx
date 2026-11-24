@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { getMeeting, recordMeetingOutcome, setMeetingStatus } from "@/modules/calendar";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { deleteMeeting, getMeeting, recordMeetingOutcome, setMeetingStatus } from "@/modules/calendar";
 import { ACTIONS, CHANNEL_LABELS, OUTCOMES, OUTCOME_LABELS, STATUS_LABELS, canSetOutcome, type MeetingStatus } from "@/modules/calendar/status";
 import { fromMinutes } from "@/modules/calendar/time";
 import { minutesOfDay } from "@/modules/calendar/view";
@@ -18,6 +19,8 @@ export function MeetingDetails(props: { id: string | null; tz: string; canBook: 
   const qc = useQueryClient();
   const load = useServerFn(getMeeting);
   const setStatus = useServerFn(setMeetingStatus);
+  const remove = useServerFn(deleteMeeting);
+  const [deleting, setDeleting] = useState(false);
   const outcome = useServerFn(recordMeetingOutcome);
   const q = useQuery({ queryKey: ["cal-meeting", props.id], queryFn: () => load({ data: { id: props.id! } }), enabled: !!props.id });
   const [reason, setReason] = useState("");
@@ -28,6 +31,17 @@ export function MeetingDetails(props: { id: string | null; tz: string; canBook: 
     mutationFn: (v: { to: MeetingStatus; reason?: string }) => setStatus({ data: { id: props.id!, status: v.to, reason: v.reason ?? null } }),
     onSuccess: () => { done(); setCancelling(false); setReason(""); toast.success("تم تحديث الموعد"); },
     onError: (e: any) => toast.error(e.message || "تعذر تحديث الموعد"),
+  });
+  const del = useMutation({
+    mutationFn: () => remove({ data: { id: props.id! } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cal-meetings"] });
+      qc.invalidateQueries({ queryKey: ["cal-entity"] });
+      setDeleting(false);
+      toast.success("حُذف الموعد");
+      props.onClose();
+    },
+    onError: (e: any) => toast.error(e.message || "تعذر حذف الموعد"),
   });
   const saveOutcome = useMutation({
     mutationFn: (value: (typeof OUTCOMES)[number]) => outcome({ data: { id: props.id!, outcome: value, note: note || null } }),
@@ -87,9 +101,30 @@ export function MeetingDetails(props: { id: string | null; tz: string; canBook: 
                 <p className="text-xs text-muted-foreground">تسجيل النتيجة لا ينقل مرحلة الفرصة تلقائياً.</p>
               </div>
             )}
+            {props.canBook && (
+              <div className="border-t pt-3">
+                <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => setDeleting(true)}>حذف الموعد نهائياً</Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف الموعد نهائياً؟</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيُمسح من التقويم ولا يمكن استرجاعه. إن كان موعداً حقيقياً لم يتم، استعمل «إلغاء» بدل الحذف ليبقى مسجّلاً بسببه.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>رجوع</AlertDialogCancel>
+            <AlertDialogAction disabled={del.isPending} onClick={(e) => { e.preventDefault(); del.mutate(); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {del.isPending ? "جارٍ الحذف..." : "حذف نهائياً"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

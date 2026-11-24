@@ -315,6 +315,18 @@ export async function updateMeeting(db: any, actor: Actor, id: string, patch: Me
   return (await decorate(db, actor.organizationId, [data]))[0];
 }
 
+/**
+ * Removes a meeting for good (a meeting booked by mistake). Unlike cancelling, which keeps it with its reason, nothing is left in the
+ * calendar. Whoever may handle the meeting may delete it; its people (attendees) go with it.
+ */
+export async function deleteMeeting(db: any, actor: Actor, id: string) {
+  if (!actor.canBook) fail("ليس لديك صلاحية حذف المواعيد");
+  await ownMeeting(db, actor, id);
+  const { error } = await db.from("cal_meetings").delete().eq("id", id).eq("organization_id", actor.organizationId);
+  if (error) throw new Error(calendarError(error));
+  return { ok: true as const };
+}
+
 export async function setMeetingStatus(db: any, actor: Actor, id: string, status: MeetingStatus, reason?: string | null) {
   if (!actor.canBook) fail("ليس لديك صلاحية تعديل المواعيد");
   const current = await ownMeeting(db, actor, id);
