@@ -8,6 +8,7 @@ import { clickToTime, dayWindow, groupByDay, minutesOfDay, nowMarker, rangeFor, 
 export type MeetingRow = {
   id: string; owner_user_id: string; starts_at: string; ends_at: string; status: string; title: string | null;
   contact_name: string | null; type_name: string | null; type_color: string | null; owner_name: string | null;
+  attendees?: { id: string; name: string | null }[];
 };
 const HOUR = 64;
 const INACTIVE = new Set(["cancelled", "no_show"]);

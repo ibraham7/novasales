@@ -150,7 +150,7 @@ function PipelineOppDetail() {
         )}
         <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
           <SyncHistoryButton oppId={oppId} />
-          <BookMeetingButton opportunityId={oppId} contactId={ws.contact?.id ?? null} contactName={ws.contact?.name ?? null} />
+          <BookMeetingButton opportunityId={oppId} ownerId={ws.owner?.id ?? null} contactId={ws.contact?.id ?? null} contactName={ws.contact?.name ?? null} />
           <DeleteOpportunityButton oppId={oppId} contactName={ws.contact?.name ?? null} onDeleted={() => nav({ to: "/pipeline" })} />
         </div>
       </div>

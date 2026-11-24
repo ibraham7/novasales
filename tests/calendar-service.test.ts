@@ -23,6 +23,7 @@ function setup(extra: Record<string, any[]> = {}, enabled = { [A]: true, [B]: tr
     cal_meeting_types: [{ id: "tA", organization_id: A, name: "عرض توضيحي", duration_minutes: 30, color: "#8b5cf6", sort_order: 1, is_active: true }, { id: "tB", organization_id: B, name: "نوع ب", duration_minutes: 30, color: "#000000", sort_order: 1, is_active: true }],
     profiles: [{ id: "a1", full_name: "مندوب 1" }],
     cal_meetings: [],
+    cal_meeting_attendees: [],
     ...extra,
   });
   const rpcCalls: any[] = [];
@@ -184,7 +185,9 @@ test("every read and write of an organization's data is scoped to the actor's or
   for (const call of db.calls) {
     if (call.op === "insert" || call.table === "profiles") continue;
     const has = (column: string, value: string) => call.filters.some(([, c, v]: any) => c === column && v === value);
-    const ok = has("organization_id", A) || (call.table === "cal_meetings" && call.filters.some(([, c]: any) => c === "owner_user_id"));
+    // A person's busy time spans organizations: by owner, by the meetings they take part in (their user id), or by those meeting ids.
+    const byPerson = (call.table === "cal_meetings" && call.filters.some(([, c]: any) => c === "owner_user_id" || c === "id")) || (call.table === "cal_meeting_attendees" && call.filters.some(([, c]: any) => c === "user_id"));
+    const ok = has("organization_id", A) || byPerson;
     assert.ok(ok, `${call.table} ${call.op} is not scoped: ${JSON.stringify(call.filters)}`);
   }
 });
@@ -194,4 +197,78 @@ test("who a meeting can be booked for: an agent only themselves, a manager the a
   assert.deepEqual(await svc.listOwners(db, agent1), [{ id: "a1", name: "مندوب 1" }]);
   const owners = await svc.listOwners(db, manager);
   assert.deepEqual(owners.map((o: any) => o.id).sort(), ["a1", "a2", "mgr", "shared"], "no member of organization B");
+});
+
+test("a ticket's meeting list also shows meetings booked for the same customer from the calendar (contact only)", async () => {
+  const { db } = setup({ cal_meetings: [
+    meeting("viaOpp", A, "mgr", "10:00", "10:30", { opportunity_id: "oA", contact_id: "cA" }),
+    meeting("viaContact", A, "mgr", "11:00", "11:30", { contact_id: "cA" }),
+    meeting("other", A, "mgr", "12:00", "12:30", { contact_id: "cOther" }),
+  ] });
+  const ids = (await svc.listEntityMeetings(db, manager, { opportunityId: "oA", contactId: "cA" })).map((m: any) => m.id).sort();
+  assert.deepEqual(ids, ["viaContact", "viaOpp"]);
+  assert.deepEqual((await svc.listEntityMeetings(db, manager, { contactId: "cA" })).map((m: any) => m.id).sort(), ["viaContact", "viaOpp"]);
+  assert.deepEqual((await svc.listEntityMeetings(db, manager, { opportunityId: "oA" })).map((m: any) => m.id), ["viaOpp"]);
+});
+
+test("an agent also sees and handles meetings of THEIR tickets and leads that a manager booked under another name; never other agents' meetings", async () => {
+  const { db } = setup({
+    opp_opportunities: [{ id: "oA", organization_id: A, owner_agent_id: "a1" }, { id: "oOther", organization_id: A, owner_agent_id: "a2" }],
+    crm_leads: [{ id: "lA", organization_id: A, owner_user_id: "a1" }],
+    cal_meetings: [
+      meeting("mine-by-owner", A, "a1", "09:00", "09:30"),
+      meeting("booked-by-manager-opp", A, "mgr", "10:00", "10:30", { opportunity_id: "oA", created_by: "mgr" }),
+      meeting("booked-by-manager-lead", A, "mgr", "11:00", "11:30", { lead_id: "lA", created_by: "mgr" }),
+      meeting("other-agents-ticket", A, "mgr", "12:00", "12:30", { opportunity_id: "oOther", created_by: "mgr" }),
+      meeting("manager-private", A, "mgr", "13:00", "13:30", { created_by: "mgr" }),
+    ],
+  });
+  const range = { from: iso("2026-11-23", "00:00"), to: iso("2026-11-24", "00:00") };
+  assert.deepEqual((await svc.listMeetings(db, agent1, range)).map((m: any) => m.id), ["mine-by-owner", "booked-by-manager-opp", "booked-by-manager-lead"]);
+  assert.deepEqual((await svc.listMeetings(db, agent2, range)).map((m: any) => m.id), ["other-agents-ticket"]);
+  assert.equal((await svc.listMeetings(db, manager, range)).length, 5);
+  assert.deepEqual((await svc.listEntityMeetings(db, agent1, { opportunityId: "oA", contactId: "cA" })).map((m: any) => m.id), ["booked-by-manager-opp"]);
+  assert.equal((await svc.getMeeting(db, agent1, "booked-by-manager-opp")).id, "booked-by-manager-opp");
+  await rejects(svc.getMeeting(db, agent1, "other-agents-ticket"), /غير موجود|لا يوجد|not found/i);
+  await rejects(svc.getMeeting(db, agent1, "manager-private"), /غير موجود|لا يوجد|not found/i);
+});
+
+test("a meeting WITH a team member (a manager's meeting with an agent): it shows in the agent's calendar and blocks the agent's time", async () => {
+  const { db } = setup();
+  // The manager books a meeting under their own name with agent a1 taking part.
+  const m = await svc.createMeeting(db, manager, input({ ownerId: "mgr", title: "اجتماع مع الإدارة", attendeeIds: ["a1"] }));
+  assert.deepEqual(m.attendees.map((a: any) => a.id), ["a1"]);
+  const range = { from: iso("2026-11-23", "00:00"), to: iso("2026-11-24", "00:00") };
+  assert.deepEqual((await svc.listMeetings(db, agent1, range)).map((x: any) => x.id), [m.id], "the agent sees it");
+  assert.deepEqual((await svc.listMeetings(db, agent2, range)).map((x: any) => x.id), [], "another agent does not");
+  assert.equal((await svc.getMeeting(db, agent1, m.id)).title, "اجتماع مع الإدارة");
+  // The agent cannot be booked for a customer meeting at that time, but can right after.
+  await rejects(svc.createMeeting(db, agent1, input({ contactId: "cA" })), "المندوب مشغول بهذا الوقت");
+  await rejects(svc.createMeeting(db, manager, input({ ownerId: "a1", contactId: "cA" })), "المندوب مشغول بهذا الوقت");
+  const after = await svc.createMeeting(db, agent1, input({ startsAt: iso("2026-11-23", "11:00"), endsAt: iso("2026-11-23", "11:30"), contactId: "cA" }));
+  assert.ok(after.id);
+  // Suggested times for the agent skip the meeting they take part in.
+  const slots = await svc.suggestTimes(db, agent1, { durationMin: 60, now: Date.parse(iso("2026-11-23", "09:00")) });
+  assert.ok(slots.every((s: any) => !(Date.parse(s.startsAt) < Date.parse(iso("2026-11-23", "11:00")) && Date.parse(s.endsAt) > Date.parse(iso("2026-11-23", "10:00")))));
+});
+
+test("attendees: only managers add them, they must be active members and free, and the owner is not a second time", async () => {
+  const { db } = setup();
+  await rejects(svc.createMeeting(db, agent1, input({ attendeeIds: ["a2"] })), "إضافة مشاركين من الفريق للمدراء فقط");
+  await rejects(svc.createMeeting(db, manager, input({ ownerId: "mgr", attendeeIds: ["mgr"] })), "صاحب الموعد مشارك فيه أصلاً");
+  await rejects(svc.createMeeting(db, manager, input({ ownerId: "mgr", attendeeIds: ["stranger"] })), "المندوب غير فعّال في هذه المؤسسة");
+  await svc.createMeeting(db, agent2, input());
+  await rejects(svc.createMeeting(db, manager, input({ ownerId: "mgr", attendeeIds: ["a2"] })), "أحد المشاركين مشغول بهذا الوقت");
+  assert.equal(db.tables.cal_meetings.length, 1, "nothing half-made was left");
+});
+
+test("changing the people of a meeting replaces them; moving it checks they are free", async () => {
+  const { db } = setup();
+  const m = await svc.createMeeting(db, manager, input({ ownerId: "mgr", attendeeIds: ["a1"] }));
+  await svc.updateMeeting(db, manager, m.id, { attendeeIds: ["a2"] });
+  assert.deepEqual(db.tables.cal_meeting_attendees.map((a: any) => a.user_id), ["a2"]);
+  await svc.createMeeting(db, agent2, input({ startsAt: iso("2026-11-23", "12:00"), endsAt: iso("2026-11-23", "12:30") }));
+  await rejects(svc.updateMeeting(db, manager, m.id, { startsAt: iso("2026-11-23", "12:00"), endsAt: iso("2026-11-23", "13:00") }), "أحد المشاركين مشغول بهذا الوقت");
+  await svc.updateMeeting(db, manager, m.id, { attendeeIds: [] });
+  assert.equal(db.tables.cal_meeting_attendees.length, 0);
 });

@@ -16,13 +16,13 @@ import { MeetingDetails } from "./meeting-details";
  * organization and the person may book. In a chat it can also offer free times and put one into the message box
  * (the person reads and sends it; nothing is sent from here).
  */
-export function BookMeetingButton(props: { contactId?: string | null; contactName?: string | null; opportunityId?: string | null; leadId?: string | null; onInsertText?: (text: string) => void; className?: string }) {
+export function BookMeetingButton(props: { contactId?: string | null; contactName?: string | null; opportunityId?: string | null; leadId?: string | null; ownerId?: string | null; onInsertText?: (text: string) => void; className?: string }) {
   const stateFn = useServerFn(getCalendarState);
   const listFn = useServerFn(listEntityMeetings);
   const suggestFn = useServerFn(suggestMeetingTimes);
   const state = useQuery({ queryKey: ["cal-state"], queryFn: () => stateFn(), staleTime: 5 * 60_000, retry: false });
   const hasEntity = !!(props.opportunityId || props.leadId || props.contactId);
-  const mine = useQuery({ queryKey: ["cal-entity", props.opportunityId, props.leadId, props.contactId], enabled: !!state.data?.enabled && hasEntity, queryFn: () => listFn({ data: { opportunityId: props.opportunityId ?? null, leadId: props.leadId ?? null, contactId: props.opportunityId || props.leadId ? null : (props.contactId ?? null) } }) });
+  const mine = useQuery({ queryKey: ["cal-entity", props.opportunityId, props.leadId, props.contactId], enabled: !!state.data?.enabled && hasEntity, queryFn: () => listFn({ data: { opportunityId: props.opportunityId ?? null, leadId: props.leadId ?? null, contactId: props.contactId ?? null } }) });
   const [open, setOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [offerOpen, setOfferOpen] = useState(false);
@@ -41,7 +41,7 @@ export function BookMeetingButton(props: { contactId?: string | null; contactNam
         {count > 0 && <Button size="sm" variant="ghost" onClick={() => setListOpen(true)}>مواعيده ({count})</Button>}
         {props.onInsertText && <Button size="sm" variant="ghost" onClick={() => setOfferOpen(true)}>اقترح أوقاتاً</Button>}
       </div>
-      <MeetingDialog open={open} onOpenChange={setOpen} tz={tz} today={today} canViewAll={state.data.canViewAll} draft={{ contactId: props.contactId ?? null, contactName: props.contactName ?? null, opportunityId: props.opportunityId ?? null, leadId: props.leadId ?? null }} />
+      <MeetingDialog open={open} onOpenChange={setOpen} tz={tz} today={today} canViewAll={state.data.canViewAll} draft={{ ownerId: state.data.canViewAll ? (props.ownerId ?? undefined) : undefined, contactId: props.contactId ?? null, contactName: props.contactName ?? null, opportunityId: props.opportunityId ?? null, leadId: props.leadId ?? null }} />
       <Dialog open={listOpen} onOpenChange={setListOpen}>
         <DialogContent dir="rtl" className="max-w-md">
           <DialogHeader><DialogTitle>المواعيد</DialogTitle></DialogHeader>
