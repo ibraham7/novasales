@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import {
+  Check,
   Flame,
   MessagesSquare,
   Search,
@@ -503,8 +504,8 @@ function ChatLayout() {
                       setPicked((cur) => { const next = new Set(cur); if (next.has(chat.id)) next.delete(chat.id); else next.add(chat.id); return next; });
 
                     }}
-                    onMouseEnter={() => prefetchChat(chat.id)}
-                    onTouchStart={() => prefetchChat(chat.id)}
+                    onMouseEnter={() => { if (!selecting) prefetchChat(chat.id); }}
+                    onTouchStart={() => { if (!selecting) prefetchChat(chat.id); }}
                     className={cn(
                       "block transition-colors",
                       active
@@ -515,7 +516,16 @@ function ChatLayout() {
                     <div className="px-3 py-2 flex gap-3 items-center">
                       {selecting && (
 
-                        <input type="checkbox" aria-label="تحديد المحادثة" className="h-4 w-4 shrink-0" checked={picked.has(chat.id)} disabled={!chat.opportunity_id} readOnly />
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "h-5 w-5 shrink-0 rounded border-2 flex items-center justify-center transition-colors",
+                            picked.has(chat.id) ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/50",
+                            !chat.opportunity_id && "opacity-40",
+                          )}
+                        >
+                          {picked.has(chat.id) && <Check className="h-3.5 w-3.5" />}
+                        </span>
 
                       )}
                       {/* Avatar */}
