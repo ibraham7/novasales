@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type UIEvent } from "react";
 import { toast } from "@/lib/toast";
 import { KanbanSquare, Settings2, UserPlus, MessageCircle, Plus, ArrowLeftRight, Shuffle, PhoneCall } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -564,6 +564,45 @@ function PipelinePage() {
   // Dragging a card near a column's top or bottom (or the board's sides) scrolls it.
   useEffect(() => startDragAutoscroll(), []);
 
+  // Opening a ticket removes the board from the page; coming back must put the user where they were (which stage, how far down
+  // each column), not at the first stage's newest tickets. The positions are remembered as the user scrolls, and put back
+  // when the board returns. This component stays mounted while a ticket is open, so the memory survives.
+  const scrollMemo = useRef<{ left: number; cols: Record<string, number> } | null>(null);
+  const restoring = useRef(false);
+  const rememberScroll = (e: UIEvent<HTMLElement>) => {
+    if (restoring.current) return;
+    const el = e.target as HTMLElement;
+    const memo = (scrollMemo.current ??= { left: 0, cols: {} });
+    if (el.hasAttribute("data-kanban-board")) memo.left = el.scrollLeft;
+    else if (el.dataset?.stageId) memo.cols[el.dataset.stageId] = el.scrollTop;
+  };
+  const boardShown = !isDetailRoute && stages.length > 0;
+  useLayoutEffect(() => {
+    const memo = scrollMemo.current;
+    if (!boardShown || !memo) return;
+    restoring.current = true;
+    let frames = 0;
+    let raf = 0;
+    const apply = () => {
+      const board = document.querySelector<HTMLElement>("[data-kanban-board]");
+      if (board) {
+        board.scrollLeft = memo.left;
+        for (const [id, top] of Object.entries(memo.cols)) {
+          const list = board.querySelector<HTMLElement>(`[data-stage-id="${id}"]`);
+          if (list) list.scrollTop = top;
+        }
+      }
+      // A few frames: the columns may still be filling in, and a scroll set too early is cut short.
+      if (++frames < 10) raf = requestAnimationFrame(apply);
+      else restoring.current = false;
+    };
+    apply();
+    return () => {
+      cancelAnimationFrame(raf);
+      restoring.current = false;
+    };
+  }, [boardShown]);
+
   if (isDetailRoute) {
     return <Outlet />;
   }
@@ -806,7 +845,7 @@ function PipelinePage() {
           </div>
         )
       ) : (
-        <div data-kanban-board className="grid grid-flow-col auto-cols-[300px] gap-4 overflow-x-auto pb-2 flex-1 min-h-0">
+        <div data-kanban-board onScrollCapture={rememberScroll} className="grid grid-flow-col auto-cols-[300px] gap-4 overflow-x-auto pb-2 flex-1 min-h-0">
           {stages.map((s: any) => (
             <KanbanColumn
               key={s.id}
@@ -958,7 +997,7 @@ function KanbanColumn({
           <Shuffle className="h-3.5 w-3.5 ml-1" /> {redistributing ? "جارٍ التجهيز..." : "إعادة توزيع العملاء"}
         </Button>
       )}
-      <div data-column-list className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
+      <div data-column-list data-stage-id={stage.id} className="space-y-2 flex-1 overflow-y-auto pr-1 -mr-1">
         {loading && items.length === 0 ? (
           [0, 1, 2].map((i) => <div key={i} className="h-20 rounded-lg bg-background/60 animate-pulse" />)
         ) : (

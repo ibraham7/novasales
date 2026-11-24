@@ -24,7 +24,11 @@ import {
   Flame,
   MessagesSquare,
   Search,
+  Trash2,
 } from "lucide-react";
+
+import { useCanDeleteTickets } from "@/components/chat/use-can-delete";
+import { TrashChatsDialog } from "@/components/chat/trash-chats-dialog";
 
 import {
   listChatsEnriched,
@@ -142,6 +146,12 @@ function ChatLayout() {
     search
       .trim()
       .length > 0;
+  // Selecting several chats to move them to the trash.
+  const canDelete = useCanDeleteTickets();
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [trashOpen, setTrashOpen] = useState(false);
+  const stopSelecting = () => { setSelecting(false); setPicked(new Set()); };
 
   const {
     data: chats = [],
@@ -260,6 +270,7 @@ function ChatLayout() {
       className="flex h-[calc(100dvh-3.5rem)] lg:h-screen overflow-hidden"
       dir="rtl"
     >
+      <TrashChatsDialog open={trashOpen} onOpenChange={setTrashOpen} opportunityIds={[...picked].map((id) => chats.find((c) => c.id === id)?.opportunity_id).filter(Boolean) as string[]} onDone={stopSelecting} />
       {/* Chat list */}
       <aside
         className={cn(
@@ -285,6 +296,23 @@ function ChatLayout() {
                 محادثة
               </p>
             </div>
+
+            {canDelete && (
+
+
+              <button type="button" onClick={() => (selecting ? stopSelecting() : setSelecting(true))} className="h-8 px-2 rounded-md border text-xs hover:bg-accent flex items-center gap-1" aria-pressed={selecting}>
+
+
+                <Trash2 className="h-3.5 w-3.5" />
+
+
+                {selecting ? "إلغاء التحديد" : "تحديد"}
+
+
+              </button>
+
+
+            )}
 
             {unreadTotal >
               0 && (
@@ -384,6 +412,29 @@ function ChatLayout() {
           </div>
         </div>
 
+        {selecting && (
+
+
+          <div className="shrink-0 border-y bg-muted/40 px-3 py-2 flex items-center gap-2 text-xs">
+
+
+            <span className="font-semibold">محدّد: {picked.size}</span>
+
+
+            <button type="button" className="underline text-muted-foreground" onClick={() => setPicked(new Set(filtered.filter((c) => c.opportunity_id).map((c) => c.id)))}>تحديد كل الظاهر</button>
+
+
+            <button type="button" className="underline text-muted-foreground" onClick={() => setPicked(new Set())}>مسح</button>
+
+
+            <button type="button" disabled={picked.size === 0} onClick={() => setTrashOpen(true)} className="ms-auto rounded-md bg-destructive px-3 py-1.5 font-semibold text-destructive-foreground disabled:opacity-50">نقل إلى المهملات</button>
+
+
+          </div>
+
+
+        )}
+
         {/* List */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {filtered.length ===
@@ -441,6 +492,17 @@ function ChatLayout() {
                       chatId:
                         chat.id,
                     }}
+                    onClick={(e) => {
+
+                      if (!selecting) return;
+
+                      e.preventDefault();
+
+                      if (!chat.opportunity_id) return;
+
+                      setPicked((cur) => { const next = new Set(cur); if (next.has(chat.id)) next.delete(chat.id); else next.add(chat.id); return next; });
+
+                    }}
                     onMouseEnter={() => prefetchChat(chat.id)}
                     onTouchStart={() => prefetchChat(chat.id)}
                     className={cn(
@@ -451,6 +513,11 @@ function ChatLayout() {
                     )}
                   >
                     <div className="px-3 py-2 flex gap-3 items-center">
+                      {selecting && (
+
+                        <input type="checkbox" aria-label="تحديد المحادثة" className="h-4 w-4 shrink-0" checked={picked.has(chat.id)} disabled={!chat.opportunity_id} readOnly />
+
+                      )}
                       {/* Avatar */}
                       <div className="relative shrink-0">
                         <div

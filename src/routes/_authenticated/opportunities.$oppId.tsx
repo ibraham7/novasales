@@ -22,6 +22,7 @@ import {
   listTasks,
   createTask,
   updateTask,
+  getOpportunityWorkspace,
 } from "@/modules/crm";
 import { OwnershipCard } from "@/components/ownership-card";
 

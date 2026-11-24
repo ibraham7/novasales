@@ -127,7 +127,7 @@ async function checkAttendees(db: any, actor: Actor, ownerId: string, ids: strin
     if (userId === ownerId) fail("صاحب الموعد مشارك فيه أصلاً");
     await requireMember(db, actor.organizationId, userId);
     const busy = await loadBusy(db, userId, new Date(s - 86_400_000).toISOString(), new Date(e + 86_400_000).toISOString());
-    if (busy.some((b) => b.id !== ignoreId && Date.parse(b.starts_at) < e && Date.parse(b.ends_at) > s)) fail(ruleMessage("CAL_ATTENDEE_BUSY")!);
+    if (busy.some((b) => b.id !== ignoreId && new Date(b.starts_at).getTime() < e && new Date(b.ends_at).getTime() > s)) fail(ruleMessage("CAL_ATTENDEE_BUSY")!);
   }
   return unique;
 }
