@@ -35,6 +35,7 @@ import {
   FileText,
   Forward,
   Info,
+  Mic,
   Paperclip,
   Reply,
   Send,
@@ -70,6 +71,8 @@ import {
 
 import { ChatHeaderActions } from "@/components/chat/chat-header-actions";
 import { VoicePlayer } from "@/components/chat/voice-player";
+import { useVoiceRecorder } from "@/components/chat/use-voice-recorder";
+import { clock, recordingFileName } from "@/lib/voice-recording";
 
 import {
   Button,
@@ -210,6 +213,41 @@ function ChatView() {
       qc.invalidateQueries({ queryKey: ["chats-enriched"] });
     }
   }
+
+  // Voice notes: record in the browser and send as an audio message.
+  const [sendingVoice, setSendingVoice] = useState(false);
+  const voice = useVoiceRecorder(async (blob, mime) => {
+    setSendingVoice(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.readAsDataURL(blob);
+      });
+      await sendMedia({
+        data: {
+          chatId,
+          kind: "audio",
+          fileName: recordingFileName(mime, Date.now()),
+          mimeType: mime,
+          base64,
+          replyToMessageId: replyMessage?.id,
+        },
+      });
+      setReplyMessage(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "فشل إرسال الرسالة الصوتية");
+    } finally {
+      setSendingVoice(false);
+      qc.invalidateQueries({ queryKey: ["chat", chatId] });
+      qc.invalidateQueries({ queryKey: ["chats-enriched"] });
+    }
+  });
+  // Changing chat drops a recording in progress.
+  useEffect(() => {
+    voice.stop(false);
+  }, [chatId]);
 
   const scrollRef =
     useRef<HTMLDivElement>(
@@ -932,46 +970,58 @@ function ChatView() {
             }}
             className="p-2 sm:p-3 flex gap-2 items-end"
           >
-            <Textarea
-              disabled={igBlocked}
-              value={text}
-              onChange={(
-                event,
-              ) =>
-                setText(
-                  event.target
-                    .value,
-                )
-              }
-              onKeyDown={(
-                event,
-              ) => {
-                if (
-                  event.key ===
-                  "Enter" &&
-                  !event.shiftKey
-                ) {
-                  event.preventDefault();
-
-                  sendText();
+            {voice.recording ? (
+              <div className="flex flex-1 items-center gap-3 rounded-2xl border bg-muted/40 px-3 h-10" role="status" aria-live="polite">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-sm font-semibold tabular-nums">{clock(voice.seconds)}</span>
+                <span className="text-xs text-muted-foreground">جارٍ التسجيل...</span>
+                <button type="button" onClick={() => voice.stop(false)} className="ms-auto text-xs text-destructive underline">إلغاء</button>
+              </div>
+            ) : (
+              <Textarea
+                disabled={igBlocked}
+                value={text}
+                onChange={(
+                  event,
+                ) =>
+                  setText(
+                    event.target
+                      .value,
+                  )
                 }
-              }}
-              rows={1}
-              autoFocus
-              placeholder={igBlocked ? "لا يمكن الرد الآن" : "اكتب رسالة..."}
-              className="min-h-10 max-h-32 resize-none rounded-2xl"
-            />
+                onKeyDown={(
+                  event,
+                ) => {
+                  if (
+                    event.key ===
+                    "Enter" &&
+                    !event.shiftKey
+                  ) {
+                    event.preventDefault();
+  
+                    sendText();
+                  }
+                }}
+                rows={1}
+                autoFocus
+                placeholder={igBlocked ? "لا يمكن الرد الآن" : "اكتب رسالة..."}
+                className="min-h-10 max-h-32 resize-none rounded-2xl"
+              />
+            )}
 
-            <Button
-              type="submit"
-              size="icon"
-              disabled={
-                !text.trim() || igBlocked
-              }
-              className="h-10 w-10 rounded-full shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            {voice.recording ? (
+              <Button type="button" size="icon" onClick={() => voice.stop(true)} aria-label="إرسال الرسالة الصوتية" className="h-10 w-10 rounded-full shrink-0">
+                <Send className="h-4 w-4" />
+              </Button>
+            ) : text.trim() || igBlocked ? (
+              <Button type="submit" size="icon" disabled={!text.trim() || igBlocked} className="h-10 w-10 rounded-full shrink-0">
+                <Send className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button type="button" size="icon" variant="outline" disabled={sendingVoice} onClick={() => void voice.start()} aria-label="تسجيل رسالة صوتية" title="تسجيل رسالة صوتية" className="h-10 w-10 rounded-full shrink-0">
+                <Mic className="h-4 w-4" />
+              </Button>
+            )}
           </form>
         </div>
       </div>
