@@ -12,7 +12,7 @@ import { createMeeting, getCalendarState, listCalendarOwners, listMeetingTypes, 
 import { listContacts } from "@/modules/crm";
 import { CHANNELS, CHANNEL_LABELS } from "@/modules/calendar/status";
 import { fromMinutes, zonedToUtc } from "@/modules/calendar/time";
-import { minutesOfDay } from "@/modules/calendar/view";
+import { customerChoiceProblem, minutesOfDay } from "@/modules/calendar/view";
 import { localParts } from "@/modules/calendar/time";
 import type { MeetingRow } from "./calendar-grid";
 
@@ -77,6 +77,8 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
 
   const save = useMutation({
     mutationFn: async () => {
+      const typedProblem = customerChoiceProblem(contactId, search);
+      if (typedProblem) throw new Error(typedProblem);
       const startsAt = iso(start), endsAt = iso(end);
       if (!startsAt || !endsAt) throw new Error("هذا الوقت غير موجود في هذا اليوم (تغيير الساعة الصيفية)");
       const body = { startsAt, endsAt, title: title.trim() || null, ...(props.canViewAll ? { attendeeIds } : {}), meetingTypeId: typeId || null, channel: channel as any, location: location || null, internalNotes: notes || null, contactId, opportunityId: meeting ? undefined : (draft?.opportunityId ?? null), leadId: meeting ? undefined : (draft?.leadId ?? null) };
@@ -115,6 +117,13 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
                 {(contactsQ.data ?? []).slice(0, 6).map((c: any) => (
                   <button key={c.id} type="button" onClick={() => { setContactId(c.id); setContactName(c.name ?? ""); }} className="mt-1 block w-full rounded border px-3 py-1.5 text-start text-sm hover:bg-muted">{c.name || c.phone}</button>
                 ))}
+                {search.trim().length >= 2 && contactsQ.isFetched && !contactsQ.isFetching && (contactsQ.data ?? []).length === 0 && (
+                  <div className="mt-1 space-y-1 rounded border border-dashed p-2 text-sm">
+                    <p className="text-muted-foreground">لا يوجد عميل بهذا الاسم أو الرقم.</p>
+                    <Button type="button" size="sm" variant="outline" onClick={() => { setTitle(search.trim()); setSearch(""); }}>استعمل «{search.trim()}» كعنوان للموعد</Button>
+                  </div>
+                )}
+                {search.trim().length === 1 && <p className="mt-1 text-xs text-muted-foreground">اكتب حرفين على الأقل ثم اختر العميل من النتائج.</p>}
               </>
             )}
           </div>

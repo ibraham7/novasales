@@ -78,3 +78,13 @@ export function nowMarker(nowMs: number, timezone: string, firstMin: number, las
   if (minutes < firstMin || minutes >= lastMin) return null;
   return { date: p.date, label: fromMinutes(minutes), top: ((minutes - firstMin) / 60) * pxPerHour };
 }
+
+/**
+ * The customer box of the booking form is a SEARCH box: a name typed in it counts only once a result is picked. Text left in it with
+ * nothing picked would be dropped silently (the appointment saved with no customer), so saving says so instead.
+ */
+export function customerChoiceProblem(contactId: string | null, typed: string): string | null {
+  const text = typed.trim();
+  if (contactId || !text) return null;
+  return `اختر «${text}» من نتائج البحث، أو استعمله كعنوان للموعد، أو امسح الخانة`;
+}
