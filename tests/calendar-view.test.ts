@@ -62,3 +62,11 @@ test("the now line: local date, HH:mm label and distance from the top; none outs
   assert.equal(nowMarker(Date.parse("2026-11-23T15:00:00Z"), "Europe/Istanbul", 540, 1080, 64), null, "18:00 is after the grid");
   assert.equal(nowMarker(Date.parse("2026-11-23T21:30:00Z"), "Europe/Istanbul", 0, 1440, 64)!.date, "2026-11-24", "the local day, not the UTC one");
 });
+
+test("the customer box is a search box: typed text with nothing picked is refused, not dropped silently", async () => {
+  const { customerChoiceProblem } = await import("../src/modules/calendar/view.ts");
+  assert.equal(customerChoiceProblem("c1", "أسيل"), null, "a customer is picked");
+  assert.equal(customerChoiceProblem(null, ""), null, "nothing typed, nothing picked: an appointment without a customer is fine");
+  assert.equal(customerChoiceProblem(null, "   "), null);
+  assert.match(customerChoiceProblem(null, " أسيل ") ?? "", /«أسيل»/);
+});
