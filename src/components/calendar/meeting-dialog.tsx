@@ -125,6 +125,14 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
                   </div>
                 )}
                 {search.trim().length === 1 && <p className="mt-1 text-xs text-muted-foreground">اكتب حرفين على الأقل ثم اختر العميل من النتائج.</p>}
+                {title.trim() && !search.trim() && (
+                  <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+                    <span>
+                      سيظهر الموعد باسم «<strong>{title.trim()}</strong>» <span className="text-muted-foreground">(غير مربوط بعميل)</span>
+                    </span>
+                    <button type="button" className="shrink-0 text-xs text-muted-foreground underline" onClick={() => { setSearch(title.trim()); setTitle(""); }}>تغيير</button>
+                  </div>
+                )}
               </>
             )}
           </div>
