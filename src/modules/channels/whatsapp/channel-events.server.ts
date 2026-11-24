@@ -573,6 +573,10 @@ export async function ensureOpportunity(
     }
   } else {
     oppId = linked.opportunity_id as string;
+    // The team moved this chat to the trash, then the customer wrote again: the ticket comes back, so the message is not lost.
+    if (!args.fromMe) {
+      await db.from("opp_opportunities").update({ deleted_at: null, deleted_by: null }).eq("id", oppId).eq("organization_id", orgId).not("deleted_at", "is", null);
+    }
   }
 
   if (oppId && ownerIsSales && secondStage) {

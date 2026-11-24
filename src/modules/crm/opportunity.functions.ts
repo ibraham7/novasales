@@ -413,15 +413,21 @@ async function loadChatListRows(db: any, organizationId: string, limit: number):
     .select("opportunity_id, session_ref")
     .eq("organization_id", organizationId)
     .in("session_ref", rows.map((s: any) => s.id));
-  const linkMap = new Map((links ?? []).map((l: any) => [l.session_ref, l.opportunity_id]));
   const oppIds = Array.from(new Set((links ?? []).map((l: any) => l.opportunity_id)));
   const { data: opps } = oppIds.length
     ? await db
         .from("opp_opportunities")
-        .select("id, contact_id, stage, source, priority, department_id, owner_agent_id")
+        .select("id, contact_id, stage, source, priority, department_id, owner_agent_id, deleted_at")
         .in("id", oppIds)
     : { data: [] };
   const oppMap = new Map((opps ?? []).map((o: any) => [o.id, o]));
+  // A chat whose ticket is in the trash is not listed. When a session has several tickets, a live one is the one shown.
+  const linkMap = new Map<string, string>();
+  for (const l of (links ?? []) as any[]) {
+    const have = linkMap.get(l.session_ref);
+    if (!have || ((oppMap.get(have) as any)?.deleted_at && !(oppMap.get(l.opportunity_id) as any)?.deleted_at)) linkMap.set(l.session_ref, l.opportunity_id);
+  }
+  const isTrashed = (sessionId: string) => !!(oppMap.get(linkMap.get(sessionId) as string) as any)?.deleted_at;
   const ids = (key: string) => Array.from(new Set((opps ?? []).map((o: any) => o[key]).filter(Boolean)));
   const [{ data: contacts }, { data: depts }, { data: owners }] = await Promise.all([
     ids("contact_id").length
@@ -437,7 +443,7 @@ async function loadChatListRows(db: any, organizationId: string, limit: number):
   const cMap = new Map((contacts ?? []).map((c: any) => [c.id, c.display_name ?? c.full_name]));
   const dMap = new Map((depts ?? []).map((d: any) => [d.id, d.name]));
   const oMap = new Map((owners ?? []).map((o: any) => [o.id, o.full_name]));
-  return rows.map((s: any) => {
+  return rows.filter((s: any) => !isTrashed(s.id)).map((s: any) => {
     const opp: any = oppMap.get(linkMap.get(s.id) as string);
     return {
       id: s.id,
@@ -509,6 +515,7 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
       return [
         {
           id: s.id,
+          opportunity_id: (s.opportunity_id as string | null) ?? null,
           title: s.contact_name ?? phone,
           phone,
           last_message_text: s.last_message_preview,
@@ -700,6 +707,36 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
           .eq("organization_id", organizationId);
         if (error) throw new Error(error.message);
         return { ok: true };
+      });
+
+    /** Moves several tickets (and with them their chats) to the trash at once. Each one is checked like a single delete; the ones the user may not delete are skipped. */
+    export const softDeleteOpportunities = createServerFn({ method: "POST" })
+      .inputValidator((d: unknown) => z.object({ opportunityIds: z.array(z.string().uuid()).min(1).max(100) }).parse(d))
+      .handler(async ({ data }) => {
+        const { getWorkspace, supabaseAdmin } = await import("@/platform/workspace/workspace.server");
+        const { requireAnyPermission } = await import("@/platform/rbac/rbac.server");
+        const { canAccessOpportunityRow } = await import("@/platform/rbac/data-scope.server");
+        const db = supabaseAdmin as any;
+        const { organizationId, userId } = await getWorkspace();
+        const access = await requireAnyPermission(DELETE_PERMS);
+        const ids = [...new Set(data.opportunityIds)];
+        const { data: rows, error: readError } = await db
+          .from("opp_opportunities")
+          .select("id, owner_agent_id, department_id")
+          .in("id", ids)
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null);
+        if (readError) throw new Error(readError.message);
+        const allowed = ((rows ?? []) as any[]).filter((row) => canAccessOpportunityRow(access, row)).map((row) => row.id as string);
+        if (allowed.length) {
+          const { error } = await db
+            .from("opp_opportunities")
+            .update({ deleted_at: new Date().toISOString(), deleted_by: userId })
+            .in("id", allowed)
+            .eq("organization_id", organizationId);
+          if (error) throw new Error(error.message);
+        }
+        return { deleted: allowed.length, skipped: ids.length - allowed.length };
       });
 
     export const restoreOpportunity = createServerFn({ method: "POST" })

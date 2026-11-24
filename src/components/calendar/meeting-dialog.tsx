@@ -28,6 +28,7 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
   const types = useServerFn(listMeetingTypes);
   const suggest = useServerFn(suggestMeetingTimes);
   const contacts = useServerFn(listContacts);
+  const stateFn = useServerFn(getCalendarState);
   const { meeting, draft, tz } = props;
 
   const [ownerId, setOwnerId] = useState("");

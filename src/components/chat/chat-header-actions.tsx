@@ -1,7 +1,8 @@
-import { Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeftRight, CheckCircle2, Copy, ExternalLink, MoreHorizontal, UserPlus, XCircle } from "lucide-react";
+import { ArrowLeftRight, Check, CheckCircle2, Copy, ExternalLink, Layers, MoreHorizontal, Trash2, UserPlus, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,14 +15,17 @@ import {
 import { getPipelinePageMeta, moveOpportunityToStage } from "@/modules/crm";
 import { quickAssignOpportunity } from "@/modules/assignments";
 import { toast } from "@/lib/toast";
+import { useCanDeleteTickets } from "./use-can-delete";
+import { TrashChatsDialog } from "./trash-chats-dialog";
 
 type Opportunity = {
   id: string;
   pipeline_id?: string | null;
+  stage_id?: string | null;
   owner_agent_id?: string | null;
 };
 
-/** Assign or transfer the chat's opportunity, close it as won or lost, and quick links. */
+/** Assign or transfer the chat's opportunity, move it between the pipeline's stages (the won and lost ones included), and quick links. */
 export function ChatHeaderActions({
   chatId,
   opportunity,
@@ -32,6 +36,9 @@ export function ChatHeaderActions({
   phone: string;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const canDelete = useCanDeleteTickets();
+  const [trashOpen, setTrashOpen] = useState(false);
   const fetchMeta = useServerFn(getPipelinePageMeta);
   const assign = useServerFn(quickAssignOpportunity);
   const moveToStage = useServerFn(moveOpportunityToStage);
@@ -60,11 +67,11 @@ export function ChatHeaderActions({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const closeMut = useMutation({
-    mutationFn: (stage: { id: string; won: boolean }) =>
+  const moveMut = useMutation({
+    mutationFn: (stage: { id: string; name: string }) =>
       moveToStage({ data: { opportunityId: opportunity!.id, stageId: stage.id } }),
     onSuccess: (_result, stage) => {
-      toast.success(stage.won ? "تم إغلاق الفرصة كبيع ناجح" : "تم إغلاق الفرصة كخسارة");
+      toast.success(`نُقلت التذكرة إلى «${stage.name}»`);
       refresh();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -73,10 +80,8 @@ export function ChatHeaderActions({
   const members: { user_id: string; profile_name: string | null }[] = meta.data?.members ?? [];
   const stages: { id: string; name: string; is_won: boolean; is_lost: boolean }[] =
     meta.data?.pipelines?.find((p: { id: string }) => p.id === opportunity?.pipeline_id)?.stages ?? [];
-  const wonStage = stages.find((s) => s.is_won);
-  const lostStage = stages.find((s) => s.is_lost);
   const isTransfer = !!opportunity?.owner_agent_id;
-  const busy = assignMut.isPending || closeMut.isPending;
+  const busy = assignMut.isPending || moveMut.isPending;
 
   return (
     <div className="hidden xl:flex items-center gap-1 shrink-0">
@@ -114,31 +119,28 @@ export function ChatHeaderActions({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 gap-1.5" disabled={!opportunity || busy}>
-            <XCircle className="h-3.5 w-3.5" />
-            إغلاق
+            <Layers className="h-3.5 w-3.5" />
+            المرحلة
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel className="text-xs">إغلاق الفرصة</DropdownMenuLabel>
+        <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+          <DropdownMenuLabel className="text-xs">نقل التذكرة إلى مرحلة</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            disabled={!wonStage}
-            onSelect={() => wonStage && closeMut.mutate({ id: wonStage.id, won: true })}
-          >
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-            بيع ناجح{wonStage ? ` — ${wonStage.name}` : ""}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!lostStage}
-            onSelect={() => lostStage && closeMut.mutate({ id: lostStage.id, won: false })}
-          >
-            <XCircle className="h-4 w-4 text-destructive" />
-            خسارة{lostStage ? ` — ${lostStage.name}` : ""}
-          </DropdownMenuItem>
-          {!meta.isPending && (!wonStage || !lostStage) && (
-            <DropdownMenuItem disabled className="text-xs">
-              حدّد مرحلتي الفوز والخسارة من إعدادات القمع
-            </DropdownMenuItem>
+          {meta.isPending ? (
+            <DropdownMenuItem disabled>جارٍ التحميل...</DropdownMenuItem>
+          ) : stages.length === 0 ? (
+            <DropdownMenuItem disabled>لا توجد مراحل</DropdownMenuItem>
+          ) : (
+            stages.map((stage) => {
+              const current = stage.id === opportunity?.stage_id;
+              return (
+                <DropdownMenuItem key={stage.id} disabled={current} onSelect={() => moveMut.mutate({ id: stage.id, name: stage.name })}>
+                  {stage.is_won ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : stage.is_lost ? <XCircle className="h-4 w-4 text-destructive" /> : current ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />}
+                  {stage.name}
+                  {current ? " (الحالية)" : ""}
+                </DropdownMenuItem>
+              );
+            })
           )}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -168,8 +170,20 @@ export function ChatHeaderActions({
             <Copy className="h-4 w-4" />
             نسخ الرقم
           </DropdownMenuItem>
+          {opportunity && canDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setTrashOpen(true)}>
+                <Trash2 className="h-4 w-4" />
+                نقل المحادثة إلى المهملات
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+      {opportunity && (
+        <TrashChatsDialog open={trashOpen} onOpenChange={setTrashOpen} opportunityIds={[opportunity.id]} onDone={() => void navigate({ to: "/chat" })} />
+      )}
     </div>
   );
 }

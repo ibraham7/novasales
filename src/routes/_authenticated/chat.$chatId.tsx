@@ -69,6 +69,7 @@ import {
 } from "@/components/chat/use-chat-signals";
 
 import { ChatHeaderActions } from "@/components/chat/chat-header-actions";
+import { VoicePlayer } from "@/components/chat/voice-player";
 
 import {
   Button,
@@ -113,7 +114,11 @@ type MessageRow = {
   created_at: string;
   message_type?: string;
   media_url?: string | null;
+  media_meta?: { file_name?: string | null } | null;
 };
+
+/** What a media message is called when its file is not available (so a bubble is never just a time). */
+const MEDIA_LABELS: Record<string, string> = { audio: "🎙️ رسالة صوتية", video: "🎬 فيديو", image: "📷 صورة", document: "📎 ملف", sticker: "ملصق" };
 
 function ChatView() {
   const { chatId } =
@@ -721,6 +726,30 @@ function ChatView() {
                         onClick={(event) => event.stopPropagation()}
                         className="rounded-lg mb-1 max-h-[320px] w-full bg-black"
                       />
+                    ) : message.message_type === "audio" && message.media_url ? (
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <VoicePlayer src={message.media_url} fromMe={false} />
+                      </div>
+                    ) : message.message_type === "document" && message.media_url ? (
+                      <a
+                        href={message.media_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        className="flex items-center gap-2 rounded-lg bg-muted/60 px-2 py-1.5 mb-1 text-xs"
+                      >
+                        <Paperclip className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{message.media_meta?.file_name || "ملف"}</span>
+                      </a>
+                    ) : message.message_type === "sticker" && message.media_url ? (
+                      <img src={message.media_url} alt="ملصق" className="h-32 w-32 object-contain" />
+                    ) : message.message_type &&
+                      message.message_type !== "text" &&
+                      !message.media_url &&
+                      !message.content ? (
+                      <div className="text-xs text-muted-foreground py-1">
+                        {MEDIA_LABELS[message.message_type] ?? "رسالة"} (تعذّر تحميل الملف)
+                      </div>
                     ) : message.message_type ===
                       "image" &&
                       message.media_url && (
