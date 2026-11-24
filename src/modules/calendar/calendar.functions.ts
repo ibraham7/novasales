@@ -31,6 +31,7 @@ const meetingFields = {
   opportunityId: id.nullable().optional(),
   meetingTypeId: id.nullable().optional(),
   title: z.string().max(200).nullable().optional(),
+  attendeeIds: z.array(id).max(10).optional(),
   channel: z.enum(CHANNELS).optional(),
   location: z.string().max(500).nullable().optional(),
   internalNotes: z.string().max(4000).nullable().optional(),

@@ -41,6 +41,8 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
   const [contactId, setContactId] = useState<string | null>(null);
   const [contactName, setContactName] = useState("");
   const [search, setSearch] = useState("");
+  const [title, setTitle] = useState("");
+  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
 
   // Same cached query the page already uses; only needed to know who «أنا» is.
   const stateQ = useQuery({ queryKey: ["cal-state"], queryFn: () => stateFn(), staleTime: 5 * 60_000, enabled: props.open });
@@ -55,11 +57,13 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
       setOwnerId(meeting.owner_user_id); setTypeId(meeting.meeting_type_id ?? ""); setDate(localParts(new Date(meeting.starts_at).getTime(), tz).date);
       setStart(fromMinutes(s)); setEnd(fromMinutes(e === 1440 ? 1439 : e)); setChannel(meeting.channel ?? "call"); setLocation(meeting.location ?? ""); setNotes(meeting.internal_notes ?? "");
       setContactId(meeting.contact_id ?? null); setContactName(meeting.contact_name ?? "");
+      setTitle((meeting as any).title ?? ""); setAttendeeIds((meeting.attendees ?? []).map((a) => a.id));
     } else {
       setOwnerId(draft?.ownerId ?? ""); setTypeId(""); setDate(draft?.date ?? props.today); setStart(draft?.start ?? "10:00");
       const [h, m] = (draft?.start ?? "10:00").split(":").map(Number) as [number, number];
       setEnd(fromMinutes(Math.min(1439, h * 60 + m + 30))); setChannel("call"); setLocation(""); setNotes("");
       setContactId(draft?.contactId ?? null); setContactName(draft?.contactName ?? "");
+      setTitle(""); setAttendeeIds([]);
     }
     setSearch("");
   }, [props.open, meeting?.id]);
@@ -75,7 +79,7 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
     mutationFn: async () => {
       const startsAt = iso(start), endsAt = iso(end);
       if (!startsAt || !endsAt) throw new Error("هذا الوقت غير موجود في هذا اليوم (تغيير الساعة الصيفية)");
-      const body = { startsAt, endsAt, meetingTypeId: typeId || null, channel: channel as any, location: location || null, internalNotes: notes || null, contactId, opportunityId: meeting ? undefined : (draft?.opportunityId ?? null), leadId: meeting ? undefined : (draft?.leadId ?? null) };
+      const body = { startsAt, endsAt, title: title.trim() || null, ...(props.canViewAll ? { attendeeIds } : {}), meetingTypeId: typeId || null, channel: channel as any, location: location || null, internalNotes: notes || null, contactId, opportunityId: meeting ? undefined : (draft?.opportunityId ?? null), leadId: meeting ? undefined : (draft?.leadId ?? null) };
       if (meeting) return update({ data: { id: meeting.id, patch: { ...body, ...(props.canViewAll && ownerId ? { ownerId } : {}) } } });
       return create({ data: { ...body, ...(ownerId ? { ownerId } : {}) } });
     },
@@ -130,6 +134,22 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
               </Select>
             </div>
           </div>
+          <div><Label>عنوان الموعد (اختياري)</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} placeholder="مثال: اجتماع مع الإدارة" /></div>
+          {props.canViewAll && (
+            <div>
+              <Label>مشاركون من الفريق (اختياري)</Label>
+              <p className="mb-1 text-xs text-muted-foreground">يظهر الموعد في تقويمهم ولا يستطيع أحدهم حجز موعد آخر بنفس الوقت.</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-md border p-2">
+                {(ownersQ.data ?? []).filter((o: any) => o.id !== (ownerId || stateQ.data?.viewerId)).map((o: any) => (
+                  <label key={o.id} className="flex items-center gap-1.5 text-sm">
+                    <input type="checkbox" checked={attendeeIds.includes(o.id)} onChange={(e) => setAttendeeIds((cur) => (e.target.checked ? [...cur, o.id] : cur.filter((x) => x !== o.id)))} />
+                    {o.name}
+                  </label>
+                ))}
+                {(ownersQ.data ?? []).length <= 1 && <span className="text-xs text-muted-foreground">لا يوجد أعضاء آخرون</span>}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-3 sm:col-span-1"><Label>التاريخ</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
             <div><Label>من</Label><Input type="time" value={start} onChange={(e) => setStart(e.target.value)} /></div>

@@ -52,6 +52,7 @@ export function MeetingDetails(props: { id: string | null; tz: string; canBook: 
             <div className="space-y-1 text-muted-foreground">
               <div>{day} · {fromMinutes(minutesOfDay(m.starts_at, props.tz))} – {fromMinutes(minutesOfDay(m.ends_at, props.tz, true) % 1440)}</div>
               {m.owner_name && <div>المندوب: {m.owner_name}</div>}
+              {(m.attendees ?? []).length > 0 && <div>المشاركون: {(m.attendees as { name: string | null }[]).map((a) => a.name || "عضو").join("، ")}</div>}
               <div>القناة: {CHANNEL_LABELS[m.channel as keyof typeof CHANNEL_LABELS] ?? m.channel}{m.location ? ` · ${m.location}` : ""}</div>
               {m.internal_notes && <div className="whitespace-pre-wrap">ملاحظات: {m.internal_notes}</div>}
               {m.cancellation_reason && <div>سبب الإلغاء: {m.cancellation_reason}</div>}

@@ -844,7 +844,7 @@ function ChatView() {
             />
 
             {opp?.contact?.id && (
-              <BookMeetingButton className="flex items-center gap-1" contactId={opp.contact.id} contactName={opp.contact.name} opportunityId={opp.opportunity?.id ?? null} onInsertText={(value) => setText((current) => (current ? `${current} ${value}` : value))} />
+              <BookMeetingButton className="flex items-center gap-1" contactId={opp.contact.id} contactName={opp.contact.name} opportunityId={opp.opportunity?.id ?? null} ownerId={opp.owner?.id ?? null} onInsertText={(value) => setText((current) => (current ? `${current} ${value}` : value))} />
             )}
 
             {opp?.contact

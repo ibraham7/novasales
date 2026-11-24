@@ -17,6 +17,8 @@ export type Actor = { userId: string; organizationId: string; canViewAll: boolea
 export type MeetingInput = {
   ownerId?: string; startsAt: string; endsAt?: string; contactId?: string | null; leadId?: string | null; opportunityId?: string | null;
   meetingTypeId?: string | null; title?: string | null; channel?: string; location?: string | null; internalNotes?: string | null; status?: "booked" | "confirmed";
+  /** Team members who take part (a meeting with the manager): it shows in their calendar and blocks their time. Managers only. */
+  attendeeIds?: string[];
 };
 export type MeetingPatch = Partial<Omit<MeetingInput, "status">>;
 
@@ -99,10 +101,43 @@ export async function loadAgentContext(db: any, organizationId: string, ownerId:
 }
 
 /** The agent's busy times across ALL organizations (the same person cannot be in two places). Only times and status leave this function. */
+/** The time already taken by a person: the meetings they own AND the ones they take part in. */
 async function loadBusy(db: any, ownerId: string, fromIso: string, toIso: string): Promise<Busy[]> {
   const { data, error } = await db.from("cal_meetings").select("id,starts_at,ends_at,status").eq("owner_user_id", ownerId).in("status", [...BUSY_STATUSES]).lte("starts_at", toIso).gte("ends_at", fromIso);
   if (error) throw new Error(calendarError(error));
-  return ((data ?? []) as any[]).map((m) => ({ id: m.id, starts_at: m.starts_at, ends_at: m.ends_at, status: m.status }));
+  const rows = [...((data ?? []) as any[])];
+  const { data: mine } = await db.from("cal_meeting_attendees").select("meeting_id").eq("user_id", ownerId);
+  const attended = ((mine ?? []) as any[]).map((a) => a.meeting_id as string).filter((mid) => !rows.some((r) => r.id === mid));
+  if (attended.length) {
+    const { data: more, error: moreError } = await db.from("cal_meetings").select("id,starts_at,ends_at,status").in("id", attended).in("status", [...BUSY_STATUSES]).lte("starts_at", toIso).gte("ends_at", fromIso);
+    if (moreError) throw new Error(calendarError(moreError));
+    rows.push(...((more ?? []) as any[]));
+  }
+  return rows.map((m) => ({ id: m.id, starts_at: m.starts_at, ends_at: m.ends_at, status: m.status }));
+}
+
+/** Who may be added to a meeting: active members of the organization other than its owner, only booked by a manager, at most 10. */
+async function checkAttendees(db: any, actor: Actor, ownerId: string, ids: string[] | undefined, startsAt: string, endsAt: string, ignoreId?: string): Promise<string[]> {
+  const unique = [...new Set(ids ?? [])];
+  if (!unique.length) return [];
+  if (!actor.canViewAll) fail("إضافة مشاركين من الفريق للمدراء فقط");
+  if (unique.length > 10) fail("عدد المشاركين الأقصى 10");
+  const s = Date.parse(startsAt), e = Date.parse(endsAt);
+  for (const userId of unique) {
+    if (userId === ownerId) fail("صاحب الموعد مشارك فيه أصلاً");
+    await requireMember(db, actor.organizationId, userId);
+    const busy = await loadBusy(db, userId, new Date(s - 86_400_000).toISOString(), new Date(e + 86_400_000).toISOString());
+    if (busy.some((b) => b.id !== ignoreId && Date.parse(b.starts_at) < e && Date.parse(b.ends_at) > s)) fail(ruleMessage("CAL_ATTENDEE_BUSY")!);
+  }
+  return unique;
+}
+
+async function saveAttendees(db: any, organizationId: string, meetingId: string, userIds: string[]) {
+  const { error: delError } = await db.from("cal_meeting_attendees").delete().eq("organization_id", organizationId).eq("meeting_id", meetingId);
+  if (delError) throw new Error(calendarError(delError));
+  if (!userIds.length) return;
+  const { error } = await db.from("cal_meeting_attendees").insert(userIds.map((user_id) => ({ meeting_id: meetingId, organization_id: organizationId, user_id })));
+  if (error) throw new Error(calendarError(error));
 }
 
 async function requireMember(db: any, organizationId: string, userId: string) {
@@ -123,25 +158,47 @@ async function checkLinks(db: any, organizationId: string, links: { contactId?: 
 
 const scoped = (actor: Actor, ownerId: string) => actor.canViewAll || ownerId === actor.userId;
 
+/**
+ * The meetings an agent (without «see all») may see and handle: the ones they own, the ones they booked, and the ones that belong
+ * to a ticket or lead assigned to them, even when a manager booked them under the manager's own name. A manager sees all.
+ */
+async function visibleTo(db: any, actor: Actor, rows: any[]): Promise<any[]> {
+  if (actor.canViewAll) return rows;
+  const { data: attended } = rows.length ? await db.from("cal_meeting_attendees").select("meeting_id").eq("organization_id", actor.organizationId).eq("user_id", actor.userId).in("meeting_id", rows.map((r) => r.id)) : { data: [] };
+  const attending = new Set(((attended ?? []) as any[]).map((a) => a.meeting_id as string));
+  const others = rows.filter((r) => r.owner_user_id !== actor.userId && r.created_by !== actor.userId && !attending.has(r.id));
+  const ids = (key: string) => [...new Set(others.map((r) => r[key]).filter(Boolean))] as string[];
+  const [opps, leads] = await Promise.all([
+    ids("opportunity_id").length ? db.from("opp_opportunities").select("id,owner_agent_id").eq("organization_id", actor.organizationId).in("id", ids("opportunity_id")) : { data: [] },
+    ids("lead_id").length ? db.from("crm_leads").select("id,owner_user_id").eq("organization_id", actor.organizationId).in("id", ids("lead_id")) : { data: [] },
+  ]);
+  const mineOpp = new Set(((opps.data ?? []) as any[]).filter((o) => o.owner_agent_id === actor.userId).map((o) => o.id));
+  const mineLead = new Set(((leads.data ?? []) as any[]).filter((l) => l.owner_user_id === actor.userId).map((l) => l.id));
+  return rows.filter((r) => r.owner_user_id === actor.userId || r.created_by === actor.userId || attending.has(r.id) || (r.opportunity_id && mineOpp.has(r.opportunity_id)) || (r.lead_id && mineLead.has(r.lead_id)));
+}
+
 /** One meeting by id, only if it is in the actor's organization AND the actor may see it. Anything else is «not found». */
 async function ownMeeting(db: any, actor: Actor, id: string) {
   const { data, error } = await db.from("cal_meetings").select("*").eq("id", id).eq("organization_id", actor.organizationId).maybeSingle();
   if (error) throw new Error(calendarError(error));
-  if (!data || !scoped(actor, data.owner_user_id)) fail(NOT_FOUND);
+  if (!data || (await visibleTo(db, actor, [data])).length === 0) fail(NOT_FOUND);
   return data;
 }
 
 async function decorate(db: any, organizationId: string, rows: any[]) {
   const ids = (key: string) => [...new Set(rows.map((r) => r[key]).filter(Boolean))] as string[];
+  const { data: attendeeRows } = rows.length ? await db.from("cal_meeting_attendees").select("meeting_id,user_id").eq("organization_id", organizationId).in("meeting_id", rows.map((r) => r.id)) : { data: [] };
+  const attendeesOf = new Map<string, string[]>();
+  for (const a of (attendeeRows ?? []) as any[]) attendeesOf.set(a.meeting_id, [...(attendeesOf.get(a.meeting_id) ?? []), a.user_id]);
   const [contacts, types, people] = await Promise.all([
     ids("contact_id").length ? db.from("crm_contacts").select("id,display_name,full_name").eq("organization_id", organizationId).in("id", ids("contact_id")) : { data: [] },
     ids("meeting_type_id").length ? db.from("cal_meeting_types").select("id,name,color,duration_minutes").eq("organization_id", organizationId).in("id", ids("meeting_type_id")) : { data: [] },
-    ids("owner_user_id").length ? db.from("profiles").select("id,full_name").in("id", ids("owner_user_id")) : { data: [] },
+    (() => { const people = [...new Set([...ids("owner_user_id"), ...[...attendeesOf.values()].flat()])]; return people.length ? db.from("profiles").select("id,full_name").in("id", people) : { data: [] }; })(),
   ]);
   const contact = new Map<string, string>((contacts.data ?? []).map((c: any) => [c.id, c.display_name || c.full_name || ""]));
   const type = new Map<string, any>((types.data ?? []).map((t: any) => [t.id, t]));
   const person = new Map<string, string>((people.data ?? []).map((p: any) => [p.id, p.full_name || ""]));
-  return rows.map((r) => ({ ...r, contact_name: contact.get(r.contact_id) ?? null, type_name: type.get(r.meeting_type_id)?.name ?? null, type_color: type.get(r.meeting_type_id)?.color ?? null, owner_name: person.get(r.owner_user_id) ?? null }));
+  return rows.map((r) => ({ ...r, contact_name: contact.get(r.contact_id) ?? null, type_name: type.get(r.meeting_type_id)?.name ?? null, type_color: type.get(r.meeting_type_id)?.color ?? null, owner_name: person.get(r.owner_user_id) ?? null, attendees: (attendeesOf.get(r.id) ?? []).map((id) => ({ id, name: person.get(id) ?? null })) }));
 }
 
 export async function listMeetings(db: any, actor: Actor, input: { from: string; to: string; ownerId?: string | null; includeInactive?: boolean }) {
@@ -149,12 +206,11 @@ export async function listMeetings(db: any, actor: Actor, input: { from: string;
   if (!(to > from)) fail("نطاق التاريخ غير صحيح");
   if (to - from > MAX_RANGE_DAYS * 86_400_000) fail(`اختر نطاقاً لا يتجاوز ${MAX_RANGE_DAYS} يوماً`);
   let q = db.from("cal_meetings").select("*").eq("organization_id", actor.organizationId).gte("starts_at", new Date(from).toISOString()).lt("starts_at", new Date(to).toISOString()).limit(1000);
-  if (!actor.canViewAll) q = q.eq("owner_user_id", actor.userId);
-  else if (input.ownerId) q = q.eq("owner_user_id", input.ownerId);
+  if (actor.canViewAll && input.ownerId) q = q.eq("owner_user_id", input.ownerId);
   if (!input.includeInactive) q = q.in("status", ["booked", "confirmed", "in_progress", "completed"]);
   const { data, error } = await q;
   if (error) throw new Error(calendarError(error));
-  const rows = ((data ?? []) as any[]).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  const rows = (await visibleTo(db, actor, (data ?? []) as any[])).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   return decorate(db, actor.organizationId, rows);
 }
 
@@ -194,12 +250,22 @@ export async function createMeeting(db: any, actor: Actor, input: MeetingInput) 
   if (!(CHANNELS as readonly string[]).includes(channel)) fail("قناة الموعد غير معروفة");
   const endsAt = await endFor(db, actor.organizationId, input.startsAt, input.endsAt, input.meetingTypeId);
   await checkTime(db, actor.organizationId, ownerId, input.startsAt, endsAt);
+  const attendees = await checkAttendees(db, actor, ownerId, input.attendeeIds, input.startsAt, endsAt);
   const { data, error } = await db.from("cal_meetings").insert({
     organization_id: actor.organizationId, owner_user_id: ownerId, contact_id: input.contactId ?? null, lead_id: input.leadId ?? null, opportunity_id: input.opportunityId ?? null,
     meeting_type_id: input.meetingTypeId ?? null, title: clean(input.title), starts_at: new Date(input.startsAt).toISOString(), ends_at: new Date(endsAt).toISOString(), channel,
     location: clean(input.location), internal_notes: clean(input.internalNotes), status: input.status ?? "booked", created_by: actor.userId, updated_by: actor.userId,
   }).select("*").single();
   if (error) throw new Error(calendarError(error));
+  if (attendees.length) {
+    try {
+      await saveAttendees(db, actor.organizationId, data.id, attendees);
+    } catch (e) {
+      // Someone became busy in between: the meeting is not left half made.
+      await db.from("cal_meetings").delete().eq("id", data.id).eq("organization_id", actor.organizationId);
+      throw e;
+    }
+  }
   return (await decorate(db, actor.organizationId, [data]))[0];
 }
 
@@ -234,9 +300,18 @@ export async function updateMeeting(db: any, actor: Actor, id: string, patch: Me
     next.starts_at = new Date(startsAt).toISOString();
     next.ends_at = new Date(endsAt).toISOString();
   }
+  // The people taking part: a new list replaces the old one; when only the time moves, the current ones must be free at the new time.
+  let attendees: string[] | null = null;
+  if (patch.attendeeIds !== undefined) attendees = await checkAttendees(db, actor, ownerId, patch.attendeeIds, startsAt, endsAt, id);
+  else if (timeChanged) {
+    const { data: now } = await db.from("cal_meeting_attendees").select("user_id").eq("organization_id", actor.organizationId).eq("meeting_id", id);
+    const keep = ((now ?? []) as any[]).map((a) => a.user_id as string);
+    if (keep.length) await checkAttendees(db, { ...actor, canViewAll: true }, ownerId, keep, startsAt, endsAt, id);
+  }
   const { data, error } = await db.from("cal_meetings").update(next).eq("id", id).eq("organization_id", actor.organizationId).select("*").maybeSingle();
   if (error) throw new Error(calendarError(error));
   if (!data) fail(NOT_FOUND);
+  if (attendees) await saveAttendees(db, actor.organizationId, id, attendees);
   return (await decorate(db, actor.organizationId, [data]))[0];
 }
 
@@ -292,14 +367,15 @@ export async function suggestTimes(db: any, actor: Actor, input: { durationMin?:
 /** The meetings linked to an opportunity, lead or contact (newest first), limited to what the actor may see. */
 export async function listEntityMeetings(db: any, actor: Actor, input: { opportunityId?: string | null; leadId?: string | null; contactId?: string | null }) {
   if (!input.opportunityId && !input.leadId && !input.contactId) fail("حدّد الفرصة أو العميل");
-  let q = db.from("cal_meetings").select("*").eq("organization_id", actor.organizationId).limit(50);
-  if (input.opportunityId) q = q.eq("opportunity_id", input.opportunityId);
-  else if (input.leadId) q = q.eq("lead_id", input.leadId);
-  else q = q.eq("contact_id", input.contactId);
-  if (!actor.canViewAll) q = q.eq("owner_user_id", actor.userId);
-  const { data, error } = await q;
-  if (error) throw new Error(calendarError(error));
-  const rows = ((data ?? []) as any[]).sort((a, b) => b.starts_at.localeCompare(a.starts_at));
+  // Every link counts: a meeting booked from the calendar for a customer carries only the contact, yet belongs on that customer's ticket too.
+  const links: [string, string][] = [["opportunity_id", input.opportunityId ?? ""], ["lead_id", input.leadId ?? ""], ["contact_id", input.contactId ?? ""]].filter(([, id]) => id) as [string, string][];
+  const found = new Map<string, any>();
+  for (const [column, id] of links) {
+    const { data, error } = await db.from("cal_meetings").select("*").eq("organization_id", actor.organizationId).eq(column, id).limit(100);
+    if (error) throw new Error(calendarError(error));
+    for (const row of await visibleTo(db, actor, (data ?? []) as any[])) found.set(row.id, row);
+  }
+  const rows = [...found.values()].sort((a, b) => b.starts_at.localeCompare(a.starts_at)).slice(0, 50);
   return decorate(db, actor.organizationId, rows);
 }
 
