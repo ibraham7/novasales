@@ -64,6 +64,14 @@ export const Route = createFileRoute("/_authenticated/pipeline")({
   component: PipelinePage,
 });
 
+/**
+ * Where the user was on the board, kept outside the component so it survives even if the page is rebuilt while a ticket is open:
+ * how far the board is scrolled sideways, how far down each column is, and how many tickets each column had loaded.
+ */
+type BoardScroll = { left: number; cols: Record<string, number> };
+let boardScroll: BoardScroll | null = null;
+let boardLimits: Record<string, number> = {};
+
 function PipelinePage() {
   const qc = useQueryClient();
   const isDetailRoute = useRouterState({ select: (s) => s.location.pathname.startsWith("/pipeline/") });
@@ -92,7 +100,10 @@ function PipelinePage() {
   // أثناء البحث نجلب كل التذاكر (لا أحدث 500 فقط) حتى تظهر التذاكر القديمة.
   const searching = search.trim().length > 0;
   // Each stage shows its newest tickets first; «عرض المزيد» raises that stage's limit.
-  const [stageLimits, setStageLimits] = useState<Record<string, number>>({});
+  const [stageLimits, setStageLimits] = useState<Record<string, number>>(() => boardLimits);
+  useEffect(() => {
+    boardLimits = stageLimits;
+  }, [stageLimits]);
   const loadMore = useCallback((stageId: string) => setStageLimits((l) => ({ ...l, [stageId]: (l[stageId] ?? PER_STAGE) + MORE_STEP })), []);
   // How tickets are ordered inside every column; remembered on this device.
   const [sort, setSort] = useState<BoardSort>("newest");
@@ -565,42 +576,43 @@ function PipelinePage() {
   useEffect(() => startDragAutoscroll(), []);
 
   // Opening a ticket removes the board from the page; coming back must put the user where they were (which stage, how far down
-  // each column), not at the first stage's newest tickets. The positions are remembered as the user scrolls, and put back
-  // when the board returns. This component stays mounted while a ticket is open, so the memory survives.
-  const scrollMemo = useRef<{ left: number; cols: Record<string, number> } | null>(null);
+  // each column), not at the first stage's newest tickets. The positions are remembered as the user scrolls and put back when the
+  // board returns. The columns may still be filling in or re-sorting, so the position is re-applied for about two seconds, until
+  // the user touches the board.
   const restoring = useRef(false);
   const rememberScroll = (e: UIEvent<HTMLElement>) => {
     if (restoring.current) return;
     const el = e.target as HTMLElement;
-    const memo = (scrollMemo.current ??= { left: 0, cols: {} });
+    const memo = (boardScroll ??= { left: 0, cols: {} });
     if (el.hasAttribute("data-kanban-board")) memo.left = el.scrollLeft;
     else if (el.dataset?.stageId) memo.cols[el.dataset.stageId] = el.scrollTop;
   };
   const boardShown = !isDetailRoute && stages.length > 0;
   useLayoutEffect(() => {
-    const memo = scrollMemo.current;
+    const memo = boardScroll;
     if (!boardShown || !memo) return;
+    const board = document.querySelector<HTMLElement>("[data-kanban-board]");
+    if (!board) return;
     restoring.current = true;
     let frames = 0;
     let raf = 0;
+    const finish = () => {
+      restoring.current = false;
+      cancelAnimationFrame(raf);
+      for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) board.removeEventListener(type, finish);
+    };
+    for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) board.addEventListener(type, finish, { passive: true });
     const apply = () => {
-      const board = document.querySelector<HTMLElement>("[data-kanban-board]");
-      if (board) {
-        board.scrollLeft = memo.left;
-        for (const [id, top] of Object.entries(memo.cols)) {
-          const list = board.querySelector<HTMLElement>(`[data-stage-id="${id}"]`);
-          if (list) list.scrollTop = top;
-        }
+      if (Math.abs(board.scrollLeft - memo.left) > 1) board.scrollLeft = memo.left;
+      for (const [id, top] of Object.entries(memo.cols)) {
+        const list = board.querySelector<HTMLElement>(`[data-stage-id="${id}"]`);
+        if (list && Math.abs(list.scrollTop - top) > 1) list.scrollTop = top;
       }
-      // A few frames: the columns may still be filling in, and a scroll set too early is cut short.
-      if (++frames < 10) raf = requestAnimationFrame(apply);
-      else restoring.current = false;
+      if (++frames < 120) raf = requestAnimationFrame(apply);
+      else finish();
     };
     apply();
-    return () => {
-      cancelAnimationFrame(raf);
-      restoring.current = false;
-    };
+    return finish;
   }, [boardShown]);
 
   if (isDetailRoute) {
