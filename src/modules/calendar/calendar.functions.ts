@@ -97,6 +97,13 @@ export const setMeetingStatus = createServerFn({ method: "POST" })
     return (await import("./service")).setMeetingStatus(db, actor, data.id, data.status, data.reason);
   });
 
+export const deleteMeeting = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id }).parse(d))
+  .handler(async ({ data }) => {
+    const { actor, db } = await calendarAccess();
+    return (await import("./service")).deleteMeeting(db, actor, data.id);
+  });
+
 export const recordMeetingOutcome = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id, outcome: z.enum(OUTCOMES), note: z.string().max(2000).nullable().optional() }).parse(d))
   .handler(async ({ data }) => {
