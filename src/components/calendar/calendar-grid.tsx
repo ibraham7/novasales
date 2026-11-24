@@ -1,9 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { addDays, fromMinutes, localParts } from "@/modules/calendar/time";
 import { blockGeometry, layoutDay } from "@/modules/calendar/layout";
 import { STATUS_LABELS } from "@/modules/calendar/status";
-import { clickToTime, dayWindow, groupByDay, minutesOfDay, rangeFor, type CalendarView } from "@/modules/calendar/view";
+import { clickToTime, dayWindow, groupByDay, minutesOfDay, nowMarker, rangeFor, type CalendarView } from "@/modules/calendar/view";
 
 export type MeetingRow = {
   id: string; owner_user_id: string; starts_at: string; ends_at: string; status: string; title: string | null;
@@ -15,9 +15,20 @@ const tone: Record<string, string> = {
   booked: "bg-muted text-foreground", confirmed: "bg-primary/15 text-foreground", in_progress: "bg-amber-100 text-amber-950 dark:bg-amber-900/40 dark:text-amber-50",
   completed: "bg-emerald-100 text-emerald-950 dark:bg-emerald-900/40 dark:text-emerald-50", cancelled: "bg-red-50 text-red-900 line-through", no_show: "bg-red-100 text-red-900",
 };
-const label = (m: MeetingRow) => m.contact_name || m.title || m.type_name || "اجتماع";
+const label = (m: MeetingRow) => m.contact_name || m.title || m.type_name || "موعد";
 const time = (iso: string, tz: string) => fromMinutes(minutesOfDay(iso, tz));
 const dayName = (date: string, opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("ar", { timeZone: "UTC", ...opts }).format(new Date(`${date}T00:00:00Z`));
+
+/** The current time, refreshed every 30 seconds. Null on the server and on the first paint, so the page matches what the server drew. */
+function useNow(): number | null {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
+}
 
 export function CalendarGrid(props: {
   view: CalendarView; anchor: string; today: string; tz: string; workStart: string; workEnd: string; meetings: MeetingRow[];
@@ -26,6 +37,7 @@ export function CalendarGrid(props: {
   const { view, anchor, today, tz, meetings } = props;
   const range = rangeFor(view, anchor);
   const byDay = useMemo(() => groupByDay(meetings, tz), [meetings, tz]);
+  const now = useNow();
 
   if (view === "month") {
     return (
@@ -57,6 +69,8 @@ export function CalendarGrid(props: {
   const { first, last } = dayWindow(props.workStart, props.workEnd, blocks);
   const height = ((last - first) / 60) * HOUR;
   const days = Array.from({ length: range.days }, (_, i) => addDays(range.from, i));
+  const marker = now === null ? null : nowMarker(now, tz, first, last, HOUR);
+  const markerShown = marker !== null && days.includes(marker.date);
   return (
     <div className="overflow-x-auto">
       <div className={view === "week" ? "min-w-[760px]" : "min-w-[280px]"}>
@@ -71,6 +85,7 @@ export function CalendarGrid(props: {
         <div className="grid" style={{ gridTemplateColumns: `48px repeat(${days.length}, 1fr)` }}>
           <div className="relative" style={{ height }}>
             {Array.from({ length: Math.ceil((last - first) / 60) }, (_, h) => <span key={h} className="absolute start-1 text-[11px] text-muted-foreground" style={{ top: h * HOUR }}>{fromMinutes(first + h * 60)}</span>)}
+            {markerShown && <span className="pointer-events-none absolute start-0.5 z-20 -translate-y-1/2 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white" style={{ top: marker.top }}>{marker.label}</span>}
           </div>
           {days.map((date) => {
             const list = (byDay.get(date) ?? []).filter((m) => localParts(new Date(m.starts_at).getTime(), tz).date === date);
@@ -79,6 +94,7 @@ export function CalendarGrid(props: {
               <div key={date} className={cn("relative border-e", date === today && "bg-primary/5")} style={{ height }}
                 onClick={(e) => props.onSlot(date, clickToTime(e.nativeEvent.offsetY, first, last, HOUR))}>
                 {Array.from({ length: Math.ceil((last - first) / 60) }, (_, h) => <div key={h} className="pointer-events-none absolute inset-x-0 border-t border-border/70" style={{ top: h * HOUR }} />)}
+                {markerShown && marker.date === date && <div aria-hidden className="pointer-events-none absolute inset-x-0 z-20 h-0.5 -translate-y-1/2 bg-red-500" style={{ top: marker.top }}><span className="absolute start-0 top-1/2 size-2 -translate-y-1/2 rounded-full bg-red-500" /></div>}
                 {list.map((m) => {
                   const s = minutesOfDay(m.starts_at, tz), e = minutesOfDay(m.ends_at, tz, true);
                   const { top, height: h } = blockGeometry(s, e, first, HOUR);

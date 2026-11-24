@@ -29,7 +29,7 @@ export function buildIcs(meetings: IcsMeeting[], opts: { now: Date; name?: strin
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//NovaSales//Calendar//AR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", `X-WR-CALNAME:${icsEscape(opts.name ?? "NovaSales")}`];
   for (const m of meetings) {
     if (SKIP.has(m.status)) continue;
-    lines.push("BEGIN:VEVENT", `UID:${m.id}@novasales`, `DTSTAMP:${stamp(opts.now)}`, `DTSTART:${stamp(m.starts_at)}`, `DTEND:${stamp(m.ends_at)}`, `SUMMARY:${icsEscape(m.type_name?.trim() || "اجتماع")}`);
+    lines.push("BEGIN:VEVENT", `UID:${m.id}@novasales`, `DTSTAMP:${stamp(opts.now)}`, `DTSTART:${stamp(m.starts_at)}`, `DTEND:${stamp(m.ends_at)}`, `SUMMARY:${icsEscape(m.type_name?.trim() || "موعد")}`);
     if ((m.channel === "link" || m.channel === "in_person") && m.location?.trim()) lines.push(`LOCATION:${icsEscape(m.location.trim())}`);
     lines.push(`STATUS:${STATUS[m.status] ?? "TENTATIVE"}`, "END:VEVENT");
   }

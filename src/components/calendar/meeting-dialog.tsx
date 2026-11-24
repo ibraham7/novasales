@@ -96,7 +96,7 @@ export function MeetingDialog(props: { open: boolean; onOpenChange: (open: boole
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" dir="rtl">
-        <DialogHeader><DialogTitle>{meeting ? "تعديل الموعد" : "اجتماع جديد"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{meeting ? "تعديل الموعد" : "موعد جديد"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div>
             <Label>العميل</Label>

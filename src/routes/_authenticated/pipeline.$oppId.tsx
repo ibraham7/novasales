@@ -124,12 +124,12 @@ function PipelineOppDetail() {
   return (
     <div className="h-screen flex flex-col min-h-0" dir="rtl">
       {/* Top bar */}
-      <div className="border-b bg-card px-4 py-2 flex items-center gap-3">
+      <div className="border-b bg-card px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button variant="ghost" size="sm" onClick={() => nav({ to: "/pipeline" })}>
           <ArrowRight className="h-4 w-4 ml-1" /> القمع
         </Button>
         <div className="text-sm text-muted-foreground">/</div>
-        <div className="font-semibold text-sm truncate">{ws.contact?.name ?? "—"}</div>
+        <div className="font-semibold text-sm truncate max-w-[40%]">{ws.contact?.name ?? "—"}</div>
         {ws.opportunity.stage_name && (
           <Badge
             variant="outline"
@@ -148,7 +148,7 @@ function PipelineOppDetail() {
             <ChannelIcon channel={ws.channel} /> {ws.channel}
           </Badge>
         )}
-        <div className="ms-auto flex items-center gap-2">
+        <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
           <SyncHistoryButton oppId={oppId} />
           <BookMeetingButton opportunityId={oppId} contactId={ws.contact?.id ?? null} contactName={ws.contact?.name ?? null} />
           <DeleteOpportunityButton oppId={oppId} contactName={ws.contact?.name ?? null} onDeleted={() => nav({ to: "/pipeline" })} />

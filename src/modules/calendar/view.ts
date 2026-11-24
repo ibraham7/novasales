@@ -67,3 +67,14 @@ export function minutesOfDay(iso: string, timezone: string, asEnd = false): numb
   const m = Math.round(localParts(new Date(iso).getTime(), timezone).minutes);
   return asEnd && m === 0 ? 1440 : m;
 }
+
+/**
+ * The «now» line of a day or week view: the local date, the label (HH:mm) and how far down the column it sits.
+ * Null when the current time is outside the hours the grid shows.
+ */
+export function nowMarker(nowMs: number, timezone: string, firstMin: number, lastMin: number, pxPerHour: number): { date: string; label: string; top: number } | null {
+  const p = localParts(nowMs, timezone);
+  const minutes = Math.floor(p.minutes);
+  if (minutes < firstMin || minutes >= lastMin) return null;
+  return { date: p.date, label: fromMinutes(minutes), top: ((minutes - firstMin) / 60) * pxPerHour };
+}

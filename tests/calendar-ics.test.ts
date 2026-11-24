@@ -21,10 +21,10 @@ test("ICS privacy: the title is only the type; no customer name, phone or notes;
   assert.ok(ics.includes("LOCATION:المكتب\\, الطابق 2"));
 });
 
-test("ICS: cancelled and no-show are left out; a meeting without a type is called «اجتماع»; booked is tentative", () => {
+test("ICS: cancelled and no-show are left out; a meeting without a type is called «موعد»; booked is tentative", () => {
   const ics = buildIcs([m("x1", { status: "cancelled" }), m("x2", { status: "no_show" }), m("x3", { status: "booked", type_name: null })], { now: NOW });
   assert.ok(!ics.includes("x1@") && !ics.includes("x2@") && ics.includes("x3@"));
-  assert.ok(ics.includes("SUMMARY:اجتماع") && ics.includes("STATUS:TENTATIVE"));
+  assert.ok(ics.includes("SUMMARY:موعد") && ics.includes("STATUS:TENTATIVE"));
 });
 
 test("ICS escaping and folding: special characters escaped; long lines folded at 75 bytes without cutting a letter", () => {

@@ -50,7 +50,7 @@ test("an agent books for themselves; the meeting carries the organization and th
   assert.deepEqual([m.organization_id, m.owner_user_id, m.created_by, m.status, m.contact_name, m.type_name, m.owner_name, m.internal_notes], [A, "a1", "a1", "booked", "عميل أ", "عرض توضيحي", "مندوب 1", "ملاحظة"]);
   const byType = await svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "14:00"), meetingTypeId: "tA" });
   assert.equal(new Date(byType.ends_at).getTime() - new Date(byType.starts_at).getTime(), 30 * 60_000, "end comes from the type's duration");
-  await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "15:00") }), "اكتب وقت نهاية الاجتماع أو اختر نوعاً له مدة");
+  await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "15:00") }), "اكتب وقت نهاية الموعد أو اختر نوعاً له مدة");
 });
 
 test("who may book: a read-only person no; an agent for a colleague no; a manager yes, but only for a member of the organization", async () => {
@@ -92,11 +92,11 @@ test("by id: a colleague's meeting and another organization's meeting look exact
 test("links from another organization are refused and nothing is written", async () => {
   const { db } = setup();
   for (const extra of [{ contactId: "cB" }, { leadId: "lB" }, { opportunityId: "oB" }, { meetingTypeId: "tB" }]) {
-    await rejects(svc.createMeeting(db, agent1, input(extra)), "العميل أو الفرصة أو نوع الاجتماع لا يتبع هذه المؤسسة");
+    await rejects(svc.createMeeting(db, agent1, input(extra)), "العميل أو الفرصة أو نوع الموعد لا يتبع هذه المؤسسة");
   }
   assert.equal(db.tables.cal_meetings.length, 0);
   const m = await svc.createMeeting(db, agent1, input());
-  await rejects(svc.updateMeeting(db, agent1, m.id, { contactId: "cB" }), "العميل أو الفرصة أو نوع الاجتماع لا يتبع هذه المؤسسة");
+  await rejects(svc.updateMeeting(db, agent1, m.id, { contactId: "cB" }), "العميل أو الفرصة أو نوع الموعد لا يتبع هذه المؤسسة");
 });
 
 test("the same person in two organizations: busy in one blocks the other, with a message that reveals nothing", async () => {
@@ -110,9 +110,9 @@ test("the same person in two organizations: busy in one blocks the other, with a
 
 test("hours, breaks and overlap inside the organization are refused with plain Arabic", async () => {
   const { db } = setup({ cal_availability: [], cal_breaks: [{ organization_id: A, user_id: "a1", weekday: 1, start_time: "12:00:00", end_time: "13:00:00" }], cal_time_off: [{ organization_id: A, user_id: "a1", starts_on: "2026-11-25", ends_on: "2026-11-25" }] });
-  await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "07:00"), endsAt: iso("2026-11-23", "08:00") }), "الاجتماع خارج ساعات عمل المندوب");
+  await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "07:00"), endsAt: iso("2026-11-23", "08:00") }), "الموعد خارج ساعات عمل المندوب");
   await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-28", "10:00"), endsAt: iso("2026-11-28", "11:00") }), "هذا اليوم خارج أيام العمل");
-  await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "12:15"), endsAt: iso("2026-11-23", "12:45") }), "الاجتماع يتعارض مع استراحة المندوب");
+  await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-23", "12:15"), endsAt: iso("2026-11-23", "12:45") }), "الموعد يتعارض مع استراحة المندوب");
   await rejects(svc.createMeeting(db, agent1, { startsAt: iso("2026-11-25", "10:00"), endsAt: iso("2026-11-25", "11:00") }), "المندوب في إجازة في هذا اليوم");
   await svc.createMeeting(db, agent1, input());
   await rejects(svc.createMeeting(db, agent1, input({ startsAt: iso("2026-11-23", "10:30"), endsAt: iso("2026-11-23", "11:30") })), "المندوب مشغول بهذا الوقت");
@@ -124,7 +124,7 @@ test("rescheduling: a meeting never clashes with itself, moving into a busy time
   const moved = await svc.updateMeeting(db, agent1, "m1", { startsAt: iso("2026-11-23", "10:30") });
   assert.equal(moved.ends_at, iso("2026-11-23", "11:30"), "the length is kept");
   await rejects(svc.updateMeeting(db, agent1, "m1", { startsAt: iso("2026-11-23", "14:30") }), "المندوب مشغول بهذا الوقت");
-  await rejects(svc.updateMeeting(db, agent1, "done", { startsAt: iso("2026-11-23", "09:00") }), "الاجتماع منتهٍ ولا يمكن تغيير وقته أو مسؤوله");
+  await rejects(svc.updateMeeting(db, agent1, "done", { startsAt: iso("2026-11-23", "09:00") }), "الموعد منتهٍ ولا يمكن تغيير وقته أو مسؤوله");
   await rejects(svc.updateMeeting(db, agent1, "m1", { ownerId: "a2" }), "لا يمكنك نقل الموعد لمندوب آخر");
   assert.equal((await svc.updateMeeting(db, manager, "m1", { ownerId: "a2" })).owner_user_id, "a2");
   assert.equal((await svc.updateMeeting(db, agent1, "m2", { title: "عنوان جديد" })).title, "عنوان جديد");
@@ -132,18 +132,18 @@ test("rescheduling: a meeting never clashes with itself, moving into a busy time
 
 test("statuses and outcome: allowed moves only, cancel keeps the reason, the outcome comes after completed and never moves the opportunity", async () => {
   const { db } = setup({ cal_meetings: [meeting("m1", A, "a1", "10:00", "11:00"), meeting("m2", A, "a1", "12:00", "13:00")] });
-  await rejects(svc.recordOutcome(db, agent1, "m1", "advanced"), "تُسجَّل نتيجة الاجتماع بعد انتهائه فقط");
+  await rejects(svc.recordOutcome(db, agent1, "m1", "advanced"), "تُسجَّل نتيجة الموعد بعد انتهائه فقط");
   assert.equal((await svc.setMeetingStatus(db, agent1, "m1", "confirmed")).status, "confirmed");
   assert.equal((await svc.setMeetingStatus(db, agent1, "m1", "in_progress")).status, "in_progress");
-  await rejects(svc.setMeetingStatus(db, agent1, "m1", "confirmed"), "لا يمكن نقل الاجتماع إلى هذه الحالة");
+  await rejects(svc.setMeetingStatus(db, agent1, "m1", "confirmed"), "لا يمكن نقل الموعد إلى هذه الحالة");
   await svc.setMeetingStatus(db, agent1, "m1", "completed");
   const done = await svc.recordOutcome(db, agent1, "m1", "needs_followup", "  نتابع الأسبوع القادم ");
   assert.deepEqual([done.outcome, done.outcome_note], ["needs_followup", "نتابع الأسبوع القادم"]);
-  await rejects(svc.recordOutcome(db, agent1, "m1", "won"), "نتيجة الاجتماع غير معروفة");
-  await rejects(svc.setMeetingStatus(db, agent1, "m1", "cancelled"), "لا يمكن نقل الاجتماع إلى هذه الحالة");
+  await rejects(svc.recordOutcome(db, agent1, "m1", "won"), "نتيجة الموعد غير معروفة");
+  await rejects(svc.setMeetingStatus(db, agent1, "m1", "cancelled"), "لا يمكن نقل الموعد إلى هذه الحالة");
   const cancelled = await svc.setMeetingStatus(db, agent1, "m2", "cancelled", "العميل اعتذر");
   assert.deepEqual([cancelled.status, cancelled.cancellation_reason], ["cancelled", "العميل اعتذر"]);
-  await rejects(svc.setMeetingStatus(db, agent1, "m2", "completed"), "لا يمكن نقل الاجتماع إلى هذه الحالة");
+  await rejects(svc.setMeetingStatus(db, agent1, "m2", "completed"), "لا يمكن نقل الموعد إلى هذه الحالة");
   assert.deepEqual(db.tables.opp_opportunities.find((o: any) => o.id === "oA"), { id: "oA", organization_id: A, stage: "new" }, "the opportunity was not touched");
   assert.equal(db.calls.filter((c: any) => c.table === "opp_opportunities" && c.op !== "select").length, 0);
 });
@@ -171,7 +171,7 @@ test("suggested times: scoped to the agent, skip busy time in ANY organization, 
   const forOthers = await svc.suggestTimes(db, agent1, { durationMin: 30, ownerIds: ["a2"], now, count: 1 });
   assert.equal(forOthers[0].ownerId, "a1", "an agent only gets their own times");
   assert.equal((await svc.suggestTimes(db, manager, { meetingTypeId: "tA", ownerIds: ["a2"], now, count: 1 }))[0].ownerId, "a2");
-  await rejects(svc.suggestTimes(db, manager, { meetingTypeId: "tB", now }), "العميل أو الفرصة أو نوع الاجتماع لا يتبع هذه المؤسسة");
+  await rejects(svc.suggestTimes(db, manager, { meetingTypeId: "tB", now }), "العميل أو الفرصة أو نوع الموعد لا يتبع هذه المؤسسة");
   await rejects(svc.suggestTimes(db, manager, { ownerIds: ["b1"], durationMin: 30, now }), "المندوب غير فعّال في هذه المؤسسة");
 });
 

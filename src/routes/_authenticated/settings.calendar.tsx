@@ -85,7 +85,7 @@ function CalendarSettings() {
 
       {manage && (
         <Card className="space-y-3 p-4">
-          <h3 className="font-semibold">أنواع الاجتماعات</h3>
+          <h3 className="font-semibold">أنواع المواعيد</h3>
           {(cfg.data?.types ?? []).map((t: any) => <TypeRow key={t.id} t={t} onSave={(v) => typeMut.mutate({ id: t.id, ...v })} />)}
           <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-5">
             <div className="sm:col-span-2"><Label>نوع جديد</Label><Input value={newType.name} onChange={(e) => setNewType({ ...newType, name: e.target.value })} maxLength={80} /></div>

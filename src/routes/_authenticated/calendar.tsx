@@ -14,7 +14,7 @@ import { fetchRange, moveAnchor, rangeFor, type CalendarView } from "@/modules/c
 import { localParts, addDays } from "@/modules/calendar/time";
 
 export const Route = createFileRoute("/_authenticated/calendar")({
-  head: () => ({ meta: [{ title: "التقويم - NovaSales" }, { name: "description", content: "اجتماعات وعروض ومكالمات ومتابعات مع العملاء." }] }),
+  head: () => ({ meta: [{ title: "التقويم - NovaSales" }, { name: "description", content: "مواعيد وعروض ومكالمات ومتابعات مع العملاء." }] }),
   component: CalendarPage,
 });
 
@@ -77,7 +77,7 @@ function CalendarPage() {
           <p>التقويم غير مفعّل لهذه المؤسسة.</p>
           {s.canManage ? (
             <>
-              <p className="text-sm text-muted-foreground">عند التفعيل تُنشأ أنواع اجتماعات افتراضية (مكالمة تعريفية، عرض توضيحي، اجتماع متابعة، زيارة ميدانية) ويظهر التقويم للفريق.</p>
+              <p className="text-sm text-muted-foreground">عند التفعيل تُنشأ أنواع مواعيد افتراضية (مكالمة تعريفية، عرض توضيحي، اجتماع متابعة، زيارة ميدانية) ويظهر التقويم للفريق.</p>
               <Button disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>تفعيل التقويم</Button>
             </>
           ) : <p className="text-sm text-muted-foreground">اطلب من مدير المؤسسة تفعيله.</p>}
@@ -101,7 +101,7 @@ function CalendarPage() {
           <CalendarDays className="h-7 w-7 text-primary" />
           <div><h1 className="text-2xl font-bold">التقويم</h1><p className="text-xs text-muted-foreground">بتوقيت {tz}</p></div>
         </div>
-        {s.canBook && <Button onClick={() => setDialog({ open: true, draft: { ownerId: owner || undefined } })}><Plus className="ml-1 h-4 w-4" />اجتماع جديد</Button>}
+        {s.canBook && <Button onClick={() => setDialog({ open: true, draft: { ownerId: owner || undefined } })}><Plus className="ml-1 h-4 w-4" />موعد جديد</Button>}
       </div>
       <Card className="flex flex-wrap items-center gap-2 p-3">
         <div className="flex items-center gap-1">
@@ -130,13 +130,13 @@ function CalendarPage() {
           <CalendarGrid view={view} anchor={cur} today={today} tz={tz} workStart={s.workStart} workEnd={s.workEnd} meetings={rows} showOwner={s.canViewAll}
             onPick={(m) => setSelected(m.id)} onDay={(d) => { setAnchor(d); setView("day"); }}
             onSlot={(date, start) => s.canBook && setDialog({ open: true, draft: { date, start, ownerId: owner || undefined } })} />
-          {!meetings.isLoading && rows.length === 0 && <p className="border-t p-4 text-center text-sm text-muted-foreground">لا توجد اجتماعات في هذه الفترة. اضغط على أي وقت في التقويم أو «اجتماع جديد».</p>}
+          {!meetings.isLoading && rows.length === 0 && <p className="border-t p-4 text-center text-sm text-muted-foreground">لا توجد مواعيد في هذه الفترة. اضغط على أي وقت في التقويم أو «موعد جديد».</p>}
         </Card>
       )}
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={() => setShowInactive((v) => !v)} className="rounded-full border px-3 py-0.5 text-xs font-semibold text-muted-foreground">{showInactive ? "إخفاء الملغاة" : "إظهار الملغاة"}</button>
         <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={download.isPending} onClick={() => download.mutate()}>تصدير ICS</Button>
-        {s.canManage && <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={toggle.isPending} onClick={() => { if (confirm("إيقاف التقويم لهذه المؤسسة؟ لن يستطيع أحد حجز اجتماعات جديدة. المواعيد الحالية تبقى محفوظة.")) toggle.mutate(false); }}>إيقاف التقويم</Button>}
+        {s.canManage && <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={toggle.isPending} onClick={() => { if (confirm("إيقاف التقويم لهذه المؤسسة؟ لن يستطيع أحد حجز مواعيد جديدة. المواعيد الحالية تبقى محفوظة.")) toggle.mutate(false); }}>إيقاف التقويم</Button>}
       </div>
       <MeetingDialog open={dialog.open} onOpenChange={(o) => setDialog((p) => ({ ...p, open: o }))} tz={tz} today={today} canViewAll={s.canViewAll} meeting={dialog.meeting} draft={dialog.draft} />
       <MeetingDetails id={selected} tz={tz} canBook={s.canBook} onClose={() => setSelected(null)} onEdit={(m) => { setSelected(null); setDialog({ open: true, meeting: m }); }} />
