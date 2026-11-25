@@ -476,10 +476,11 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
     const { organizationId } = await getWorkspace();
 
     // Permissions, the joined rows and the number-to-department links are independent: one parallel round.
-    const [access, rows, accountLinks]: [
+    const [access, allRows, accountLinks, trashedIds]: [
       Awaited<ReturnType<typeof requireAnyPermission>>,
       ChatListRow[],
       { account_id: string; department_id: string }[],
+      Set<string>,
     ] = await Promise.all([
       requireAnyPermission(["messaging.send", "crm.opportunities.view", "opportunities.view", "opportunities.view_department", "opportunities.view_own"]),
       loadChatListRows(db, organizationId, data.all ? 3000 : 200),
@@ -491,7 +492,19 @@ export const listChatsEnriched = createServerFn({ method: "GET" })
           if (result.error) throw new Error(result.error.message);
           return (result.data ?? []) as { account_id: string; department_id: string }[];
         }),
+      // Tickets in the trash: their chats are not listed (the database function that builds the rows does not know about the trash).
+      db
+        .from("opp_opportunities")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .not("deleted_at", "is", null)
+        .limit(5000)
+        .then((result: any) => {
+          if (result.error) throw new Error(result.error.message);
+          return new Set<string>(((result.data ?? []) as { id: string }[]).map((row) => row.id));
+        }),
     ]);
+    const rows = allRows.filter((row) => !row.opportunity_id || !trashedIds.has(row.opportunity_id));
 
     // نطاق الرؤية: الرقم (حساب القناة) المرتبط بأقسام المستخدم.
     const seesAll = getOpportunityVisibility(access) === "all";
