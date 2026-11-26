@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { sendBlockReason } from "@/modules/risk/send-block";
 import { z } from "@/lib/validation";
 import { createRateLimiter } from "@/modules/notifications/rate-limit";
 import { MARKETING_COUNTRY_CODES, countryByCode } from "./countries";
@@ -22,7 +23,7 @@ const maxThrottle = () => Number(process.env.OUTBOUND_MAX_THROTTLE) || DEFAULT_M
 /** The organization's WhatsApp numbers, with whether each is an official (Meta) link or a QR link. */
 async function loadAccounts(db: any, organizationId: string) {
   const [{ data: accounts, error }, { data: channels }] = await Promise.all([
-    db.from("msg_channel_accounts").select("id,display_name,identifier,status,channel_id").eq("organization_id", organizationId).limit(200),
+    db.from("msg_channel_accounts").select("id,display_name,identifier,status,channel_id,send_paused_at,observation_started_at,observation_hours").eq("organization_id", organizationId).limit(200),
     db.from("msg_channels").select("id,provider").eq("organization_id", organizationId).limit(200),
   ]);
   if (error) throw new Error(error.message);
@@ -39,7 +40,7 @@ async function loadAccounts(db: any, organizationId: string) {
     } catch {
       /* an unknown provider is treated as unofficial */
     }
-    return { id: a.id as string, name: (a.display_name || a.identifier || "رقم") as string, identifier: (a.identifier ?? "") as string, connected: a.status === "connected", official, providerLabel: label };
+    return { id: a.id as string, name: (a.display_name || a.identifier || "رقم") as string, identifier: (a.identifier ?? "") as string, connected: a.status === "connected", official, providerLabel: label, blockReason: sendBlockReason(a) };
   });
 }
 
@@ -158,7 +159,7 @@ export const listOutboundCampaigns = createServerFn({ method: "GET" }).handler(a
   const { organizationId, db } = await access("manage");
   const { data: campaigns, error } = await db
     .from("cmp_campaigns")
-    .select("id,name,status,scheduled_at,started_at,finished_at,throttle_per_minute,error,created_at,approved_at,compliance_snapshot")
+    .select("id,name,status,scheduled_at,started_at,finished_at,throttle_per_minute,error,created_at,approved_at,compliance_snapshot,channel_account_id")
     .eq("organization_id", organizationId)
     .eq("kind", "outbound")
     .order("created_at", { ascending: false })
@@ -177,7 +178,18 @@ export const listOutboundCampaigns = createServerFn({ method: "GET" }).handler(a
       stats.set(r.campaign_id, s);
     }
   }
-  return (campaigns ?? []).map((c: any) => ({ ...c, stats: stats.get(c.id) ?? { total: 0, queued: 0, sent: 0, delivered: 0, read: 0, failed: 0, skipped: 0, replied: 0 } }));
+  // A campaign whose number cannot send waits without any message; say why.
+  const accountIds = [...new Set((campaigns ?? []).filter((c: any) => ["scheduled", "running"].includes(c.status) && c.channel_account_id).map((c: any) => c.channel_account_id as string))];
+  const blocks = new Map<string, string | null>();
+  if (accountIds.length) {
+    const { data: accounts } = await db.from("msg_channel_accounts").select("id,status,send_paused_at,observation_started_at,observation_hours").eq("organization_id", organizationId).in("id", accountIds);
+    for (const a of accounts ?? []) blocks.set(a.id, sendBlockReason(a));
+  }
+  return (campaigns ?? []).map((c: any) => ({
+    ...c,
+    waitingBecause: c.channel_account_id ? blocks.get(c.channel_account_id) ?? null : null,
+    stats: stats.get(c.id) ?? { total: 0, queued: 0, sent: 0, delivered: 0, read: 0, failed: 0, skipped: 0, replied: 0 },
+  }));
 });
 
 export const deleteOutboundCampaignFn = createServerFn({ method: "POST" })
