@@ -279,8 +279,9 @@ export const listMarketingSearches = createServerFn({ method: "GET" }).handler(a
 
 /** Used by the sidebar: whether the signed-in user may see the marketing page at all. */
 export const getMarketingAccess = createServerFn({ method: "GET" }).handler(async () => {
-  const { getWorkspace } = await import("@/platform/workspace/workspace.server");
-  const { canUseMarketing } = await import("./gate.server");
-  const { userId } = await getWorkspace();
-  return { allowed: await canUseMarketing(userId) };
+  const { getWorkspaceAccess } = await import("@/platform/rbac/rbac.server");
+  const { canOpenMarketing } = await import("./gate");
+  const { emailAllowsMarketing } = await import("./gate.server");
+  const access = await getWorkspaceAccess();
+  return { allowed: canOpenMarketing(access.permissions, access.isSuperAdmin) && (await emailAllowsMarketing(access.userId)) };
 });

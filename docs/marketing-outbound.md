@@ -50,11 +50,7 @@
 
 ## Who can open the page (temporary limit)
 
-The marketing page and every marketing server call are limited to the accounts listed in
-`MARKETING_ALLOWED_EMAILS` (comma-separated login emails, set in the server `.env`). Empty or missing
-means nobody can open it. The email is read from the auth service on the server. To open it to
-everyone later, remove the `assertMarketingUser` call from `access()` in `marketing.functions.ts` and
-`outbound.functions.ts`, and the `marketingAllowed` condition in `app-shell.tsx`.
+The marketing page is open to every signed-in user whose role has the «إدارة الحملات» permission (`cmp.campaigns.manage`: owners and supervisors; a sales agent only when the owner adds it to the role). On top of that, `MARKETING_ALLOWED_EMAILS` (comma-separated login emails in the server `.env`) is an optional restriction: empty or missing means no restriction by email; filled, only those accounts can open the page and use its server calls (restart the app after changing it; to close marketing quickly, put one email in it). Sending needs `cmp.campaigns.send` and the owner's settings need `org.manage`; all of them are checked on the server.
 
 ## Site enrichment (emails, social pages, WhatsApp)
 

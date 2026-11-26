@@ -30,8 +30,8 @@ function MarketingPage() {
     return (
       <div className="mx-auto max-w-md space-y-2 p-10 text-center" dir="rtl">
         <Lock className="mx-auto h-8 w-8 text-muted-foreground" />
-        <h1 className="text-lg font-bold">هذه الصفحة غير متاحة حالياً</h1>
-        <p className="text-sm text-muted-foreground">صفحة التسويق قيد التجهيز ومتاحة لحسابات محددة فقط.</p>
+        <h1 className="text-lg font-bold">ليس لديك صلاحية التسويق</h1>
+        <p className="text-sm text-muted-foreground">صفحة التسويق لمن يملك صلاحية «إدارة الحملات» (ولحسابات محددة إن قيّدتها الإدارة). اطلب من مالك المؤسسة إضافتها لدورك.</p>
       </div>
     );
   return <MarketingContent />;
