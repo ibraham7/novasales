@@ -86,6 +86,9 @@ export function CampaignsTab({ onNew }: { onNew: () => void }) {
                 <Stat label="تخطّي" value={c.stats.skipped} />
               </div>
               {c.error && <p className="text-xs text-amber-700">{c.error}</p>}
+              {c.waitingBecause && c.stats.total > c.stats.sent + c.stats.delivered + c.stats.read + c.stats.failed + c.stats.skipped && (
+                <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">لم تُرسل الرسائل بعد: {c.waitingBecause}. تنتظر وتُرسل تلقائياً حين يصلح الرقم.</p>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 {active && (
                   <Button size="sm" variant="outline" disabled={control.isPending} onClick={() => control.mutate({ id: c.id, action: "pause" })}>

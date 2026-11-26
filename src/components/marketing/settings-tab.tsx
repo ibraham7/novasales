@@ -112,6 +112,7 @@ export function SettingsTab() {
         </ul>
       </Card>
 
+      {turningOn && !accept && <p className="text-xs text-amber-700">أشّر خانة «فهمت المخاطر وأتحمّل مسؤولية القرار» أعلاه لتفعيل زر الحفظ.</p>}
       <Button onClick={() => save.mutate()} disabled={save.isPending || (turningOn && !accept)}>
         {save.isPending && <Loader2 className="ml-1 h-4 w-4 animate-spin" />}
         حفظ الإعدادات

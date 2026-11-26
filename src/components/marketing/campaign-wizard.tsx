@@ -175,13 +175,17 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
               <select id="cw-account" className={selectClass} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
                 <option value="">اختر رقماً</option>
                 {accounts.map((a: any) => (
-                  <option key={a.id} value={a.id} disabled={!a.connected || a.official}>
+                  <option key={a.id} value={a.id} disabled={!a.connected || a.official || !!a.blockReason}>
                     {a.name} · {a.providerLabel}
-                    {a.official ? " (رسمي: يحتاج قوالب، غير مدعوم بعد)" : !a.connected ? " (غير متصل)" : ""}
+                    {a.official ? " (رسمي: يحتاج قوالب، غير مدعوم بعد)" : !a.connected ? " (غير متصل)" : a.blockReason ? ` (${a.blockReason})` : ""}
                   </option>
                 ))}
               </select>
-              {usable.length === 0 && settings.isSuccess && <p className="text-xs text-destructive">لا يوجد رقم متصل غير رسمي.</p>}
+              {usable.length === 0 && settings.isSuccess && (
+                <p className="text-xs text-destructive">
+                  {accounts.some((a: any) => a.connected && !a.official && a.blockReason) ? `لا يوجد رقم جاهز للإرسال: ${accounts.find((a: any) => a.connected && !a.official && a.blockReason)?.blockReason}.` : "لا يوجد رقم متصل غير رسمي."}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">يُنصح برقم مخصص لهذا الغرض، لا برقم المبيعات أو الدعم.</p>
             </div>
             <div className="space-y-1">
@@ -282,7 +286,7 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
               <p>
                 <b>{name}</b>
               </p>
-              <p>{eligible} جهة · من الرقم: {account?.name} · {schedule ? `${daily} رسالة باليوم من ${from} إلى ${to}${ramp ? ` (تسخين: ${rampStart} ثم +${rampStep} كل يوم)` : ""}، تنتهي خلال حوالي ${days} ${days === 1 ? "يوم" : "أيام"}` : `${throttle} رسالة بالدقيقة (حوالي ${minutes} دقيقة)`}</p>
+              <p>{eligible} جهة · من الرقم: {account?.name} · {schedule ? `${daily} ${messageWord(daily)} باليوم من ${from} إلى ${to}${ramp ? ` (تسخين: ${rampStart} ثم +${rampStep} كل يوم)` : ""}، تنتهي خلال حوالي ${days} ${days === 1 ? "يوم" : "أيام"}` : `${throttle} ${messageWord(throttle)} بالدقيقة (حوالي ${minutes} دقيقة)`}</p>
               <p>{later && scheduledAt ? `الموعد: ${new Date(scheduledAt).toLocaleString("ar")}` : "تبدأ بعد الاعتماد مباشرة"}</p>
             </div>
             <div className="whitespace-pre-wrap rounded-lg bg-emerald-50 p-3 text-sm dark:bg-emerald-950/30">{shown}</div>
