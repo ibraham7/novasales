@@ -6,6 +6,7 @@ import { PROSPECT_STATUS_LABELS } from "@/modules/marketing/statuses";
 import { formatDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { lastDays } from "@/lib/plural-ar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const RANGES = [7, 30, 90] as const;
@@ -37,7 +38,7 @@ export function ReportsTab() {
         <div className="flex gap-1" role="group" aria-label="الفترة">
           {RANGES.map((d) => (
             <button key={d} type="button" onClick={() => setDays(d)} className={`rounded-md border px-3 py-1 text-sm ${days === d ? "border-primary bg-primary/10 font-medium" : "text-muted-foreground"}`}>
-              آخر {d} يوماً
+              {lastDays(d)}
             </button>
           ))}
         </div>

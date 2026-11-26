@@ -161,7 +161,7 @@ export function ProspectSheet({ row, onClose }: { row: ProspectRow | null; onClo
                     </Button>
                   )}
                 </div>
-                {!row.website && <p className="text-xs text-muted-foreground">لا يوجد موقع مسجّل لهذه الجهة في خرائط قوقل، فلا يوجد ما يُقرأ. غالباً لها صفحة على إنستغرام أو فيسبوك؛ ابحث عنها باسمها وأضفها يدوياً.</p>}
+                {!row.website && <p className="text-xs text-muted-foreground">{row.maps_url ? "لا يوجد موقع مسجّل لهذه الجهة في خرائط قوقل" : "لا يوجد موقع إلكتروني لهذه الجهة"}، فلا يوجد ما يُقرأ. غالباً لها صفحة على إنستغرام أو فيسبوك؛ ابحث عنها باسمها وأضفها يدوياً.</p>}
                 {row.website && !row.enriched_at && <p className="text-xs text-muted-foreground">لم تُقرأ بيانات الموقع بعد.</p>}
                 {row.enrich_status === "failed" && <p className="text-xs text-destructive">تعذّرت القراءة: {row.enrich_error}</p>}
                 {row.enrich_status === "done" && !(row.emails?.length || row.site_whatsapp || row.site_phones?.length || Object.keys(row.socials ?? {}).length) && (
@@ -238,7 +238,9 @@ export function ProspectSheet({ row, onClose }: { row: ProspectRow | null; onClo
               </div>
 
               <p className="text-xs text-muted-foreground">
-                اكتُشفت {formatDateTime(row.created_at)}. بيانات Google مخزَّنة مؤقتاً وتنتهي صلاحيتها في {formatDateTime(row.expires_at)}.
+                {row.maps_url
+                  ? <>اكتُشفت {formatDateTime(row.created_at)}. بيانات Google مخزَّنة مؤقتاً وتنتهي صلاحيتها في {formatDateTime(row.expires_at)}.</>
+                  : <>أُضيفت يدوياً {formatDateTime(row.created_at)}.</>}
               </p>
               <Button className="w-full" disabled={save.isPending} onClick={() => save.mutate()}>
                 {save.isPending && <Loader2 className="ml-1 h-4 w-4 animate-spin" />}
