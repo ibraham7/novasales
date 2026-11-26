@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { messageWord } from "@/lib/plural-ar";
 import { Textarea } from "@/components/ui/textarea";
 
 const selectClass = "w-full rounded-md border bg-background p-2 text-sm";
@@ -257,7 +258,7 @@ export function CampaignWizard({ open, onOpenChange, onDone }: { open: boolean; 
                   <select id="cw-speed" className={selectClass} value={throttle} onChange={(e) => setThrottle(Number(e.target.value))}>
                     {speeds.map((v) => (
                       <option key={v} value={v}>
-                        {v} رسالة بالدقيقة
+                        {v} {messageWord(v)} بالدقيقة
                       </option>
                     ))}
                   </select>

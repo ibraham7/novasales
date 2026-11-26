@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { messageWord } from "@/lib/plural-ar";
 import { Textarea } from "@/components/ui/textarea";
 
 /** Safety settings of outbound sending: who may send from which numbers, and the opt-out line. */
@@ -107,7 +108,7 @@ export function SettingsTab() {
         <h3 className="mb-2 font-semibold">حدود الحماية (من إعدادات الخادم)</h3>
         <ul className="space-y-1 text-sm text-muted-foreground">
           <li>أقصى مستلمين للحملة الواحدة: {s.maxRecipients}</li>
-          <li>أقصى سرعة: {s.maxThrottle} رسالة بالدقيقة</li>
+          <li>أقصى سرعة: {s.maxThrottle} {messageWord(s.maxThrottle)} بالدقيقة</li>
         </ul>
       </Card>
 

@@ -85,7 +85,7 @@ export const addMarketingProspect = createServerFn({ method: "POST" })
     z
       .object({
         name: z.string().trim().min(2, "اكتب اسم الجهة").max(200),
-        phone: z.string().trim().min(5, "اكتب رقم الهاتف").max(40),
+        phone: z.string().trim().min(5, "رقم الهاتف قصير أو غير صالح: اكتبه بالصيغة الدولية مثل +905321234567").max(40),
         country: z.enum(MARKETING_COUNTRY_CODES),
         category: z.string().trim().max(120).optional(),
         city: z.string().trim().max(80).optional(),
@@ -206,7 +206,7 @@ export const listSuppressions = createServerFn({ method: "GET" }).handler(async 
 });
 
 export const addSuppressionNumber = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => z.object({ phone: z.string().trim().min(5, "اكتب الرقم").max(40), country: z.enum(MARKETING_COUNTRY_CODES).default("TR"), reason: z.string().trim().max(200).optional() }).parse(data))
+  .inputValidator((data: unknown) => z.object({ phone: z.string().trim().min(5, "الرقم قصير أو غير صالح: اكتبه بالصيغة الدولية مثل +905321234567").max(40), country: z.enum(MARKETING_COUNTRY_CODES).default("TR"), reason: z.string().trim().max(200).optional() }).parse(data))
   .handler(async ({ data }) => {
     const { userId, organizationId, db } = await access("manage");
     const { addSuppression, logEvent } = await import("./outbound-core");
