@@ -44,12 +44,19 @@ export const getSocialConnections = createServerFn({ method: "GET" }).handler(as
   };
   const googleLast = await db.from("crm_conversion_deliveries").select("error").eq("organization_id", organizationId).eq("platform", "google").eq("state", "failed").order("updated_at", { ascending: false }).limit(1).maybeSingle();
   const googleDelivery = { sent: await googleCount("sent"), failed: await googleCount("failed"), lastError: (googleLast?.data?.error as string | null) ?? null };
+  const tiktokCount = async (state: string) => {
+    const r = await db.from("crm_conversion_deliveries").select("event_id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("platform", "tiktok").eq("state", state);
+    return r.error ? 0 : (r.count ?? 0);
+  };
+  const tiktokLast = await db.from("crm_conversion_deliveries").select("error").eq("organization_id", organizationId).eq("platform", "tiktok").eq("state", "failed").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  const tiktokDelivery = { sent: await tiktokCount("sent"), failed: await tiktokCount("failed"), lastError: (tiktokLast?.data?.error as string | null) ?? null };
   const { metaPublicConfig } = await import("@/modules/channels/whatsapp/cloud-http");
   const meta = metaPublicConfig();
   const socialConfigId = process.env.META_SOCIAL_CONFIG_ID ?? null;
   return {
     connections: (pixels.data ?? []).map(({ access_token, ...row }: any) => ({ ...row, has_token: !!access_token })),
     googleDelivery,
+    tiktokDelivery,
     delivery: {
       waiting: waiting.count ?? 0,
       sent: sent.count ?? 0,
@@ -118,6 +125,23 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
         if (old && old.pixel_id !== pixelId) row.access_token = null;
       }
     }
+    if (data.platform === "tiktok") {
+      row.test_event_code = data.testEventCode || null;
+      const { data: old } = await db.from("org_marketing_pixels").select("pixel_id").eq("organization_id", organizationId).eq("platform", "tiktok").maybeSingle();
+      if (data.accessToken) {
+        const { isTikTokPixelCode } = await import("./tiktok-capi");
+        if (!isTikTokPixelCode(pixelId)) throw new Error("أدخل Pixel Code لتيك توك (من Events Manager ← Web events ← بكسلك)");
+        const token = data.accessToken.replace(/\s+/g, "");
+        if (token.length < 20) throw new Error("رمز الوصول غير صحيح: أنشئه من TikTok Events Manager ← إعدادات البكسل ← Events API ← Generate Access Token");
+        const { sealSecret } = await import("./secret-box.server");
+        row.access_token = await sealSecret(token);
+        row.connected_via = "manual";
+        row.connected_at = new Date().toISOString();
+      } else if (old && old.pixel_id !== pixelId) {
+        // A different pixel needs its own token.
+        row.access_token = null;
+      }
+    }
     if (data.platform === "google") {
       const { isGa4MeasurementId } = await import("./ga4-capi");
       const { data: old } = await db.from("org_marketing_pixels").select("pixel_id").eq("organization_id", organizationId).eq("platform", "google").maybeSingle();
@@ -183,6 +207,44 @@ export const sendMetaTestEvent = createServerFn({ method: "POST" }).handler(asyn
     },
   ]);
   return { received, trace };
+});
+
+async function tiktokConnection(organizationId: string, db: any) {
+  const { isTikTokPixelCode } = await import("./tiktok-capi");
+  const { data, error } = await db.from("org_marketing_pixels").select("organization_id,pixel_id,access_token,test_event_code").eq("organization_id", organizationId).eq("platform", "tiktok").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.access_token || !isTikTokPixelCode(data.pixel_id)) throw new Error("أدخل Pixel Code ورمز الوصول (Access Token) لتيك توك أولًا");
+  return data;
+}
+
+/** A test «SubmitForm» event, shown only under Test events in TikTok Events Manager (it needs the Test Event Code). */
+export const sendTikTokTestEvent = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await context();
+  const connection = await tiktokConnection(organizationId, db);
+  if (!connection.test_event_code) throw new Error("أدخل Test Event Code من Events Manager ← Test events حتى لا يُحسب الحدث التجريبي تحويلًا حقيقيًا");
+  const { postTikTok } = await import("./tiktok-capi.server");
+  const { sha256 } = await import("./meta-capi");
+  await postTikTok(
+    connection,
+    [
+      {
+        event: "SubmitForm",
+        event_time: Math.floor(Date.now() / 1000),
+        event_id: `test:${crypto.randomUUID()}`,
+        user: { external_id: await sha256(`novasales-test-${organizationId}`) },
+        properties: { content_type: "product" },
+      },
+    ],
+    connection.test_event_code,
+  );
+  return { ok: true };
+});
+
+export const deliverTikTokNow = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await context();
+  await tiktokConnection(organizationId, db);
+  const { deliverTikTokConversions } = await import("./tiktok-capi.server");
+  return deliverTikTokConversions(organizationId);
 });
 
 async function googleConnection(organizationId: string, db: any) {

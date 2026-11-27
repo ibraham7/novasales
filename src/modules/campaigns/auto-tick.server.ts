@@ -35,6 +35,13 @@ export function startCampaignTicker() {
       console.error("[conversions] ga4 run failed", error instanceof Error ? error.message : error);
     }
     try {
+      const { deliverTikTokConversions } = await import("@/modules/integrations/tiktok-capi.server");
+      const { sent } = await deliverTikTokConversions();
+      if (sent) console.log(`[conversions] sent ${sent} to TikTok`);
+    } catch (error) {
+      console.error("[conversions] tiktok run failed", error instanceof Error ? error.message : error);
+    }
+    try {
       const { runWorkflowTick } = await import("@/modules/workflow/auto-tick.server");
       const result = await runWorkflowTick();
       if (result && (result.processed || result.failed || result.skipped)) console.log(`[workflow] processed ${result.processed}, failed ${result.failed}, skipped ${result.skipped}`);

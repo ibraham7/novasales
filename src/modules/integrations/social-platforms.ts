@@ -5,7 +5,7 @@
 export const SOCIAL_PLATFORMS = {
   facebook: { label: "فيسبوك (Meta Pixel)", idLabel: "Pixel ID", pattern: /^\d{10,20}$/, example: "4618096201805650" },
   instagram: { label: "إنستغرام", idLabel: "Pixel ID", pattern: /^\d{10,20}$/, example: "نفس بكسل ميتا عادةً" },
-  tiktok: { label: "تيك توك (TikTok Pixel)", idLabel: "Pixel ID", pattern: /^[A-Z0-9]{10,40}$/i, example: "C4ABCDEF123456789" },
+  tiktok: { label: "تيك توك (TikTok Pixel)", idLabel: "Pixel Code", pattern: /^[A-Z0-9]{10,40}$/i, example: "C4ABCDEF123456789" },
   snapchat: { label: "سناب شات (Snap Pixel)", idLabel: "Pixel ID", pattern: /^[0-9a-f-]{20,40}$/i, example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
   x: { label: "تويتر (X Pixel)", idLabel: "Pixel ID", pattern: /^[a-z0-9]{4,20}$/i, example: "o1abc" },
   linkedin: { label: "لينكد إن (Insight Tag)", idLabel: "Partner ID", pattern: /^\d{4,12}$/, example: "1234567" },
@@ -16,7 +16,7 @@ export type SocialPlatform = keyof typeof SOCIAL_PLATFORMS;
 export const SOCIAL_PLATFORM_KEYS = Object.keys(SOCIAL_PLATFORMS) as SocialPlatform[];
 
 /** Platforms whose conversion events the server already sends: Meta (Conversions API) and Google (GA4 Measurement Protocol). */
-export const DELIVERING_PLATFORMS: SocialPlatform[] = ["facebook", "google"];
+export const DELIVERING_PLATFORMS: SocialPlatform[] = ["facebook", "google", "tiktok"];
 
 /** The cleaned id, or an Arabic error. */
 export function cleanPixelId(platform: SocialPlatform, raw: string): string {
