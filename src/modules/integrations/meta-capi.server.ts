@@ -52,7 +52,7 @@ export async function sendMetaEvents(connection: MetaConnection, events: Record<
 }
 
 /** Name, email, country and city of the contacts behind the events. */
-async function contactInfo(organizationId: string, contactIds: string[]): Promise<Map<string, ContactInfo>> {
+export async function contactInfo(organizationId: string, contactIds: string[]): Promise<Map<string, ContactInfo>> {
   const ids = [...new Set(contactIds.filter(Boolean))];
   const info = new Map<string, ContactInfo>();
   if (!ids.length) return info;

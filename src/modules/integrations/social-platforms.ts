@@ -9,14 +9,14 @@ export const SOCIAL_PLATFORMS = {
   snapchat: { label: "سناب شات (Snap Pixel)", idLabel: "Pixel ID", pattern: /^[0-9a-f-]{20,40}$/i, example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
   x: { label: "تويتر (X Pixel)", idLabel: "Pixel ID", pattern: /^[a-z0-9]{4,20}$/i, example: "o1abc" },
   linkedin: { label: "لينكد إن (Insight Tag)", idLabel: "Partner ID", pattern: /^\d{4,12}$/, example: "1234567" },
-  google: { label: "يوتيوب / Google tag", idLabel: "Tag ID", pattern: /^(G|AW|GT|DC)-[A-Z0-9]{4,20}$/i, example: "AW-123456789" },
+  google: { label: "جوجل (Google Analytics 4 / Google tag)", idLabel: "Measurement ID", pattern: /^(G|AW|GT|DC)-[A-Z0-9]{4,20}$/i, example: "G-ABCD123456" },
 } as const;
 
 export type SocialPlatform = keyof typeof SOCIAL_PLATFORMS;
 export const SOCIAL_PLATFORM_KEYS = Object.keys(SOCIAL_PLATFORMS) as SocialPlatform[];
 
-/** Platforms whose conversion events the server already sends (Meta Conversions API). */
-export const DELIVERING_PLATFORMS: SocialPlatform[] = ["facebook"];
+/** Platforms whose conversion events the server already sends: Meta (Conversions API) and Google (GA4 Measurement Protocol). */
+export const DELIVERING_PLATFORMS: SocialPlatform[] = ["facebook", "google"];
 
 /** The cleaned id, or an Arabic error. */
 export function cleanPixelId(platform: SocialPlatform, raw: string): string {
