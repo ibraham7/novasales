@@ -6,12 +6,14 @@ import { CheckCircle2, Clock, Facebook, Ghost, Instagram, KeyRound, Linkedin, Lo
 import {
   deliverConversionsNow,
   deliverGa4Now,
+  deliverSnapNow,
   deliverTikTokNow,
   finishMetaSocialLink,
   getSocialConnections,
   removeSocialPixel,
   saveSocialPixel,
   sendGa4TestEvent,
+  sendSnapTestEvent,
   sendTikTokTestEvent,
   sendMetaTestEvent,
   startMetaSocialLink,
@@ -146,6 +148,7 @@ function SocialConnectionsPage() {
       {q.data && byPlatform("facebook")?.has_token && <MetaDelivery delivery={q.data.delivery} />}
       {q.data && byPlatform("google")?.has_token && <GoogleDelivery delivery={q.data.googleDelivery} />}
       {q.data && byPlatform("tiktok")?.has_token && <TikTokDelivery delivery={q.data.tiktokDelivery} />}
+      {q.data && byPlatform("snapchat")?.has_token && <SnapDelivery delivery={q.data.snapchatDelivery} />}
     </div>
   );
 }
@@ -156,6 +159,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
   const isMeta = platform === "facebook";
   const isGoogle = platform === "google";
   const isTikTok = platform === "tiktok";
+  const isSnap = platform === "snapchat";
   const delivers = DELIVERING_PLATFORMS.includes(platform);
   const saveFn = useServerFn(saveSocialPixel);
   const removeFn = useServerFn(removeSocialPixel);
@@ -170,7 +174,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
 
   const save = useMutation({
     mutationFn: () =>
-      saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : isGoogle ? { accessToken: token || undefined } : isTikTok ? { accessToken: token || undefined, testEventCode: testCode } : {}) } }),
+      saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : isGoogle ? { accessToken: token || undefined } : isTikTok ? { accessToken: token || undefined, testEventCode: testCode } : isSnap ? { accessToken: token || undefined } : {}) } }),
     onSuccess: (r) => {
       setToken("");
       toast.success(
@@ -316,6 +320,27 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
           </p>
         </div>
       )}
+      {isSnap && (
+        <div className="space-y-1">
+          <Label className="flex items-center gap-1 text-xs">
+            <KeyRound className="h-3 w-3" /> رمز Conversions API (Access Token)
+          </Label>
+          <Input
+            type="text"
+            name="snap-capi-token"
+            style={{ WebkitTextSecurity: "disc" } as CSSProperties}
+            data-lpignore="true"
+            data-1p-ignore
+            spellCheck={false}
+            dir="ltr"
+            autoComplete="off"
+            placeholder={connection?.has_token ? "محفوظ ومشفّر — اتركه فارغًا للإبقاء عليه" : "Snap Ads Manager ← Events Manager ← Conversions API ← Generate token"}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">الرمز لا يظهر مرة أخرى بعد الحفظ ولا يُرسل للمتصفح.</p>
+        </div>
+      )}
       {!isMeta && !delivers && connection && (
         <p className="text-xs text-muted-foreground">محفوظ. إرسال النتائج تلقائيًا لهذه المنصة يُفعّل بعد موافقتها.</p>
       )}
@@ -388,6 +413,47 @@ function GoogleDelivery({ delivery }: { delivery: { sent: number; failed: number
       <h3 className="font-semibold">إرسال النتائج إلى جوجل (GA4)</h3>
       <p className="text-xs text-muted-foreground">
         كل دقيقة يُرسل الخادم مراحل القمع المصنّفة في «تحويلات الإعلانات» (عميل مؤهل، حجز، بيع، وتقييم الجودة) إلى خاصية GA4 الخاصة بمؤسستك، بأسماء: qualify_lead وschedule_appointment وpurchase وlead_quality. الإيميل والهاتف يُرسلان مجزّأين بالتشفير. تقبل جوجل الأحداث حتى 72 ساعة من وقوعها. لتحسين إعلانات Google Ads استورد من GA4 أحداث التحويل.
+      </p>
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <Stat icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="أُرسل" value={delivery.sent} />
+        <Stat icon={<ShieldCheck className="h-4 w-4 text-destructive" />} label="فشل" value={delivery.failed} />
+      </div>
+      {delivery.lastError && <p className="text-xs text-destructive">آخر خطأ: {delivery.lastError}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
+          {test.isPending ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Send className="ml-1 h-4 w-4" />}
+          إرسال حدث تجريبي
+        </Button>
+        <Button type="button" variant="outline" disabled={deliver.isPending} onClick={() => deliver.mutate()}>
+          إرسال المنتظر الآن
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function SnapDelivery({ delivery }: { delivery: { sent: number; failed: number; lastError: string | null } }) {
+  const qc = useQueryClient();
+  const testFn = useServerFn(sendSnapTestEvent);
+  const deliverFn = useServerFn(deliverSnapNow);
+  const test = useMutation({
+    mutationFn: () => testFn(),
+    onSuccess: () => toast.success("قبلت سناب شات الحدث التجريبي (فحص فقط، لا يُحسب تحويلًا)"),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const deliver = useMutation({
+    mutationFn: () => deliverFn(),
+    onSuccess: (r) => {
+      toast.success(r.failed ? `أُرسل ${r.sent}، وتعذّر ${r.failed}` : `أُرسل ${r.sent} حدث`);
+      qc.invalidateQueries({ queryKey: ["social-connections"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Card className="space-y-3 p-4">
+      <h3 className="font-semibold">إرسال النتائج إلى سناب شات</h3>
+      <p className="text-xs text-muted-foreground">
+        كل دقيقة يُرسل الخادم مراحل القمع المصنّفة في «تحويلات الإعلانات» إلى بكسل سناب الخاص بمؤسستك: عميل مؤهل (SIGN_UP)، حجز (RESERVE)، بيع (PURCHASE)، وتقييم الجودة (CUSTOM_EVENT_1). الإيميل والهاتف يُرسلان مجزّأين بالتشفير، والعميل بلا إيميل أو هاتف لا يُرسل. «إرسال حدث تجريبي» يفحص الطلب فقط ولا يُحسب تحويلًا.
       </p>
       <div className="grid grid-cols-2 gap-2 text-center">
         <Stat icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="أُرسل" value={delivery.sent} />

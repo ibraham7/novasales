@@ -42,6 +42,13 @@ export function startCampaignTicker() {
       console.error("[conversions] tiktok run failed", error instanceof Error ? error.message : error);
     }
     try {
+      const { deliverSnapConversions } = await import("@/modules/integrations/snapchat-capi.server");
+      const { sent } = await deliverSnapConversions();
+      if (sent) console.log(`[conversions] sent ${sent} to Snapchat`);
+    } catch (error) {
+      console.error("[conversions] snapchat run failed", error instanceof Error ? error.message : error);
+    }
+    try {
       const { runWorkflowTick } = await import("@/modules/workflow/auto-tick.server");
       const result = await runWorkflowTick();
       if (result && (result.processed || result.failed || result.skipped)) console.log(`[workflow] processed ${result.processed}, failed ${result.failed}, skipped ${result.skipped}`);

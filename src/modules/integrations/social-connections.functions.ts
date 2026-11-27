@@ -49,6 +49,12 @@ export const getSocialConnections = createServerFn({ method: "GET" }).handler(as
     return r.error ? 0 : (r.count ?? 0);
   };
   const tiktokLast = await db.from("crm_conversion_deliveries").select("error").eq("organization_id", organizationId).eq("platform", "tiktok").eq("state", "failed").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  const snapCount = async (state: string) => {
+    const r = await db.from("crm_conversion_deliveries").select("event_id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("platform", "snapchat").eq("state", state);
+    return r.error ? 0 : (r.count ?? 0);
+  };
+  const snapLast = await db.from("crm_conversion_deliveries").select("error").eq("organization_id", organizationId).eq("platform", "snapchat").eq("state", "failed").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  const snapchatDelivery = { sent: await snapCount("sent"), failed: await snapCount("failed"), lastError: (snapLast?.data?.error as string | null) ?? null };
   const tiktokDelivery = { sent: await tiktokCount("sent"), failed: await tiktokCount("failed"), lastError: (tiktokLast?.data?.error as string | null) ?? null };
   const { metaPublicConfig } = await import("@/modules/channels/whatsapp/cloud-http");
   const meta = metaPublicConfig();
@@ -57,6 +63,7 @@ export const getSocialConnections = createServerFn({ method: "GET" }).handler(as
     connections: (pixels.data ?? []).map(({ access_token, ...row }: any) => ({ ...row, has_token: !!access_token })),
     googleDelivery,
     tiktokDelivery,
+    snapchatDelivery,
     delivery: {
       waiting: waiting.count ?? 0,
       sent: sent.count ?? 0,
@@ -123,6 +130,22 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
           .eq("platform", "facebook")
           .maybeSingle();
         if (old && old.pixel_id !== pixelId) row.access_token = null;
+      }
+    }
+    if (data.platform === "snapchat") {
+      const { data: old } = await db.from("org_marketing_pixels").select("pixel_id").eq("organization_id", organizationId).eq("platform", "snapchat").maybeSingle();
+      if (data.accessToken) {
+        const { isSnapPixelId } = await import("./snapchat-capi");
+        if (!isSnapPixelId(pixelId)) throw new Error("أدخل Pixel ID لسناب شات (من Snap Ads Manager ← Events Manager)");
+        const token = data.accessToken.replace(/\s+/g, "");
+        if (token.length < 20) throw new Error("رمز الوصول غير صحيح: أنشئه من Snap Ads Manager ← Events Manager ← Conversions API ← Generate token");
+        const { sealSecret } = await import("./secret-box.server");
+        row.access_token = await sealSecret(token);
+        row.connected_via = "manual";
+        row.connected_at = new Date().toISOString();
+      } else if (old && old.pixel_id !== pixelId) {
+        // A different pixel needs its own token.
+        row.access_token = null;
       }
     }
     if (data.platform === "tiktok") {
@@ -207,6 +230,43 @@ export const sendMetaTestEvent = createServerFn({ method: "POST" }).handler(asyn
     },
   ]);
   return { received, trace };
+});
+
+async function snapConnection(organizationId: string, db: any) {
+  const { isSnapPixelId } = await import("./snapchat-capi");
+  const { data, error } = await db.from("org_marketing_pixels").select("organization_id,pixel_id,access_token").eq("organization_id", organizationId).eq("platform", "snapchat").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.access_token || !isSnapPixelId(data.pixel_id)) throw new Error("أدخل Pixel ID ورمز الوصول (Conversions API token) لسناب شات أولًا");
+  return data;
+}
+
+/** Asks Snapchat to validate a sample event (the /validate endpoint: checked, never counted as a conversion). */
+export const sendSnapTestEvent = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await context();
+  const connection = await snapConnection(organizationId, db);
+  const { postSnap } = await import("./snapchat-capi.server");
+  const { sha256 } = await import("./meta-capi");
+  await postSnap(
+    connection,
+    [
+      {
+        event_name: "SIGN_UP",
+        action_source: "OFFLINE",
+        event_time: Math.floor(Date.now() / 1000),
+        user_data: { em: await sha256(`novasales-test-${organizationId}@example.com`), external_id: await sha256(`novasales-test-${organizationId}`) },
+        custom_data: { event_id: `test:${crypto.randomUUID()}` },
+      },
+    ],
+    true,
+  );
+  return { ok: true };
+});
+
+export const deliverSnapNow = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await context();
+  await snapConnection(organizationId, db);
+  const { deliverSnapConversions } = await import("./snapchat-capi.server");
+  return deliverSnapConversions(organizationId);
 });
 
 async function tiktokConnection(organizationId: string, db: any) {
