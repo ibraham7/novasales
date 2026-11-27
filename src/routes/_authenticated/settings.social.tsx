@@ -6,11 +6,13 @@ import { CheckCircle2, Clock, Facebook, Ghost, Instagram, KeyRound, Linkedin, Lo
 import {
   deliverConversionsNow,
   deliverGa4Now,
+  deliverTikTokNow,
   finishMetaSocialLink,
   getSocialConnections,
   removeSocialPixel,
   saveSocialPixel,
   sendGa4TestEvent,
+  sendTikTokTestEvent,
   sendMetaTestEvent,
   startMetaSocialLink,
 } from "@/modules/integrations/social-connections.functions";
@@ -143,6 +145,7 @@ function SocialConnectionsPage() {
 
       {q.data && byPlatform("facebook")?.has_token && <MetaDelivery delivery={q.data.delivery} />}
       {q.data && byPlatform("google")?.has_token && <GoogleDelivery delivery={q.data.googleDelivery} />}
+      {q.data && byPlatform("tiktok")?.has_token && <TikTokDelivery delivery={q.data.tiktokDelivery} />}
     </div>
   );
 }
@@ -152,6 +155,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
   const spec = SOCIAL_PLATFORMS[platform];
   const isMeta = platform === "facebook";
   const isGoogle = platform === "google";
+  const isTikTok = platform === "tiktok";
   const delivers = DELIVERING_PLATFORMS.includes(platform);
   const saveFn = useServerFn(saveSocialPixel);
   const removeFn = useServerFn(removeSocialPixel);
@@ -166,7 +170,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
 
   const save = useMutation({
     mutationFn: () =>
-      saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : isGoogle ? { accessToken: token || undefined } : {}) } }),
+      saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : isGoogle ? { accessToken: token || undefined } : isTikTok ? { accessToken: token || undefined, testEventCode: testCode } : {}) } }),
     onSuccess: (r) => {
       setToken("");
       toast.success(
@@ -188,7 +192,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
     },
     onError: (e: Error) => toast.error(e.message),
   });
-  const changed = pixelId.trim() !== (connection?.pixel_id ?? "") || !!token.trim() || (isMeta && testCode.trim() !== (connection?.test_event_code ?? ""));
+  const changed = pixelId.trim() !== (connection?.pixel_id ?? "") || !!token.trim() || ((isMeta || isTikTok) && testCode.trim() !== (connection?.test_event_code ?? ""));
 
   return (
     <div className="space-y-2 rounded-lg border p-3">
@@ -283,6 +287,35 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
           </p>
         </div>
       )}
+      {isTikTok && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="flex items-center gap-1 text-xs">
+              <KeyRound className="h-3 w-3" /> رمز Events API (Access Token)
+            </Label>
+            <Input
+              type="text"
+              name="tiktok-events-token"
+              style={{ WebkitTextSecurity: "disc" } as CSSProperties}
+              data-lpignore="true"
+              data-1p-ignore
+              spellCheck={false}
+              dir="ltr"
+              autoComplete="off"
+              placeholder={connection?.has_token ? "محفوظ ومشفّر — اتركه فارغًا للإبقاء عليه" : "TikTok Events Manager ← إعدادات البكسل ← Events API ← Generate Access Token"}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Test Event Code (اختياري، للتجربة فقط)</Label>
+            <Input dir="ltr" placeholder="TEST12345" value={testCode} onChange={(e) => setTestCode(e.target.value)} />
+          </div>
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            الرمز لا يظهر مرة أخرى بعد الحفظ ولا يُرسل للمتصفح. طالما Test Event Code موجود تذهب الأحداث لصفحة Test events فقط؛ احذفه بعد التجربة.
+          </p>
+        </div>
+      )}
       {!isMeta && !delivers && connection && (
         <p className="text-xs text-muted-foreground">محفوظ. إرسال النتائج تلقائيًا لهذه المنصة يُفعّل بعد موافقتها.</p>
       )}
@@ -355,6 +388,47 @@ function GoogleDelivery({ delivery }: { delivery: { sent: number; failed: number
       <h3 className="font-semibold">إرسال النتائج إلى جوجل (GA4)</h3>
       <p className="text-xs text-muted-foreground">
         كل دقيقة يُرسل الخادم مراحل القمع المصنّفة في «تحويلات الإعلانات» (عميل مؤهل، حجز، بيع، وتقييم الجودة) إلى خاصية GA4 الخاصة بمؤسستك، بأسماء: qualify_lead وschedule_appointment وpurchase وlead_quality. الإيميل والهاتف يُرسلان مجزّأين بالتشفير. تقبل جوجل الأحداث حتى 72 ساعة من وقوعها. لتحسين إعلانات Google Ads استورد من GA4 أحداث التحويل.
+      </p>
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <Stat icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="أُرسل" value={delivery.sent} />
+        <Stat icon={<ShieldCheck className="h-4 w-4 text-destructive" />} label="فشل" value={delivery.failed} />
+      </div>
+      {delivery.lastError && <p className="text-xs text-destructive">آخر خطأ: {delivery.lastError}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
+          {test.isPending ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Send className="ml-1 h-4 w-4" />}
+          إرسال حدث تجريبي
+        </Button>
+        <Button type="button" variant="outline" disabled={deliver.isPending} onClick={() => deliver.mutate()}>
+          إرسال المنتظر الآن
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function TikTokDelivery({ delivery }: { delivery: { sent: number; failed: number; lastError: string | null } }) {
+  const qc = useQueryClient();
+  const testFn = useServerFn(sendTikTokTestEvent);
+  const deliverFn = useServerFn(deliverTikTokNow);
+  const test = useMutation({
+    mutationFn: () => testFn(),
+    onSuccess: () => toast.success("أُرسل حدث تجريبي (SubmitForm). افتح TikTok Events Manager ← Test events وانتظر دقيقة"),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const deliver = useMutation({
+    mutationFn: () => deliverFn(),
+    onSuccess: (r) => {
+      toast.success(r.failed ? `أُرسل ${r.sent}، وتعذّر ${r.failed}` : `أُرسل ${r.sent} حدث`);
+      qc.invalidateQueries({ queryKey: ["social-connections"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Card className="space-y-3 p-4">
+      <h3 className="font-semibold">إرسال النتائج إلى تيك توك</h3>
+      <p className="text-xs text-muted-foreground">
+        كل دقيقة يُرسل الخادم مراحل القمع المصنّفة في «تحويلات الإعلانات» إلى بكسل تيك توك الخاص بمؤسستك: عميل مؤهل (SubmitForm)، حجز (Schedule)، بيع (CompletePayment)، وتقييم الجودة (LeadQuality). الإيميل والهاتف يُرسلان مجزّأين بالتشفير. جرّب أولًا بـ Test Event Code من Events Manager ← Test events.
       </p>
       <div className="grid grid-cols-2 gap-2 text-center">
         <Stat icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="أُرسل" value={delivery.sent} />
