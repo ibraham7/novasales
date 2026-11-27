@@ -37,11 +37,19 @@ export const getSocialConnections = createServerFn({ method: "GET" }).handler(as
       .maybeSingle(),
   ]);
   if (pixels.error) throw new Error(pixels.error.message);
+  // Google deliveries (their own table; before its migration runs there is simply nothing).
+  const googleCount = async (state: string) => {
+    const r = await db.from("crm_conversion_deliveries").select("event_id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("platform", "google").eq("state", state);
+    return r.error ? 0 : (r.count ?? 0);
+  };
+  const googleLast = await db.from("crm_conversion_deliveries").select("error").eq("organization_id", organizationId).eq("platform", "google").eq("state", "failed").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  const googleDelivery = { sent: await googleCount("sent"), failed: await googleCount("failed"), lastError: (googleLast?.data?.error as string | null) ?? null };
   const { metaPublicConfig } = await import("@/modules/channels/whatsapp/cloud-http");
   const meta = metaPublicConfig();
   const socialConfigId = process.env.META_SOCIAL_CONFIG_ID ?? null;
   return {
     connections: (pixels.data ?? []).map(({ access_token, ...row }: any) => ({ ...row, has_token: !!access_token })),
+    googleDelivery,
     delivery: {
       waiting: waiting.count ?? 0,
       sent: sent.count ?? 0,
@@ -110,6 +118,22 @@ export const saveSocialPixel = createServerFn({ method: "POST" })
         if (old && old.pixel_id !== pixelId) row.access_token = null;
       }
     }
+    if (data.platform === "google") {
+      const { isGa4MeasurementId } = await import("./ga4-capi");
+      const { data: old } = await db.from("org_marketing_pixels").select("pixel_id").eq("organization_id", organizationId).eq("platform", "google").maybeSingle();
+      if (data.accessToken) {
+        if (!isGa4MeasurementId(pixelId)) throw new Error("لإرسال النتائج لجوجل أدخل Measurement ID بصيغة G-XXXXXXXXXX (من GA4 ← Admin ← Data streams)، وليس معرّف AW-");
+        const secret = data.accessToken.replace(/\s+/g, "");
+        if (secret.length < 8 || /^(G|AW)-/i.test(secret)) throw new Error("API Secret غير صحيح: أنشئه من GA4 ← Admin ← Data streams ← Measurement Protocol API secrets");
+        const { sealSecret } = await import("./secret-box.server");
+        row.access_token = await sealSecret(secret);
+        row.connected_via = "manual";
+        row.connected_at = new Date().toISOString();
+      } else if (old && old.pixel_id !== pixelId) {
+        // A different property needs its own API secret.
+        row.access_token = null;
+      }
+    }
     const { error } = await db.from("org_marketing_pixels").upsert(row, { onConflict: "organization_id,platform" });
     if (error) throw new Error(error.message);
     return { ok: true, pixelName, verified };
@@ -159,6 +183,40 @@ export const sendMetaTestEvent = createServerFn({ method: "POST" }).handler(asyn
     },
   ]);
   return { received, trace };
+});
+
+async function googleConnection(organizationId: string, db: any) {
+  const { isGa4MeasurementId } = await import("./ga4-capi");
+  const { data, error } = await db.from("org_marketing_pixels").select("organization_id,pixel_id,access_token").eq("organization_id", organizationId).eq("platform", "google").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.access_token || !isGa4MeasurementId(data.pixel_id)) throw new Error("أدخل Measurement ID (G-…) و API Secret لجوجل أولًا");
+  return data;
+}
+
+/**
+ * A test event «novasales_test»: first checked by Google's debug endpoint (which reports problems in the event), then sent to
+ * the live endpoint, where it appears in GA4 Realtime within a minute. Google never confirms the API secret itself.
+ */
+export const sendGa4TestEvent = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await context();
+  const connection = await googleConnection(organizationId, db);
+  const { postGa4 } = await import("./ga4-capi.server");
+  const request = {
+    client_id: `novasales.test.${organizationId}`,
+    user_id: `novasales-test-${organizationId}`,
+    events: [{ name: "novasales_test", timestamp_micros: Date.now() * 1000, params: { engagement_time_msec: 1, stage_name: "اختبار" } }],
+  };
+  const { messages } = await postGa4(connection, request, true);
+  if (messages.length) throw new Error(`رفضت جوجل الحدث التجريبي: ${messages.map((m) => m.description || m.validationCode).join("، ")}`);
+  await postGa4(connection, request, false);
+  return { ok: true };
+});
+
+export const deliverGa4Now = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId, db } = await context();
+  await googleConnection(organizationId, db);
+  const { deliverGa4Conversions } = await import("./ga4-capi.server");
+  return deliverGa4Conversions(organizationId);
 });
 
 /** Sends this organization's waiting events now instead of waiting for the next minute. */

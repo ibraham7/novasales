@@ -28,6 +28,13 @@ export function startCampaignTicker() {
       console.error("[email] run failed", error instanceof Error ? error.message : error);
     }
     try {
+      const { deliverGa4Conversions } = await import("@/modules/integrations/ga4-capi.server");
+      const { sent } = await deliverGa4Conversions();
+      if (sent) console.log(`[conversions] sent ${sent} to Google Analytics`);
+    } catch (error) {
+      console.error("[conversions] ga4 run failed", error instanceof Error ? error.message : error);
+    }
+    try {
       const { runWorkflowTick } = await import("@/modules/workflow/auto-tick.server");
       const result = await runWorkflowTick();
       if (result && (result.processed || result.failed || result.skipped)) console.log(`[workflow] processed ${result.processed}, failed ${result.failed}, skipped ${result.skipped}`);

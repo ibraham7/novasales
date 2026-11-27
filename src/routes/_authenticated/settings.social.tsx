@@ -5,10 +5,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Clock, Facebook, Ghost, Instagram, KeyRound, Linkedin, Loader2, Music2, Send, ShieldCheck, Trash2, Youtube } from "lucide-react";
 import {
   deliverConversionsNow,
+  deliverGa4Now,
   finishMetaSocialLink,
   getSocialConnections,
   removeSocialPixel,
   saveSocialPixel,
+  sendGa4TestEvent,
   sendMetaTestEvent,
   startMetaSocialLink,
 } from "@/modules/integrations/social-connections.functions";
@@ -140,6 +142,7 @@ function SocialConnectionsPage() {
       </Card>
 
       {q.data && byPlatform("facebook")?.has_token && <MetaDelivery delivery={q.data.delivery} />}
+      {q.data && byPlatform("google")?.has_token && <GoogleDelivery delivery={q.data.googleDelivery} />}
     </div>
   );
 }
@@ -148,6 +151,8 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
   const qc = useQueryClient();
   const spec = SOCIAL_PLATFORMS[platform];
   const isMeta = platform === "facebook";
+  const isGoogle = platform === "google";
+  const delivers = DELIVERING_PLATFORMS.includes(platform);
   const saveFn = useServerFn(saveSocialPixel);
   const removeFn = useServerFn(removeSocialPixel);
   const [pixelId, setPixelId] = useState(connection?.pixel_id ?? "");
@@ -161,7 +166,7 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
 
   const save = useMutation({
     mutationFn: () =>
-      saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : {}) } }),
+      saveFn({ data: { platform, pixelId, ...(isMeta ? { accessToken: token || undefined, testEventCode: testCode } : isGoogle ? { accessToken: token || undefined } : {}) } }),
     onSuccess: (r) => {
       setToken("");
       toast.success(
@@ -191,8 +196,8 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
         <PlatformLogo platform={platform} className="h-8 w-8" />
         <span className="flex-1 text-sm font-semibold">{spec.label}</span>
         {connection ? (
-          isMeta && !connection.has_token ? (
-            <Badge variant="secondary">محفوظ — بدون رمز إرسال</Badge>
+          delivers && !connection.has_token ? (
+            <Badge variant="secondary">{isGoogle ? "محفوظ — بدون API Secret" : "محفوظ — بدون رمز إرسال"}</Badge>
           ) : (
             <Badge className="gap-1">
               <CheckCircle2 className="h-3 w-3" /> مربوط{connection.connected_via === "oauth" ? " عبر ميتا" : ""}
@@ -255,7 +260,30 @@ function PixelRow({ platform, connection }: { platform: SocialPlatform; connecti
           </p>
         </div>
       )}
-      {!isMeta && !DELIVERING_PLATFORMS.includes(platform) && connection && (
+      {isGoogle && (
+        <div className="space-y-1">
+          <Label className="flex items-center gap-1 text-xs">
+            <KeyRound className="h-3 w-3" /> API Secret (Measurement Protocol)
+          </Label>
+          <Input
+            type="text"
+            name="ga4-api-secret"
+            style={{ WebkitTextSecurity: "disc" } as CSSProperties}
+            data-lpignore="true"
+            data-1p-ignore
+            spellCheck={false}
+            dir="ltr"
+            autoComplete="off"
+            placeholder={connection?.has_token ? "محفوظ ومشفّر — اتركه فارغًا للإبقاء عليه" : "GA4 ← Admin ← Data streams ← Measurement Protocol API secrets ← Create"}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            ضع في الخانة الأولى Measurement ID بصيغة G-XXXXXXXXXX (وليس AW-). السر لا يظهر مرة أخرى بعد الحفظ ولا يُرسل للمتصفح. جوجل لا تؤكد صحة السر عند الإرسال، فاستعمل «إرسال حدث تجريبي» وراقب Realtime في GA4.
+          </p>
+        </div>
+      )}
+      {!isMeta && !delivers && connection && (
         <p className="text-xs text-muted-foreground">محفوظ. إرسال النتائج تلقائيًا لهذه المنصة يُفعّل بعد موافقتها.</p>
       )}
     </div>
@@ -298,6 +326,47 @@ function MetaDelivery({ delivery }: { delivery: { waiting: number; sent: number;
           إرسال حدث تجريبي
         </Button>
         <Button type="button" variant="outline" disabled={deliver.isPending || !delivery.waiting} onClick={() => deliver.mutate()}>
+          إرسال المنتظر الآن
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function GoogleDelivery({ delivery }: { delivery: { sent: number; failed: number; lastError: string | null } }) {
+  const qc = useQueryClient();
+  const testFn = useServerFn(sendGa4TestEvent);
+  const deliverFn = useServerFn(deliverGa4Now);
+  const test = useMutation({
+    mutationFn: () => testFn(),
+    onSuccess: () => toast.success("أُرسل الحدث التجريبي novasales_test. افتح GA4 ← Reports ← Realtime وانتظر دقيقة"),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const deliver = useMutation({
+    mutationFn: () => deliverFn(),
+    onSuccess: (r) => {
+      toast.success(r.failed ? `أُرسل ${r.sent}، وتعذّر ${r.failed}` : `أُرسل ${r.sent} حدث`);
+      qc.invalidateQueries({ queryKey: ["social-connections"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Card className="space-y-3 p-4">
+      <h3 className="font-semibold">إرسال النتائج إلى جوجل (GA4)</h3>
+      <p className="text-xs text-muted-foreground">
+        كل دقيقة يُرسل الخادم مراحل القمع المصنّفة في «تحويلات الإعلانات» (عميل مؤهل، حجز، بيع، وتقييم الجودة) إلى خاصية GA4 الخاصة بمؤسستك، بأسماء: qualify_lead وschedule_appointment وpurchase وlead_quality. الإيميل والهاتف يُرسلان مجزّأين بالتشفير. تقبل جوجل الأحداث حتى 72 ساعة من وقوعها. لتحسين إعلانات Google Ads استورد من GA4 أحداث التحويل.
+      </p>
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <Stat icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="أُرسل" value={delivery.sent} />
+        <Stat icon={<ShieldCheck className="h-4 w-4 text-destructive" />} label="فشل" value={delivery.failed} />
+      </div>
+      {delivery.lastError && <p className="text-xs text-destructive">آخر خطأ: {delivery.lastError}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
+          {test.isPending ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Send className="ml-1 h-4 w-4" />}
+          إرسال حدث تجريبي
+        </Button>
+        <Button type="button" variant="outline" disabled={deliver.isPending} onClick={() => deliver.mutate()}>
           إرسال المنتظر الآن
         </Button>
       </div>
