@@ -16,7 +16,7 @@ export type SocialPlatform = keyof typeof SOCIAL_PLATFORMS;
 export const SOCIAL_PLATFORM_KEYS = Object.keys(SOCIAL_PLATFORMS) as SocialPlatform[];
 
 /** Platforms whose conversion events the server already sends: Meta (Conversions API) and Google (GA4 Measurement Protocol). */
-export const DELIVERING_PLATFORMS: SocialPlatform[] = ["facebook", "google", "tiktok"];
+export const DELIVERING_PLATFORMS: SocialPlatform[] = ["facebook", "google", "tiktok", "snapchat"];
 
 /** The cleaned id, or an Arabic error. */
 export function cleanPixelId(platform: SocialPlatform, raw: string): string {
