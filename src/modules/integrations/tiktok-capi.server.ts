@@ -12,6 +12,8 @@ import type { ConversionEventRow } from "./meta-capi.ts";
 const db = supabaseAdmin as any;
 const BATCH = 100;
 const MAX_ATTEMPTS = 5;
+const PAGE = 200;
+const MAX_PAGES = 15;
 const EVENT_COLUMNS = "id,opportunity_id,contact_id,stage_name,event_kind,is_first_for_goal,value,currency,attribution,quality_level,quality_score,is_quality_signal,contact_phone,occurred_at";
 
 export type TikTokConnection = { organization_id: string; pixel_id: string; access_token: string; test_event_code?: string | null };
@@ -45,30 +47,37 @@ export async function deliverTikTokConversions(organizationId?: string) {
   let failed = 0;
   for (const connection of ((connections ?? []) as TikTokConnection[]).filter((c) => isTikTokPixelCode(c.pixel_id))) {
     const oldest = new Date(Date.now() - TIKTOK_MAX_AGE_MS + 60 * 60 * 1000).toISOString();
-    const { data: events, error: eventsError } = await db
-      .from("crm_conversion_events")
-      .select(EVENT_COLUMNS)
-      .eq("organization_id", connection.organization_id)
-      .gte("occurred_at", oldest)
-      .order("occurred_at")
-      .limit(BATCH * 2);
-    if (eventsError) throw new Error(eventsError.message);
-    if (!events?.length) continue;
-    const { data: done, error: doneError } = await db
-      .from("crm_conversion_deliveries")
-      .select("event_id,state,attempts")
-      .eq("organization_id", connection.organization_id)
-      .eq("platform", "tiktok")
-      .in("event_id", events.map((e: { id: string }) => e.id));
-    if (doneError) {
-      if (MISSING.has(doneError.code)) return { sent, failed };
-      throw new Error(doneError.message);
+    // Walk the window page by page: the oldest events may all be delivered already, and the newer ones must still be reached.
+    const state = new Map<string, { state: string; attempts: number }>();
+    let rows: (ConversionEventRow & { id: string })[] = [];
+    for (let page = 0; page < MAX_PAGES && !rows.length; page++) {
+      const { data: events, error: eventsError } = await db
+        .from("crm_conversion_events")
+        .select(EVENT_COLUMNS)
+        .eq("organization_id", connection.organization_id)
+        .gte("occurred_at", oldest)
+        .order("occurred_at")
+        .order("id")
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (eventsError) throw new Error(eventsError.message);
+      if (!events?.length) break;
+      const { data: done, error: doneError } = await db
+        .from("crm_conversion_deliveries")
+        .select("event_id,state,attempts")
+        .eq("organization_id", connection.organization_id)
+        .eq("platform", "tiktok")
+        .in("event_id", events.map((e: { id: string }) => e.id));
+      if (doneError) {
+        if (MISSING.has(doneError.code)) return { sent, failed };
+        throw new Error(doneError.message);
+      }
+      for (const d of done ?? []) state.set(d.event_id, d);
+      rows = (events as (ConversionEventRow & { id: string })[]).filter((e) => {
+        const d = state.get(e.id);
+        return !d || (d.state === "failed" && d.attempts < MAX_ATTEMPTS);
+      }).slice(0, BATCH);
+      if (events.length < PAGE) break;
     }
-    const state = new Map<string, { state: string; attempts: number }>((done ?? []).map((d: any) => [d.event_id, d]));
-    const rows = (events as (ConversionEventRow & { id: string })[]).filter((e) => {
-      const d = state.get(e.id);
-      return !d || (d.state === "failed" && d.attempts < MAX_ATTEMPTS);
-    }).slice(0, BATCH);
     if (!rows.length) continue;
     const people = await contactInfo(connection.organization_id, rows.map((r) => r.contact_id ?? ""));
     const requests = await tiktokRequestsFor(rows, people);
